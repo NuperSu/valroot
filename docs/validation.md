@@ -1,5 +1,16 @@
 # Foundation validation
 
+## EVM through Alchemy (L2) — 2026-11-08
+
+- **Local suites:** 424 core, 154 shared UI and 41 desktop tests pass; ktlint clean; R8 release APK builds.
+- **Live run on a private test wallet** (temporary harness, scratch database, key never printed):
+  - **Discovery:** found OP Mainnet and BNB Smart Chain in 13 requests.
+  - **BNB balance:** the ledger's native BNB equals Alchemy's exactly. The wallet's one sent transaction was found through its token transfer, and its fee came from the receipt, so no sent transaction was unlisted.
+  - **Address poisoning:** a look-alike "USDT" transfer that appears to come from the wallet was sent by another address and carries no fee.
+  - **Prices and spam:** BNB is priced through its CoinGecko link. Six spam tokens are hidden and left out of the balance check.
+  - **Unchanged second refresh:** 4 requests.
+- **Independent checks:** all nine network chain IDs confirmed with `eth_chainId`.
+
 ## Release acceptance (M6) — 2026-11-08
 
 - **Local suites:** 411 core JVM, 149 shared UI and 30 desktop tests, zero failures; ktlint clean; R8 release APK (7.7 MB, libsecp256k1 for four ABIs) and the self-contained desktop distribution build.
