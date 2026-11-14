@@ -2,6 +2,7 @@ package io.valroot.desktop
 
 import io.valroot.core.application.HostRefresh
 import io.valroot.core.application.PortfolioApplication
+import io.valroot.core.application.RefreshCancelled
 import io.valroot.core.application.RefreshSummary
 import io.valroot.core.bitcoin.BitcoinProviderException
 import io.valroot.core.bitcoin.BitcoinProviderFailure
@@ -224,7 +225,7 @@ internal class DesktopSync(
             runCatching {
                 val plan =
                     HostRefresh(application, withoutBitcoin) { source ->
-                        check(!state.closing.get()) { "$source refresh was cancelled. Retry if needed." }
+                        if (state.closing.get()) throw RefreshCancelled("$source refresh was cancelled. Retry if needed.")
                     }
                 if (!plan.anySource) return@runCatching SyncStatus(SyncPhase.IDLE, HostRefresh.NO_PROVIDER)
                 val connectors =
@@ -246,6 +247,7 @@ internal class DesktopSync(
                 SyncStatus(
                     SyncPhase.ERROR,
                     (it as? BitcoinProviderException)?.reason?.userMessage
+                        ?: (it as? RefreshCancelled)?.message
                         ?: "Could not finish sync. Check storage and provider, then retry.",
                 )
             }

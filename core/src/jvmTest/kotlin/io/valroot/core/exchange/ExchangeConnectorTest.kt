@@ -197,4 +197,53 @@ class ExchangeConnectorTest {
             app.exchanges.saveStream(account, ExchangeStreamState("withdrawals", 50 * day, 100 * day, false, 0))
             assertEquals(HistoryCoverage.READING, app.exchanges.coverage(account).coverage)
         }
+
+    @Test
+    fun aCancelledRefreshIsNotRecordedAsTheAccountsFailure() =
+        withApp { app ->
+            val cancelling =
+                object : ExchangeConnector(ExchangeKind.MEXC) {
+                    override val manifest get() = error("unused")
+
+                    override fun sync(
+                        app: PortfolioApplication,
+                        account: AccountId,
+                        uid: String,
+                        options: SourceRefreshOptions,
+                    ): Boolean =
+                        throw io.valroot.core.application
+                            .RefreshCancelled("MEXC refresh was cancelled. Retry if needed.")
+                }
+            app.accounts.saveOwner(
+                io.valroot.core.ownership
+                    .Owner(
+                        io.valroot.core.model
+                            .OwnerId("o"),
+                        "Owner",
+                    ),
+            )
+            app.accounts.saveAccountAndTarget(
+                io.valroot.core.ownership.Account(
+                    account,
+                    io.valroot.core.model
+                        .OwnerId("o"),
+                    "MEXC",
+                    io.valroot.core.ownership.AccountKind.ACCOUNT,
+                ),
+                io.valroot.core.ownership.TrackingTarget(
+                    io.valroot.core.model
+                        .TrackingTargetId("t"),
+                    account,
+                    io.valroot.core.ownership
+                        .TargetIdentity(ExchangeKind.MEXC.network, "uid", "1"),
+                    io.valroot.core.ownership.TargetRole.LEAF,
+                    "MEXC",
+                ),
+            )
+            app.exchanges.setKey(ExchangeKind.MEXC, account, "KEYKEYKEYKEY", "SECRETSECRETSECRET")
+            kotlin.test.assertFailsWith<io.valroot.core.application.RefreshCancelled> {
+                cancelling.refresh(app, SourceRefreshOptions())
+            }
+            kotlin.test.assertNull(app.exchanges.status(account).error)
+        }
 }

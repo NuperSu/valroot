@@ -93,6 +93,8 @@ abstract class ExchangeConnector(
                         notes += "Some older ${kind.label} history could not be read; it is tried again later"
                     }
                     JobState.COMPLETED
+                } catch (cancelled: io.valroot.core.application.RefreshCancelled) {
+                    throw cancelled
                 } catch (failure: Exception) {
                     app.exchanges.recordError(account, failureMessage(failure))
                     JobState.FAILED

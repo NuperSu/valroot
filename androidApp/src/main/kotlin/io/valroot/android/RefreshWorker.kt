@@ -157,6 +157,7 @@ class RefreshWorker(
                     SyncPhase.ERROR,
                     (failure as? BitcoinProviderException)?.reason?.userMessage
                         ?: (failure as? io.valroot.core.application.BitcoinDiscoveryConflict)?.message
+                        ?: (failure as? io.valroot.core.application.RefreshCancelled)?.message
                         ?: "Could not finish sync during $stage (${failure::class.java.simpleName}). Saved data is unchanged; retry.",
                 )
             }

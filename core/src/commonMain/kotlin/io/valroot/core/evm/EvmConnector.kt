@@ -73,6 +73,8 @@ class EvmConnector(
                     } else {
                         notes += "Some networks could not be checked for ${address.take(10)}…; they are checked again next refresh"
                     }
+                } catch (cancelled: io.valroot.core.application.RefreshCancelled) {
+                    throw cancelled
                 } catch (failure: Exception) {
                     notes += "Networks for ${address.take(10)}… could not be checked; they are checked again next refresh"
                 }
@@ -86,6 +88,8 @@ class EvmConnector(
                         requireNotNull(Alchemy.network(state.chainId)) { "This chain is not available from Alchemy" }
                         refreshChain(app, account, address, state, force = options.recoverHistory)
                         JobState.COMPLETED
+                    } catch (cancelled: io.valroot.core.application.RefreshCancelled) {
+                        throw cancelled
                     } catch (failure: Exception) {
                         app.evm.recordChainError(address, state.chainId, failure.message ?: "Could not refresh this chain")
                         JobState.FAILED

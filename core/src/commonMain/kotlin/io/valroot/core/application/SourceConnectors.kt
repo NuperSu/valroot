@@ -9,6 +9,11 @@ import io.valroot.core.connectors.IntegrationManifest
 import io.valroot.core.model.NetworkId
 import io.valroot.core.sync.JobState
 
+/** Stops a refresh the user or the system cancelled. Connectors let it pass instead of recording a source failure. */
+class RefreshCancelled(
+    message: String,
+) : IllegalStateException(message)
+
 /** Bitcoin mainnet through an Esplora-compatible provider: history with decoding, wallet discovery and UTXO balances. */
 val BITCOIN_MANIFEST =
     IntegrationManifest(

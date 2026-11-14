@@ -46,19 +46,29 @@ class HostRefresh(
         bitcoin: (() -> SourceConnector)?,
         refreshCatalog: () -> Unit,
     ): List<SourceConnector> {
+        // A host's check only throws to cancel, so whatever it throws stops the refresh as a cancellation.
+        fun cancelCheck(source: String) {
+            try {
+                beforeRequest(source)
+            } catch (cancelled: RefreshCancelled) {
+                throw cancelled
+            } catch (failure: Exception) {
+                throw RefreshCancelled(failure.message ?: "$source refresh was cancelled. Retry if needed.")
+            }
+        }
         val connectors = mutableListOf<SourceConnector>()
         if (bitcoinOn && bitcoin != null) connectors += bitcoin()
         if (evmOn) {
             val check = {
-                beforeRequest("EVM")
-                check(app.evm.consent()) { "EVM refresh was cancelled. Retry if needed." }
+                cancelCheck("EVM")
+                if (!app.evm.consent()) throw RefreshCancelled("EVM refresh was cancelled. Retry if needed.")
             }
             val alchemy = AlchemyTransport(apiKey = { app.evm.alchemyApiKey() }, beforeRequest = check)
             val oneInch = app.evm.oneInchApiKey()?.let { OneInchTransport(apiKey = { app.evm.oneInchApiKey() }, beforeRequest = check) }
             connectors += EvmConnector(alchemy::post, oneInch?.let { it::get })
         }
         if (exchanges.isNotEmpty()) runCatching(refreshCatalog)
-        exchanges.forEach { kind -> connectors += JvmExchanges.of(kind).connector(app) { beforeRequest(kind.label) } }
+        exchanges.forEach { kind -> connectors += JvmExchanges.of(kind).connector(app) { cancelCheck(kind.label) } }
         return connectors
     }
 
