@@ -95,22 +95,22 @@ internal class AndroidBackups(
         password: String,
         onResult: (String) -> Unit,
     ) {
-        // Restore replaces the database file, so it shares the sync thread and cannot overlap a running scan.
+        // Restore replaces the database file, so it shares the sync thread and cannot overlap a running scan. Every use
+        // of the live connection runs on the database executor through [onDb], in turn with the screens' queries and
+        // the activity's close, so none of them meets a connection being closed or replaced.
         RefreshWorker.syncExecutor.execute {
-            // Holding the restore lock keeps the activity's close from releasing the database while it is in use here.
-            synchronized(state.restoreLock) {
-                if (state.closed) return@execute
-                var staging: java.nio.file.Path? = null
-                var result = "Could not restore backup"
-                var swapped = false
-                var reopened = false
-                var pricePaused = false
-                var replacementReady = false
-                try {
-                    staging = Files.createTempFile(state.file.parent, "restore-", ".sqlite")
-                    AndroidSqliteDatabase(
-                        staging.toString(),
-                    ).use { stagingDb ->
+            var staging: java.nio.file.Path? = null
+            var result = "Could not restore backup"
+            var swapped = false
+            var reopened = false
+            var pricePaused = false
+            var replacementReady = false
+            try {
+                staging = Files.createTempFile(state.file.parent, "restore-", ".sqlite")
+                AndroidSqliteDatabase(
+                    staging.toString(),
+                ).use { stagingDb ->
+                    onDb {
                         state.files.read(uri) { input ->
                             requireNotNull(state.app.value).backup.restoreToStaging(
                                 stagingDb,
@@ -119,15 +119,19 @@ internal class AndroidBackups(
                             )
                         }
                     }
-                    java.nio.channels.FileChannel
-                        .open(staging, java.nio.file.StandardOpenOption.WRITE)
-                        .use { it.force(true) }
-                    AutomaticPriceGate.paused = true
-                    pricePaused = true
+                }
+                java.nio.channels.FileChannel
+                    .open(staging, java.nio.file.StandardOpenOption.WRITE)
+                    .use { it.force(true) }
+                AutomaticPriceGate.paused = true
+                pricePaused = true
+                onDb {
                     requireNotNull(state.app.value).prices.invalidateAutomaticRequests()
                     PriceHistoryWorker.invalidate()
                     // This short transaction waits for earlier price commits and invalidates their consent generation.
                     requireNotNull(state.app.value).let { it.prices.setSourceConsent(it.prices.sourceConsent()) }
+                }
+                onDb {
                     synchronized(AutomaticPriceGate.lock) {
                         state.db.close()
                         try {
@@ -139,58 +143,67 @@ internal class AndroidBackups(
                             state.db = AndroidSqliteDatabase(state.file.toString())
                             reopened = true
                         }
-                        // The activity closed during the restore: its database is released here, and the next launch opens the file.
-                        if (state.closed) {
-                            state.db.close()
-                            return@execute
-                        }
-                        val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
-                        val updated = java.util.concurrent.CountDownLatch(1)
-                        state.main.post {
-                            state.app.value = replacement
-                            state.dataRevision.update { it + 1 }
-                            updated.countDown()
-                        }
-                        updated.await()
+                        publish(PortfolioApplication(state.db, System::currentTimeMillis))
                         replacementReady = true
                     }
-                    result = "Backup restored"
-                } catch (failure: Exception) {
-                    // Validation messages (wrong password, damaged or unsupported backup) explain a rejected file.
-                    if (!swapped && failure is IllegalArgumentException) result = failure.message ?: result
-                    if (swapped) result = "Backup restored; reopen the app to load it"
-                    if (reopened && !swapped && state.closed) {
-                        runCatching { state.db.close() }
-                    } else if (reopened && !swapped) {
-                        runCatching {
-                            val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
-                            val updated = java.util.concurrent.CountDownLatch(1)
-                            state.main.post {
-                                state.app.value = replacement
-                                state.dataRevision.update { it + 1 }
-                                updated.countDown()
-                            }
-                            updated.await()
-                        }
-                    }
-                } finally {
-                    if (pricePaused) {
-                        AutomaticPriceGate.paused = false
-                        if (swapped && replacementReady &&
-                            runCatching { state.app.value?.let { sync.reconcileRefreshPreferences(it) } }.isFailure
-                        ) {
-                            result = "Backup restored; automatic price scheduling could not be updated"
-                        }
-                        // The restored settings decide whether periodic notification checks run.
-                        if (swapped && replacementReady) {
-                            runCatching { state.app.value?.let { NotificationWorker.schedule(state.activity, it.notifications.active()) } }
-                        }
-                    }
-                    staging?.let { runCatching { Files.deleteIfExists(it) } }
                 }
-                val message = result
-                state.main.post { onResult(message) }
+                result = "Backup restored"
+            } catch (failure: Exception) {
+                // Validation messages (wrong password, damaged or unsupported backup) explain a rejected file.
+                if (!swapped && failure is IllegalArgumentException) result = failure.message ?: result
+                if (swapped) result = "Backup restored; reopen the app to load it"
+                if (reopened && !replacementReady) {
+                    runCatching { onDb { publish(PortfolioApplication(state.db, System::currentTimeMillis)) } }
+                }
+            } finally {
+                if (pricePaused) {
+                    AutomaticPriceGate.paused = false
+                    if (swapped && replacementReady) {
+                        val scheduled =
+                            runCatching {
+                                onDb {
+                                    state.app.value?.let { app ->
+                                        sync.reconcileRefreshPreferences(app)
+                                        // The restored settings decide whether periodic notification checks run.
+                                        runCatching { NotificationWorker.schedule(state.activity, app.notifications.active()) }
+                                    }
+                                }
+                            }
+                        if (scheduled.isFailure) result = "Backup restored; automatic price scheduling could not be updated"
+                    }
+                }
+                staging?.let { runCatching { Files.deleteIfExists(it) } }
             }
+            val message = result
+            state.main.post { if (!state.closed) onResult(message) }
         }
+    }
+
+    /**
+     * Runs [block] on the database executor and waits for it. It fails once the activity has closed, since the close
+     * that follows on the same executor releases the connection.
+     */
+    private fun <T> onDb(block: () -> T): T =
+        try {
+            state.executor
+                .submit(
+                    java.util.concurrent.Callable {
+                        check(!state.closed) { "Valroot closed during the restore" }
+                        block()
+                    },
+                ).get()
+        } catch (failure: java.util.concurrent.ExecutionException) {
+            throw failure.cause as? Exception ?: failure
+        }
+
+    /** Hands [replacement] to the screens on the main thread and waits until they hold it. */
+    private fun publish(replacement: PortfolioApplication) {
+        val updated = java.util.concurrent.CountDownLatch(1)
+        state.main.post {
+            state.app.value = replacement
+            state.dataRevision.update { it + 1 }
+            updated.countDown()
+        }
+        updated.await()
     }
 }
