@@ -45,6 +45,26 @@ class FifoTest {
         assertEquals(report, FifoAccounting.calculate(acts.reversed(), owners, usd, mapOf(eth to v("3"))))
     }
 
+    @Test fun chainOrderKeepsTimeOrderForActionsWithoutChainKeys() {
+        val actions =
+            listOf(
+                // Chain keys reverse the Bitcoin timestamps: the chain position wins among keyed activities.
+                AccountingAction.Acquisition(ActivityId("btc-late"), 10, "bitcoin-chain:1", a, btc, n("1"), v("100")),
+                AccountingAction.Acquisition(ActivityId("btc-early"), 20, "bitcoin-chain:2", a, btc, n("1"), v("200")),
+                AccountingAction.Disposal(ActivityId("btc-sell"), 30, "bitcoin-chain:3", a, btc, n("1"), v("150")),
+                // Unkeyed sources sort by time, not by their source prefix ("binance:" < "evm-chain:").
+                AccountingAction.Acquisition(ActivityId("exchange-buy"), 300, "binance:1", b, eth, n("1"), v("4000")),
+                AccountingAction.Acquisition(ActivityId("wallet-buy"), 100, "evm-chain:1", a, eth, n("1"), v("1000")),
+                AccountingAction.Transfer(ActivityId("withdraw"), 400, "binance:2", b, a, eth, n("1")),
+                AccountingAction.Disposal(ActivityId("wallet-sell"), 500, "evm-chain:2", a, eth, n("1"), v("3000")),
+            )
+        val keys = actions.filter { it.order.startsWith("bitcoin-chain:") }.associate { it.activityId to it.order }
+        val report = FifoAccounting.calculate(actions, owners, usd, replayOrder = FifoAccounting.chainOrder(actions, keys))
+        assertEquals(q("100"), report.disposals.single { it.activityId == ActivityId("btc-sell") }.basis)
+        assertEquals(q("1000"), report.disposals.single { it.activityId == ActivityId("wallet-sell") }.basis)
+        assertEquals(q("4000"), report.lots.single { it.asset == eth }.basis)
+    }
+
     @Test fun explicitReplayOrderPreservesAcquisitionAgeAcrossTransfers() {
         val actions =
             listOf(

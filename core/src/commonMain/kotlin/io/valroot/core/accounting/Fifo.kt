@@ -134,12 +134,39 @@ data class AccountingReport(
 
 /** FIFO is scoped by owner, account and asset. Transfer preserves original lot age and basis. */
 object FifoAccounting {
+    /** Replay order by time, then the action's ordering key. */
+    val timeOrder: Comparator<AccountingAction> = compareBy({ it.at }, { it.order }, { it.activityId.value })
+
+    /**
+     * Replay order where [chainKeys] fix the relative order of their activities: every action is placed by time, and
+     * the slots taken by keyed actions are refilled in key order. Actions without a key keep their time order.
+     */
+    fun chainOrder(
+        actions: List<AccountingAction>,
+        chainKeys: Map<ActivityId, String>,
+    ): Comparator<AccountingAction> {
+        val timeline = actions.sortedWith(timeOrder)
+        val keyed =
+            timeline
+                .filter { it.activityId in chainKeys }
+                .sortedWith(compareBy({ chainKeys.getValue(it.activityId) }, { it.order }, { it.activityId.value }))
+                .iterator()
+        val ranks =
+            timeline
+                .map { if (it.activityId in chainKeys) keyed.next() else it }
+                .withIndex()
+                .associate { (rank, action) -> replayKey(action) to rank }
+        return compareBy { ranks[replayKey(it)] ?: Int.MAX_VALUE }
+    }
+
+    private fun replayKey(action: AccountingAction) = "${action.activityId.value}:${action.order}"
+
     fun calculate(
         actions: List<AccountingAction>,
         owners: Map<AccountId, OwnerId>,
         quoteAsset: AssetId,
         unitPrices: Map<AssetId, QuoteValue?> = emptyMap(),
-        replayOrder: Comparator<AccountingAction> = compareBy({ it.at }, { it.order }, { it.activityId.value }),
+        replayOrder: Comparator<AccountingAction> = timeOrder,
     ): AccountingReport {
         require(
             unitPrices.values.filterNotNull().all {

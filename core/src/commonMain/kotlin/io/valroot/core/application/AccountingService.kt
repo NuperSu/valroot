@@ -252,18 +252,14 @@ class AccountingService internal constructor(
                         .filter { entry ->
                             affectsSelection(entry.activity)
                         }.map { it.activity.id }
-                // Chain positions establish relative order only among Bitcoin activities. Mixed sources
-                // use the timestamp fallback and remain uncertain until cross-source order is explicit.
-                val chainOrder = bitcoin.associate { it.activity.id to it.original.orderingKey }
+                // Chain positions establish relative order only among Bitcoin activities; every other action keeps
+                // its time order. Mixed sources use the timestamp fallback and remain uncertain until cross-source
+                // order is explicit.
                 val replayOrder =
                     if (bitcoin.isNotEmpty() && unverified.isEmpty() && mixed.isEmpty()) {
-                        compareBy<io.valroot.core.accounting.AccountingAction>(
-                            { chainOrder[it.activityId] ?: "" },
-                            { it.order },
-                            { it.activityId.value },
-                        )
+                        FifoAccounting.chainOrder(actions, bitcoin.associate { it.activity.id to it.original.orderingKey })
                     } else {
-                        compareBy({ it.at }, { it.order }, { it.activityId.value })
+                        FifoAccounting.timeOrder
                     }
                 val unitPrices =
                     confirmed
