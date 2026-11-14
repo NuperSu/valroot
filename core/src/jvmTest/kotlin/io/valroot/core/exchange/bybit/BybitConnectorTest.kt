@@ -500,4 +500,29 @@ class BybitConnectorTest {
             assertEquals(4, app.exchanges.rowKeys(account, BybitDecoder.LOG).size)
         }
     }
+
+    @Test
+    fun anInterruptedOlderWindowResumesAfterTheNewerWindowIsReadAgain() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val bybit = FakeBybit()
+            val old = now - 60 * Bybit.DAY_MILLIS
+            repeat(3) { i -> bybit.log += bybit.logRow("old$i", "TRANSFER_IN", "", "ETH", "0", "0", "0", "", old + i) }
+            var oldStart: String? = null
+            bybit.failOnce = {
+                val query = it.query.toMap()
+                val older = it.path == "/v5/account/transaction-log" && query["cursor"] == "2" && query.getValue("startTime").toLong() < old
+                if (older) oldStart = query["startTime"]
+                older
+            }
+            val connector = BybitConnector { _, request -> bybit.get(request) }
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            bybit.requests.clear()
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            val window = bybit.requests.filter { it.path == "/v5/account/transaction-log" && it.query.toMap()["startTime"] == oldStart }
+            assertEquals(listOf("2"), window.map { it.query.toMap()["cursor"] })
+            assertEquals(7, app.exchanges.rowKeys(account, BybitDecoder.LOG).size)
+            assertEquals("", app.exchanges.cursors(account)[BybitConnector.WINDOW_CURSOR + BybitDecoder.LOG])
+        }
+    }
 }

@@ -135,8 +135,8 @@ class BybitConnector(
 
     /**
      * Reads every page of one window and saves each page's records; returns how many there were, or null when the
-     * budget ran out. The next page is kept in a cursor while the window is read, so a refresh stopped by the budget or
-     * a failure resumes the window there.
+     * budget ran out. The next page of each unfinished window is kept in the stream's cursor, so a refresh stopped by
+     * the budget or a failure resumes that window there, even after reading a newer window first.
      */
     private fun readWindow(
         app: PortfolioApplication,
@@ -148,15 +148,11 @@ class BybitConnector(
         budget: RequestBudget<BybitRequest>,
     ): Int? {
         val pageKey = WINDOW_CURSOR + stream
-        val resumed =
-            app.exchanges.cursors(account)[pageKey]?.split('|', limit = 3)?.takeIf {
-                it.size == 3 &&
-                    it[0] == "$from" &&
-                    it[1] == "$to"
-            }
-        var cursor: String? = resumed?.get(2)
+        val window = "$from|$to"
+        val others = openWindows(app.exchanges.cursors(account)[pageKey]).filterKeys { it != window }
+        var cursor: String? = openWindows(app.exchanges.cursors(account)[pageKey])[window]
         // A resumed window had records on its earlier pages.
-        var count = if (resumed != null) 1 else 0
+        var count = if (cursor != null) 1 else 0
         do {
             if (budget.spent) return null
             val request = budget::send
@@ -182,9 +178,9 @@ class BybitConnector(
             app.exchanges.saveRows(ExchangeKind.BYBIT, account, uid, page, BybitDecoder.VERSION)
             count += page.size
             cursor = next.takeIf { page.isNotEmpty() && it != cursor }
-            cursor?.let { app.exchanges.saveCursor(account, pageKey, "$from|$to|$it") }
+            cursor?.let { app.exchanges.saveCursor(account, pageKey, windowsCursor(others + (window to it))) }
         } while (cursor != null)
-        app.exchanges.saveCursor(account, pageKey, "")
+        app.exchanges.saveCursor(account, pageKey, windowsCursor(others))
         return count
     }
 
@@ -243,8 +239,25 @@ class BybitConnector(
         const val CONVERTS_CURSOR = "converts-page"
         const val CONVERTS_DONE = "done"
 
-        /** Window and next page of a stream's window the budget stopped, as `from|to|cursor`. */
+        /** Each unfinished window of a stream with its next page, as `from|to|cursor` entries joined by newlines. */
         const val WINDOW_CURSOR = "window:"
+
+        /**
+         * Unfinished windows kept per stream: the newer window read first on each refresh and the older one being read
+         * back, with room for a newest window whose end moved on.
+         */
+        private const val OPEN_WINDOWS = 4
+
+        /** The unfinished windows in a [WINDOW_CURSOR] value, by `from|to`. */
+        internal fun openWindows(value: String?): Map<String, String> =
+            value
+                .orEmpty()
+                .lines()
+                .mapNotNull { line -> line.split('|', limit = 3).takeIf { it.size == 3 && it[2].isNotEmpty() } }
+                .associate { "${it[0]}|${it[1]}" to it[2] }
+
+        private fun windowsCursor(windows: Map<String, String>) =
+            windows.entries.toList().takeLast(OPEN_WINDOWS).joinToString("\n") { "${it.key}|${it.value}" }
 
         /** Coins whose contracts are looked up per refresh; the rest follow on later refreshes. */
         const val MAX_COIN_LOOKUPS = 50
