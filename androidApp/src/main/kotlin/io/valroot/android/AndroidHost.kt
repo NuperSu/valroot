@@ -98,6 +98,13 @@ internal class AndroidHost(
         onResult: (String) -> Unit,
     ) = backups.saveBackup(password, onResult)
 
+    override val openedBackup: kotlinx.coroutines.flow.StateFlow<String?> get() = state.openedBackup
+
+    override fun forgetOpenedBackup() = backups.forgetOpenedBackup()
+
+    /** A file the user opened with Valroot. */
+    fun receive(uri: android.net.Uri) = backups.receive(uri)
+
     override fun restoreBackup(
         password: String,
         onResult: (String) -> Unit,

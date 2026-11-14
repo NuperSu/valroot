@@ -14,6 +14,7 @@ enum class SyncOperation { HISTORY, DISCOVERY, ORDER, PRICES }
 enum class PriceRefreshPhase { IDLE, QUEUED, RUNNING }
 
 private val idlePriceRefresh = MutableStateFlow(PriceRefreshPhase.IDLE)
+private val noOpenedBackup = MutableStateFlow<String?>(null)
 
 data class SyncStatus(
     val phase: SyncPhase = SyncPhase.IDLE,
@@ -85,6 +86,16 @@ interface PlatformActions {
     val dataRevision: StateFlow<Long>
     val syncStatus: StateFlow<SyncStatus>
     val priceRefreshStatus: StateFlow<PriceRefreshPhase> get() = idlePriceRefresh
+
+    /**
+     * The name of a backup file handed to the app to open ("Open with"). The restore dialog opens for it, and restoring
+     * uses it instead of asking for a file.
+     */
+    val openedBackup: StateFlow<String?> get() = noOpenedBackup
+
+    /** Drops [openedBackup] when its restore dialog closes without restoring. */
+    fun forgetOpenedBackup() {}
+
     val hasLock: Boolean
 
     /** Saves a small generated file, such as a CSV export, to a location the user chooses. */

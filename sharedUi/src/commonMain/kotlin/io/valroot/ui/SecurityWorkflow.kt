@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -39,6 +40,7 @@ internal fun ColumnScope.SecurityWorkflow(
     close: () -> Unit,
 ) {
     val lasting = LocalLastingNotices.current
+    val openedBackup by host.openedBackup.collectAsState()
     var password by passwordState
     var confirmation by confirmationState
     var acceptedBackup by acceptedBackupState
@@ -47,8 +49,9 @@ internal fun ColumnScope.SecurityWorkflow(
     Text(
         when (type) {
             "restore" ->
-                "Choose an encrypted Valroot backup. After authentication and schema validation, " +
-                    "it replaces this device’s portfolio. Save a backup of your current data first."
+                (openedBackup?.let { "Restore $it. " } ?: "Choose an encrypted Valroot backup. ") +
+                    "After authentication and schema validation, it replaces this device’s portfolio. " +
+                    "Save a backup of your current data first."
             "lock" ->
                 "This password hides the app screen. It does not encrypt the local database. " +
                     "Use device or disk encryption for storage protection."

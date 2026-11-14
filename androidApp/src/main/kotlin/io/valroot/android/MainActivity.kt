@@ -1,5 +1,6 @@
 package io.valroot.android
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
         val opened = runCatching { AndroidHost(this) }.getOrNull()
         host = opened
+        if (savedInstanceState == null) receive(intent)
         setContent {
             if (opened == null) {
                 Text("Could not open local data. Check available storage and database compatibility.")
@@ -54,6 +56,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receive(intent)
+    }
+
+    /** A backup opened with Valroot from a file manager or another app. */
+    private fun receive(intent: Intent?) {
+        val uri = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW } ?: return
+        host?.receive(uri)
     }
 
     override fun onStart() {

@@ -228,6 +228,8 @@ internal fun Product(
     var period by presenter.field({ it.period }) { presenter.dispatch(ProductEvent.Period(it)) }
     var dialog by presenter.field({ it.dialog?.key }) { presenter.dispatch(ProductEvent.Dialog(ProductDialog.fromKey(it))) }
     var message by presenter.field<String?>({ null }) { it?.let(presenter::notify) }
+    val openedBackup by host.openedBackup.collectAsState()
+    LaunchedEffect(openedBackup) { if (openedBackup != null) dialog = ProductDialog.RESTORE.key }
     LaunchedEffect(initialWorkflow) {
         initialWorkflow?.let {
             dialog = it.productDialog().key

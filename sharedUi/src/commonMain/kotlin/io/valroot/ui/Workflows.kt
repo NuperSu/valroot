@@ -146,6 +146,8 @@ internal fun WorkflowDialog(
         }
     }
 
+    // An opened backup belongs to its restore dialog: closing it without restoring drops the file.
+    androidx.compose.runtime.DisposableEffect(type) { onDispose { if (type == "restore") host.forgetOpenedBackup() } }
     LaunchedEffect(type) {
         try {
             loadDetails(type)

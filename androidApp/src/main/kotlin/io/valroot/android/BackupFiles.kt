@@ -25,7 +25,7 @@ class BackupFiles(
     private var openResult: ((Uri?) -> Unit)? = null
 
     private val create =
-        activity.registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        activity.registerForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_TYPES.first())) { uri ->
             finish(createResult.also { createResult = null }, uri)
         }
     private val open =
@@ -64,18 +64,32 @@ class BackupFiles(
         }
     }
 
-    /** Asks for an existing document; [result] receives null when the user cancels. Main thread only. */
-    fun chooseSource(result: (Uri?) -> Unit) {
+    /**
+     * Asks for an existing document of [types]; [result] receives null when the user cancels. Main thread only. The
+     * picker filters by type only, so callers check the name where it matters.
+     */
+    fun chooseSource(
+        types: Array<String> = arrayOf("*/*"),
+        result: (Uri?) -> Unit,
+    ) {
         check(Looper.myLooper() == Looper.getMainLooper())
         check(!closed && !busy)
         busy = true
         openResult = result
         try {
-            open.launch(arrayOf("application/octet-stream", "*/*"))
+            open.launch(types)
         } catch (_: Exception) {
             finish(openResult.also { openResult = null }, null)
         }
     }
+
+    /** The name the document provider shows for [uri], or null when it has none. */
+    fun displayName(uri: Uri): String? =
+        runCatching {
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+        }.getOrNull()
 
     /** Small generated files such as CSV exports. */
     fun save(
@@ -122,3 +136,12 @@ class BackupFiles(
         if (!closed) callback?.invoke(uri)
     }
 }
+
+/**
+ * Types a Valroot backup can have. Android knows no type for `.valroot`, so most providers report it as binary data;
+ * some keep the type Valroot saved it with.
+ */
+internal val BACKUP_TYPES = arrayOf("application/octet-stream", "application/x-valroot")
+
+/** Whether [name] is a Valroot backup's name; an unknown name is accepted and the backup's own header decides. */
+internal fun isBackupName(name: String?) = name == null || name.endsWith(".valroot", ignoreCase = true)

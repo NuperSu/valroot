@@ -30,6 +30,10 @@ internal class AndroidState(
     val app = mutableStateOf<PortfolioApplication?>(null)
     val openFailed = mutableStateOf(false)
 
+    /** A backup handed to the app ("Open with"): its name for the restore dialog, and the document. Main thread only. */
+    val openedBackup = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    var openedBackupUri: android.net.Uri? = null
+
     /** Opened on [executor]; a restore replaces it. */
     lateinit var db: AndroidSqliteDatabase
 

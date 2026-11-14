@@ -81,13 +81,47 @@ internal class AndroidBackups(
         }
     }
 
+    /**
+     * Restores the opened backup, or asks for one. Called on the main thread by the restore dialog, which closes next, so
+     * the opened backup is taken now.
+     */
     fun restoreBackup(
         password: String,
         onResult: (String) -> Unit,
     ) {
-        state.main.post {
-            state.files.chooseSource { uri -> if (uri == null) onResult("No backup selected") else restoreBackup(uri, password, onResult) }
+        val opened = state.openedBackupUri
+        forgetOpenedBackup()
+        if (opened != null) {
+            restoreBackup(opened, password, onResult)
+            return
         }
+        state.main.post {
+            state.files.chooseSource(BACKUP_TYPES) { uri ->
+                when {
+                    uri == null -> onResult("No backup selected")
+                    !isBackupName(state.files.displayName(uri)) -> onResult("Choose a Valroot backup (a .valroot file)")
+                    else -> restoreBackup(uri, password, onResult)
+                }
+            }
+        }
+    }
+
+    /** A file handed to the app to open: a backup opens the restore dialog; anything else is declined. Main thread. */
+    fun receive(uri: android.net.Uri) {
+        val name = state.files.displayName(uri)
+        if (!isBackupName(name)) {
+            android.widget.Toast
+                .makeText(state.activity, "Valroot opens only its own backups (.valroot files)", android.widget.Toast.LENGTH_LONG)
+                .show()
+            return
+        }
+        state.openedBackupUri = uri
+        state.openedBackup.value = name ?: "the opened backup"
+    }
+
+    fun forgetOpenedBackup() {
+        state.openedBackupUri = null
+        state.openedBackup.value = null
     }
 
     private fun restoreBackup(
