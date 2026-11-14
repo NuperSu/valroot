@@ -356,9 +356,11 @@ internal fun ColumnScope.ModelCoinBranch(
             orderRows = orderBookRows(orderBookData),
             enabledRanges = if (useListing && !candleMode) setOf("1W") else setOf("1H", "1D", "1W", "1M", "3M", "1Y"),
             canAddTransaction = !asset.asset.value.startsWith("coingecko:"),
-            chart = if (candleMode) candleChart ?: coinChart else coinChart,
+            // Candles never fall back to the line while they load, only when none can be loaded.
+            chart = if (candleMode) candleChart ?: coinChart.takeUnless { candleState.loading } else coinChart,
             chartStyle = chartStyle,
             chartNote = if (candleMode) candleNote(candleState) else null,
+            chartLoading = candleMode && candleState.loading,
             transactionEmpty = if (timelineLoading) "Loading saved transactions…" else "No matching transactions",
             alertsUnavailable = alertBlock,
             alertNotice = alertNotice,

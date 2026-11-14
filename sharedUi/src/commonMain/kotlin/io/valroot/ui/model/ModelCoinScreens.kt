@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -132,6 +133,8 @@ data class ModelCoinDetailState(
     val chartStyle: ChartStyle = ChartStyle.LINE,
     /** Under the chart: where its candles come from, or why it shows a line instead. */
     val chartNote: String? = null,
+    /** Candles for the chosen range are loading: the chart dims the previous ones, or stays empty until the first arrive. */
+    val chartLoading: Boolean = false,
     /** The held coin on each chain, shown under the portfolio name when the coin is held on more than one chain. */
     val chainRows: List<ModelChainRow> = emptyList(),
 )
@@ -317,9 +320,15 @@ fun ColumnScope.ModelCoinDetail(
                 ModelInteractiveChart(
                     state.chart,
                     state.chartStyle,
-                    Modifier.fillMaxWidth().height(220.dp).testTag("coin-chart"),
+                    Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .alpha(if (state.chartLoading) .4f else 1f)
+                        .testTag("coin-chart"),
                     smooth = state.smoothChart,
                 )
+            } else if (state.chartLoading) {
+                Box(Modifier.fillMaxWidth().height(220.dp).testTag("coin-chart-loading"))
             } else {
                 DetailChart(state.chartPoints, state.chartTopLabel, state.chartBottomLabel, state.smoothChart)
             }

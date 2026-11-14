@@ -14,14 +14,29 @@ import io.valroot.ui.model.ChartData
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-/** Market candles of one coin and range: [series] once loaded, or [message] when none could be loaded. */
+/**
+ * Market candles of one coin: [series] is the latest loaded, which while [loading] may still be the previous range's, so
+ * the chart keeps candles instead of falling back to its line. [message] says why none could be loaded.
+ */
 internal class CoinCandlesState(
     val series: CandleSeries?,
     val message: String?,
     val loading: Boolean,
 )
 
-/** Loads candles of [coinId] for [range] while [active]; a new coin, range or currency loads again. */
+/** Candles loaded less than this long ago are shown again without a request. */
+internal const val CANDLES_REUSE_MILLIS = 60_000L
+
+private class LoadedCandles(
+    val series: CandleSeries,
+    val atMillis: Long,
+)
+
+/**
+ * Loads candles of [coinId] for [range] while [active]. Each range's candles are kept while the coin page is open: a
+ * range shown again appears at once and is loaded again in the background when older than [CANDLES_REUSE_MILLIS].
+ * While a range loads, the previous candles stay on screen.
+ */
 @Composable
 internal fun rememberCoinCandles(
     host: PlatformActions,
@@ -29,27 +44,47 @@ internal fun rememberCoinCandles(
     range: CandleRange?,
     currency: AssetId,
     active: Boolean,
+    now: () -> Long = {
+        kotlin.time.Clock.System
+            .now()
+            .toEpochMilliseconds()
+    },
 ): CoinCandlesState {
-    var series by remember(coinId, range, currency) { mutableStateOf<CandleSeries?>(null) }
+    val loaded = remember(coinId, currency) { androidx.compose.runtime.mutableStateMapOf<CandleRange, LoadedCandles>() }
+    var shown by remember(coinId, currency) { mutableStateOf<CandleSeries?>(null) }
     var message by remember(coinId, range, currency) { mutableStateOf<String?>(null) }
-    var loading by remember(coinId, range, currency) { mutableStateOf(false) }
+    var loading by remember(coinId, currency) { mutableStateOf(false) }
     LaunchedEffect(host, coinId, range, currency, active) {
-        if (coinId == null || range == null || !active || series != null) return@LaunchedEffect
+        if (coinId == null || range == null || !active) return@LaunchedEffect
+        val saved = loaded[range]
+        if (saved != null) {
+            shown = saved.series
+            if (now() - saved.atMillis < CANDLES_REUSE_MILLIS) return@LaunchedEffect
+        }
         loading = true
         val result =
-            suspendCancellableCoroutine { continuation ->
-                host.fetchCandles(coinId, range) { result -> if (continuation.isActive) continuation.resume(result) }
+            try {
+                suspendCancellableCoroutine { continuation ->
+                    host.fetchCandles(coinId, range) { result -> if (continuation.isActive) continuation.resume(result) }
+                }
+            } finally {
+                loading = false
             }
-        loading = false
         when (result) {
             is CandleResult.Loaded -> {
-                series = result.series
+                loaded[range] = LoadedCandles(result.series, now())
+                shown = result.series
                 message = null
             }
-            is CandleResult.Unavailable -> message = result.message
+            is CandleResult.Unavailable ->
+                if (saved == null) {
+                    // Another range's candles would mislabel this one: the chart shows its line and why.
+                    shown = null
+                    message = result.message
+                }
         }
     }
-    return CoinCandlesState(series, message, loading)
+    return CoinCandlesState(shown, message, loading)
 }
 
 /** Chart data drawing [series] as candles, with each candle's close for the line. */
@@ -80,9 +115,11 @@ internal fun candleChartData(
 
 /** The line under a candle chart: where the candles come from and how long each is, or why there are none. */
 internal fun candleNote(state: CoinCandlesState): String? =
-    state.series?.let { "${it.source} · ${candleLength(it.intervalMillis)} candles" }
-        ?: state.message
-        ?: if (state.loading) "Loading candles…" else null
+    if (state.loading) {
+        "Loading candles…"
+    } else {
+        state.series?.let { "${it.source} · ${candleLength(it.intervalMillis)} candles" } ?: state.message
+    }
 
 private fun candleLength(millis: Long): String {
     val minutes = millis / 60_000
