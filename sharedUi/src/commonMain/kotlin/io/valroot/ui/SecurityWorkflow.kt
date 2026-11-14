@@ -20,6 +20,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.valroot.core.application.PortfolioApplication
 
+/**
+ * Messages that outlive the product screens: a restored backup replaces the application and so rebuilds the screens,
+ * and its result is shown by the new ones.
+ */
+internal val LocalLastingNotices =
+    androidx.compose.runtime.staticCompositionLocalOf<kotlinx.coroutines.channels.Channel<String>?> { null }
+
 @Composable
 internal fun ColumnScope.SecurityWorkflow(
     type: String,
@@ -31,6 +38,7 @@ internal fun ColumnScope.SecurityWorkflow(
     notify: (String) -> Unit,
     close: () -> Unit,
 ) {
+    val lasting = LocalLastingNotices.current
     var password by passwordState
     var confirmation by confirmationState
     var acceptedBackup by acceptedBackupState
@@ -82,7 +90,7 @@ internal fun ColumnScope.SecurityWorkflow(
                     error = "Confirm that this backup will replace the local portfolio."
                     return@Button
                 }
-                host.restoreBackup(password) { notify(it) }
+                host.restoreBackup(password) { message -> lasting?.trySend(message) ?: notify(message) }
                 close()
             }
             else -> {

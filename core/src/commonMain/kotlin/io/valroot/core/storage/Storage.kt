@@ -21,6 +21,12 @@ interface SqliteDatabase : AutoCloseable {
 
 expect fun sha256(value: String): String
 
+/**
+ * A query on a connection that was closed, such as the one a backup restore replaced. It is a cancellation: a screen
+ * still holding the old connection stops its load quietly and shows the replacement instead of failing.
+ */
+class DatabaseClosed : kotlin.coroutines.cancellation.CancellationException("The database was closed")
+
 class Store(
     private val db: SqliteDatabase,
 ) : AutoCloseable {

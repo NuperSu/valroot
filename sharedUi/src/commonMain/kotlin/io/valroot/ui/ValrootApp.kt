@@ -47,6 +47,7 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.PortfolioId
 import io.valroot.core.ownership.Account
 import io.valroot.core.sources.SourceWorkflow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -63,8 +64,14 @@ fun ValrootApp(
     }
     ValrootTheme(appearance) {
         Surface(Modifier.fillMaxSize(), color = Paper) {
-            // The product stays composed under the lock, so in-progress forms and selections survive a lock cycle.
-            OnboardingProduct(application, platform, appearance) { selected -> appearance = selected }
+            // The product stays composed under the lock, so in-progress forms and selections survive a lock cycle. A
+            // replaced application (a restored backup) starts a new tree, so no screen keeps loading from the old one.
+            val notices = remember { kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED) }
+            androidx.compose.runtime.CompositionLocalProvider(LocalLastingNotices provides notices) {
+                androidx.compose.runtime.key(application) {
+                    OnboardingProduct(application, platform, appearance) { selected -> appearance = selected }
+                }
+            }
             if (locked) {
                 Surface(Modifier.fillMaxSize(), color = Paper) { LockScreen(platform) }
             }
@@ -395,7 +402,9 @@ internal fun Product(
             app.settings.setAssetList(preference)
             assetPreference = preference
         }
+    val lastingNotices = LocalLastingNotices.current
     LaunchedEffect(presenter, snackbar) {
+        launch { lastingNotices?.receiveAsFlow()?.collect { snackbar.showSnackbar(it) } }
         presenter.messages.collect { snackbar.showSnackbar(it) }
     }
     if (marketDisclosure) {

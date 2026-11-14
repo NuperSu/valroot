@@ -10,6 +10,17 @@ import io.valroot.core.storage.sha256
 /** Repository, classification and raw-revision checks on disposable SQLite fixtures. */
 internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
     listOf<ReliabilityCheck>(
+        // A restore closes the live connection; a screen still using it must stop as a cancellation, not crash.
+        "closedConnectionIsACancellation" to {
+            withTemporaryDatabase(context.cacheDir) { file ->
+                val db = AndroidSqliteDatabase(file.path)
+                db.execute("CREATE TABLE t (v TEXT)")
+                db.close()
+                val refused = runCatching { db.query("SELECT v FROM t") }.exceptionOrNull()
+                check(refused is io.valroot.core.storage.DatabaseClosed && refused is java.util.concurrent.CancellationException)
+                check(runCatching { db.execute("INSERT INTO t VALUES ('x')") }.exceptionOrNull() is io.valroot.core.storage.DatabaseClosed)
+            }
+        },
         "boundedDuplicateProjection" to {
             withTemporaryDatabase(context.cacheDir) { file -> AndroidSqliteDatabase(file.path).use(::verifyBoundedDuplicateNative) }
         },

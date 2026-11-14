@@ -10,12 +10,15 @@ class AndroidSqliteDatabase(
     private val database = SQLiteDatabase.openOrCreateDatabase(path, null)
     private val lock = Any()
     private var oversizedQueryId = 0L
+    private var closed = false
+
+    private fun open(): SQLiteDatabase = if (closed) throw DatabaseClosed() else database
 
     override fun execute(
         sql: String,
         arguments: List<String?>,
     ) = synchronized(lock) {
-        if (arguments.isEmpty()) database.execSQL(sql) else database.execSQL(sql, arguments.toTypedArray())
+        if (arguments.isEmpty()) open().execSQL(sql) else open().execSQL(sql, arguments.toTypedArray())
     }
 
     override fun query(
@@ -26,7 +29,7 @@ class AndroidSqliteDatabase(
             require(arguments.none { it == null })
             var columnCount = 0
             try {
-                database.rawQuery(sql, arguments.map { it!! }.toTypedArray()).use { cursor ->
+                open().rawQuery(sql, arguments.map { it!! }.toTypedArray()).use { cursor ->
                     columnCount = cursor.columnCount
                     buildList {
                         while (cursor.moveToNext()) add((0 until cursor.columnCount).map { cursor.getString(it) })
@@ -106,7 +109,7 @@ class AndroidSqliteDatabase(
 
     override fun <T> transaction(block: () -> T): T =
         synchronized(lock) {
-            check(!database.inTransaction()) { "Nested transactions are unsupported" }
+            check(!open().inTransaction()) { "Nested transactions are unsupported" }
             database.beginTransaction()
             try {
                 val result = block()
@@ -117,5 +120,9 @@ class AndroidSqliteDatabase(
             }
         }
 
-    override fun close() = synchronized(lock) { database.close() }
+    override fun close() =
+        synchronized(lock) {
+            closed = true
+            database.close()
+        }
 }

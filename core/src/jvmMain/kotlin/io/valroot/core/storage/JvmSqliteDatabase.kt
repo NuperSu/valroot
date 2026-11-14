@@ -19,7 +19,7 @@ class JvmSqliteDatabase(
         sql: String,
         arguments: List<String?>,
     ) = synchronized(lock) {
-        connection.prepareStatement(sql).use { statement ->
+        open().prepareStatement(sql).use { statement ->
             arguments.forEachIndexed { i, value -> statement.setString(i + 1, value) }
             statement.execute()
         }
@@ -31,7 +31,7 @@ class JvmSqliteDatabase(
         arguments: List<String?>,
     ): List<List<String?>> =
         synchronized(lock) {
-            connection.prepareStatement(sql).use { statement ->
+            open().prepareStatement(sql).use { statement ->
                 arguments.forEachIndexed { i, value -> statement.setString(i + 1, value) }
                 statement.executeQuery().use { result ->
                     buildList {
@@ -43,7 +43,7 @@ class JvmSqliteDatabase(
 
     override fun <T> transaction(block: () -> T): T =
         synchronized(lock) {
-            check(connection.autoCommit) { "Nested transactions are unsupported" }
+            check(open().autoCommit) { "Nested transactions are unsupported" }
             connection.autoCommit = false
             try {
                 val result = block()
@@ -60,12 +60,20 @@ class JvmSqliteDatabase(
     /** Create a transactionally consistent snapshot in a new file. */
     fun snapshot(destination: String) =
         synchronized(lock) {
-            check(connection.autoCommit) { "Snapshot requires no active transaction" }
-            connection.prepareStatement("VACUUM INTO ?").use { statement ->
+            check(open().autoCommit) { "Snapshot requires no active transaction" }
+            open().prepareStatement("VACUUM INTO ?").use { statement ->
                 statement.setString(1, destination)
                 statement.execute()
             }
         }
 
-    override fun close() = synchronized(lock) { connection.close() }
+    override fun close() =
+        synchronized(lock) {
+            closed = true
+            connection.close()
+        }
+
+    private var closed = false
+
+    private fun open(): java.sql.Connection = if (closed) throw DatabaseClosed() else connection
 }
