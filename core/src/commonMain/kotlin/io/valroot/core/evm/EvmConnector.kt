@@ -101,7 +101,7 @@ class EvmConnector(
 
     /**
      * Chains with a balance or any transfer, checked five networks per request; false when Alchemy could not check some
-     * network, whose chain may then be missing.
+     * network, whose chain may then be missing. A group that fails leaves the chains other groups found.
      */
     fun discover(address: String): Pair<Set<Long>, Boolean> {
         var complete = true
@@ -110,20 +110,27 @@ class EvmConnector(
                 .map { it.chainId }
                 .chunked(Alchemy.MAX_NETWORKS)
                 .flatMap { group ->
-                    val (balances, balanceErrors) =
-                        Alchemy.parseTokenBalances(
-                            post(Alchemy.tokensUrl(), Alchemy.tokensBody(address, group)),
-                        )
-                    val transfers =
-                        Alchemy.parseTransfers(
-                            post(Alchemy.transfersUrl(), Alchemy.transfersBody(address, group, maxCount = 1)),
-                        )
-                    if (balanceErrors.isNotEmpty() || transfers.errors.isNotEmpty()) complete = false
-                    val slugs =
-                        balances.filter { it.second.value.sign > 0 }.map { it.first } +
-                            transfers.transactions.map { it.first } +
-                            transfers.tokens.map { it.first }
-                    group.filter { chain -> Alchemy.network(chain)!!.slug in slugs }
+                    try {
+                        val (balances, balanceErrors) =
+                            Alchemy.parseTokenBalances(
+                                post(Alchemy.tokensUrl(), Alchemy.tokensBody(address, group)),
+                            )
+                        val transfers =
+                            Alchemy.parseTransfers(
+                                post(Alchemy.transfersUrl(), Alchemy.transfersBody(address, group, maxCount = 1)),
+                            )
+                        if (balanceErrors.isNotEmpty() || transfers.errors.isNotEmpty()) complete = false
+                        val slugs =
+                            balances.filter { it.second.value.sign > 0 }.map { it.first } +
+                                transfers.transactions.map { it.first } +
+                                transfers.tokens.map { it.first }
+                        group.filter { chain -> Alchemy.network(chain)!!.slug in slugs }
+                    } catch (cancelled: io.valroot.core.application.RefreshCancelled) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        complete = false
+                        emptyList()
+                    }
                 }.toSet()
         return chains to complete
     }

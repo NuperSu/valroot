@@ -123,6 +123,9 @@ class EvmConnectorTest {
         /** When set, network discovery (several networks per request) gets this answer: an error, or partial errors. */
         var tokensAnswer: String? = null
 
+        /** When set, network discovery fails for every group of networks without this address's chain. */
+        var failOtherGroups = false
+
         private fun tokensResponse(body: String): String {
             val networks =
                 Json
@@ -133,6 +136,7 @@ class EvmConnectorTest {
                     .jsonArray
                     .map { it.jsonPrimitive.content }
             if (networks.size > 1) tokensAnswer?.let { return it }
+            if (networks.size > 1 && failOtherGroups && slug !in networks) return """{"error":{"message":"busy"}}"""
             if (slug !in networks) return """{"data":{"tokens":[]}}"""
             val native = "0x" + BigInteger(nativeBalance).toString(16)
             return """{"data":{"tokens":[{"address":"$me","network":"$slug","tokenAddress":null,"tokenBalance":"$native"},""" +
@@ -484,6 +488,17 @@ class EvmConnectorTest {
             provider.tokensAnswer = null
             connector.refresh(app, SourceRefreshOptions())
             kotlin.test.assertFalse(app.evm.discoveryDue(me))
+        }
+    }
+
+    @Test fun aFailingNetworkGroupKeepsTheChainsOtherGroupsFound() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy().apply { failOtherGroups = true }
+            val outcome = EvmConnector(provider.post).refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(chain), app.evm.chainStates(me).map { it.chainId })
+            assertTrue(outcome.notes.any { "Some networks could not be checked" in it }, outcome.notes.toString())
+            assertTrue(app.evm.discoveryDue(me))
         }
     }
 
