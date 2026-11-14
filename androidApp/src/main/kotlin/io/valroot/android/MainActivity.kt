@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.core.view.WindowInsetsControllerCompat
 import io.valroot.ui.ValrootApp
 import kotlinx.coroutines.flow.update
@@ -28,7 +29,12 @@ class MainActivity : ComponentActivity() {
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
         val opened = runCatching { AndroidHost(this) }.getOrNull()
         host = opened
-        if (savedInstanceState == null) receive(intent)
+        if (savedInstanceState == null) {
+            receive(intent)
+        } else {
+            // A recreated activity has a new host; the backup opened before it is handed over again.
+            savedInstanceState.getString(PENDING_BACKUP)?.let { host?.receive(it.toUri()) }
+        }
         setContent {
             if (opened == null) {
                 Text("Could not open local data. Check available storage and database compatibility.")
@@ -64,6 +70,11 @@ class MainActivity : ComponentActivity() {
         receive(intent)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        host?.pendingBackup?.let { outState.putString(PENDING_BACKUP, it.toString()) }
+    }
+
     /** A backup opened with Valroot from a file manager or another app. */
     private fun receive(intent: Intent?) {
         val uri = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW } ?: return
@@ -86,5 +97,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         host?.close()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val PENDING_BACKUP = "pending-backup"
     }
 }

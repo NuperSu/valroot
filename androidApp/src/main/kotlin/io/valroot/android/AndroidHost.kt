@@ -107,6 +107,9 @@ internal class AndroidHost(
     /** A file the user opened with Valroot. */
     fun receive(uri: android.net.Uri) = backups.receive(uri)
 
+    /** The opened backup still waiting for the restore dialog, kept across activity recreation. */
+    val pendingBackup: android.net.Uri? get() = state.openedBackupUri
+
     override fun restoreBackup(
         password: String,
         onResult: (String) -> Unit,
