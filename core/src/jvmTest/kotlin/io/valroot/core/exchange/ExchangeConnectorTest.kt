@@ -96,7 +96,8 @@ class ExchangeConnectorTest {
                     .getValue("deposits")
                     .complete,
             )
-            assertEquals(StreamEndReason.REFUSED, app.exchanges.streamEnds(account).getValue("deposits").reason)
+            val end = app.exchanges.streamEnds(account).getValue("deposits")
+            assertEquals(StreamEndReason.REFUSED, end.reason)
             assertEquals(listOf(99 * day, 43 * day, 36 * day, 93 * day, 29 * day), exchange.asked)
         }
 
