@@ -69,6 +69,9 @@ class BitcoinChainAcceptanceTest {
         /** More unconfirmed transactions than Esplora lists: the summary counts all of them, the list stops at 50. */
         var busyMempool = 0
 
+        /** First listed unconfirmed transaction; earlier ones are still counted but no longer listed. */
+        var busyOffset = 0
+
         private fun busy(index: Int): String =
             """
             {"txid":"${index.toString(16).padStart(64, 'd')}","vin":[{"txid":"${"e".repeat(64)}","vout":$index,
@@ -116,7 +119,7 @@ class BitcoinChainAcceptanceTest {
                             0
                         }}}}"""
                     path == "/address/$address/txs/mempool" && busyMempool > 0 ->
-                        "[${(0 until minOf(busyMempool, 50)).joinToString(",") { busy(it) }}]"
+                        "[${(busyOffset until minOf(busyMempool, busyOffset + 50)).joinToString(",") { busy(it) }}]"
                     path == "/address/$address/txs/mempool" -> if (pendingTransaction) "[${pending()}]" else "[]"
                     path == "/address/$address/txs/chain" -> "[${chainPayloads().joinToString(",")}]"
                     path == "/address/$address/txs/chain/$txid" -> "[]"
@@ -212,6 +215,20 @@ class BitcoinChainAcceptanceTest {
             assertEquals(50, snapshot.pendingCount)
             assertEquals(1, snapshot.sourceStatus.pendingCapped)
             assertEquals(null, snapshot.sourceStatus.lastError)
+        }
+    }
+
+    @Test
+    fun pendingTransactionsNoLongerListedInABusyMempoolAreNotReversed() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = ChainProvider()
+            provider.busyMempool = 60
+            assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+            // The provider now lists transactions 5..54; 0..4 are still unconfirmed but outside the 50-entry list.
+            provider.busyOffset = 5
+            assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+            assertEquals(55, app.snapshot().pendingCount)
         }
     }
 

@@ -414,6 +414,7 @@ class BitcoinScanStage(
         requireBlockPositions: Boolean = true,
         graph: BitcoinUtxoGraph? = null,
         graphState: ((String) -> BitcoinTransactionState?)? = null,
+        pendingCappedAccounts: Set<AccountId> = emptySet(),
     ) {
         require(graph == null || graphState == null) { "Choose one graph state source" }
         require(ownedAddresses.isNotEmpty())
@@ -471,7 +472,11 @@ class BitcoinScanStage(
                         ).singleOrNull() ?: break
                 missingAfter = row.single()!!
                 val latest = activities.history(ActivityId(missingAfter)).last()
-                if (latest.movements.any { it.accountId in reconciledAccounts }) {
+                // Esplora lists only the newest 50 unconfirmed transactions per address. A pending transaction of an
+                // account whose list was cut off may still be in the mempool, so its absence is not evidence.
+                val hiddenPending =
+                    latest.status == ActivityStatus.PENDING && latest.movements.any { it.accountId in pendingCappedAccounts }
+                if (!hiddenPending && latest.movements.any { it.accountId in reconciledAccounts }) {
                     activities.saveInTransaction(latest.copy(status = ActivityStatus.REVERSED))
                 }
             }

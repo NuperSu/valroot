@@ -320,15 +320,17 @@ class BitcoinService internal constructor(
             ) { throw BitcoinProviderException(BitcoinProviderFailure.HISTORY_CHANGED) }
             // Esplora lists at most 50 unconfirmed transactions per address; seeing exactly that many of a larger pool is
             // complete for what the provider can show, and the page was already recorded as partial coverage.
+            val summaries = scanned.associate { it.address to summary(it.address) }
             require(
                 scanned.all { scan ->
-                    val (chain, pending) = summary(scan.address)
+                    val (chain, pending) = summaries.getValue(scan.address)
                     val (seenChain, seenPending) = bitcoinStage.seenCounts(scan.address)
                     chain == seenChain && (pending == seenPending || pending > MEMPOOL_PAGE && seenPending == MEMPOOL_PAGE)
                 },
             ) { throw BitcoinProviderException(BitcoinProviderFailure.HISTORY_CHANGED) }
             val acceptedCounts = scanned.associate { it.address to bitcoinStage.seenCounts(it.address) }
-            val pendingCapped = scanned.count { scan -> summary(scan.address).second > MEMPOOL_PAGE }
+            val cappedAddresses = scanned.map { it.address }.filter { summaries.getValue(it).second > MEMPOOL_PAGE }
+            val pendingCapped = cappedAddresses.size
             require(transport.get("/block-height/${session.anchorHeight}").trim() == session.anchorHash) {
                 throw BitcoinProviderException(BitcoinProviderFailure.REORGANIZED)
             }
@@ -411,6 +413,7 @@ class BitcoinService internal constructor(
                     reconciledAccounts,
                     requireBlockPositions = verifyBlockPositions,
                     graphState = stagedGraph::state,
+                    pendingCappedAccounts = cappedAddresses.mapNotNull { ownedAddresses[it] }.toSet(),
                 )
                 putSetting("utxo_comparison_available", (mismatchCount != null).toString())
                 putSetting("pending_capped", pendingCapped.toString())
