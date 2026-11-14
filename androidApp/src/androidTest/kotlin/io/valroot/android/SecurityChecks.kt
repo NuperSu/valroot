@@ -41,6 +41,33 @@ internal fun securityChecks(context: Context): List<ReliabilityCheck> =
                 }
             }
         },
+        // Uses the app's own Keystore key (the one the app seals with), so the key is kept afterwards.
+        "apiSecretsSealedWithKeystore" to {
+            withTemporaryDatabase(context.cacheDir) { file ->
+                io.valroot.core.storage.AndroidSqliteDatabase(file.path).use { db ->
+                    val app = io.valroot.core.application.PortfolioApplication(db, System::currentTimeMillis)
+                    val account = io.valroot.core.model.AccountId("reliability")
+                    val kind = io.valroot.core.exchange.ExchangeKind.BYBIT
+                    app.exchanges.setKey(kind, account, "KEYKEYKEYKEY", "SECRETSECRETSECRET")
+                    val stored = io.valroot.core.market.MarketFeedRepository(db)
+                    val sealed = checkNotNull(stored.deviceSetting("bybit_secret:reliability"))
+                    check(sealed.startsWith(io.valroot.core.storage.SEALED_SECRET) && "SECRETSECRET" !in sealed)
+                    check(app.exchanges.key(kind, account) == "KEYKEYKEYKEY" to "SECRETSECRETSECRET")
+                    // A value saved before sealing is sealed when read.
+                    stored.putDeviceSetting("alchemy_api_key", "alchemy-plain-0123456789")
+                    check(app.evm.alchemyApiKey() == "alchemy-plain-0123456789")
+                    check(stored.deviceSetting("alchemy_api_key")!!.startsWith(io.valroot.core.storage.SEALED_SECRET))
+                    // A damaged value reads as missing.
+                    val bytes = java.util.Base64.getDecoder().decode(sealed.removePrefix(io.valroot.core.storage.SEALED_SECRET))
+                    bytes[bytes.lastIndex] = (bytes.last().toInt() xor 1).toByte()
+                    stored.putDeviceSetting(
+                        "bybit_secret:reliability",
+                        io.valroot.core.storage.SEALED_SECRET + java.util.Base64.getEncoder().encodeToString(bytes),
+                    )
+                    check(!app.exchanges.hasKey(kind, account))
+                }
+            }
+        },
         "bitcoinPublicWalletDerivation" to {
             // BIP 84 account zpub serialized with mainnet xpub version bytes.
             val xpub =
