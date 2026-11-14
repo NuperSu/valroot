@@ -136,6 +136,11 @@ internal class AndroidBackups(
                         state.db = AndroidSqliteDatabase(state.file.toString())
                         reopened = true
                     }
+                    // The activity closed during the restore: its database is released here, and the next launch opens the file.
+                    if (state.closed) {
+                        state.db.close()
+                        return@execute
+                    }
                     val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
                     val updated = java.util.concurrent.CountDownLatch(1)
                     state.main.post {
@@ -151,7 +156,9 @@ internal class AndroidBackups(
                 // Validation messages (wrong password, damaged or unsupported backup) explain a rejected file.
                 if (!swapped && failure is IllegalArgumentException) result = failure.message ?: result
                 if (swapped) result = "Backup restored; reopen the app to load it"
-                if (reopened && !swapped) {
+                if (reopened && !swapped && state.closed) {
+                    runCatching { state.db.close() }
+                } else if (reopened && !swapped) {
                     runCatching {
                         val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
                         val updated = java.util.concurrent.CountDownLatch(1)

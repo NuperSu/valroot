@@ -208,9 +208,12 @@ internal class AndroidHost(
     /** The app came back: lock if it was away at least as long as the delay. */
     fun returned() = privacyLock.returned()
 
-    /** Marks the host closed and releases the database on the background executor once queued work has run. */
+    /**
+     * Marks the host closed and releases the database on the background executor once queued work has run. The close
+     * waits for a restore swapping the database file, which closes its replacement itself when the host is closed.
+     */
     fun close() {
         state.closed = true
-        state.executor.execute { if (state.dbOpen) state.db.close() }
+        state.executor.execute { synchronized(AutomaticPriceGate.lock) { if (state.dbOpen) runCatching { state.db.close() } } }
     }
 }
