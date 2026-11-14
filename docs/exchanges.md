@@ -34,7 +34,7 @@ Requests are spaced 150 ms apart across the process, and deposit records 650 ms 
 
 1. The key check, then the three balance requests.
 2. Each history stream forward from where it stopped, with one day of overlap for records Bybit adds late; then further back until the stream's start: two years for the Unified log (Bybit's retention), five years for the Funding history (it can be quiet for months while deposits and withdrawals happen), and for deposits and withdrawals until a year passes without a record, at most five years. A window Bybit refuses as too old ends that stream's history; a server error (no `retCode`, 10000, 10016) fails the refresh instead, and the stream is read again next time.
-3. Convert history, newest first, until a page holds only known converts.
+3. Convert history, newest first, until a page holds only known converts; until it has been read to its last page once, reading resumes from the page an interrupted refresh reached. A history window that stops between pages also resumes from its next page.
 4. Token contracts of symbols not matched to a coin yet.
 
 At most 400 requests are made per account and refresh; a first refresh needs about 500 and so takes two refreshes. Whatever remains continues with the next refresh, and the account says older history is still being read. Each record is saved as it arrives, as Bybit's JSON row (table `exchange_rows`) and as a raw provider record, so an interrupted refresh resumes and a record Bybit changes (a withdrawal that completes) replaces the saved one. Read progress per stream is in `exchange_sync`.

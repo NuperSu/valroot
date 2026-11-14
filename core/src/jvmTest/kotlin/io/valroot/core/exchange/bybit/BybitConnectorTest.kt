@@ -40,6 +40,10 @@ class BybitConnectorTest {
         var readOnly = 1
         var keyUid = uid
         var serverErrorBefore: Long? = null
+
+        /** Fails the first request it matches, as a lost connection would. */
+        var failOnce: ((BybitRequest) -> Boolean)? = null
+        val converts = mutableListOf<String>()
         val requests = mutableListOf<BybitRequest>()
         val unified = mutableMapOf("BTC" to "0.6", "USDT" to "900")
         val fund = mutableMapOf("USDT" to "50", "ZZZ" to "0")
@@ -123,6 +127,10 @@ class BybitConnectorTest {
 
         fun get(request: BybitRequest): String {
             requests += request
+            if (failOnce?.invoke(request) == true) {
+                failOnce = null
+                throw IllegalStateException("Could not reach Bybit.")
+            }
             val q = request.query.toMap()
             return when (request.path) {
                 "/v5/user/query-api" ->
@@ -185,7 +193,10 @@ class BybitConnectorTest {
                         q.getValue("endTime").toLong(),
                         "rows",
                     )
-                "/v5/asset/exchange/query-convert-history" -> ok("""{"list":[]}""")
+                "/v5/asset/exchange/query-convert-history" -> {
+                    val index = q.getValue("index").toInt()
+                    ok("""{"list":[${converts.drop((index - 1) * 100).take(100).joinToString(",")}]}""")
+                }
                 "/v5/asset/coin/query-info" ->
                     ok(
                         """{"rows":[{"coin":"${q.getValue("coin")}","name":"${q.getValue("coin")}","chains":[]}]}""",
@@ -446,6 +457,47 @@ class BybitConnectorTest {
             bybit.serverErrorBefore = null
             assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
             assertEquals(true, app.exchanges.streams(account)[BybitDecoder.FUNDING]?.complete)
+        }
+    }
+
+    @Test
+    fun anInterruptedConvertHistoryResumesWhereItStopped() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val bybit = FakeBybit()
+            repeat(250) { i ->
+                bybit.converts +=
+                    """{"exchangeTxId":"c$i","fromCoin":"USDT","fromAmount":"1","toCoin":"USDT","toAmount":"1","exchangeStatus":"success",
+                    |"createdAt":"${now - 1_000_000L - i}"}
+                    """.trimMargin()
+            }
+            bybit.failOnce = { it.path.endsWith("query-convert-history") && it.query.toMap()["index"] == "3" }
+            val connector = BybitConnector { _, request -> bybit.get(request) }
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertEquals(200, app.exchanges.rowKeys(account, BybitDecoder.CONVERTS).size)
+            connector.refresh(app, SourceRefreshOptions())
+            assertEquals(250, app.exchanges.rowKeys(account, BybitDecoder.CONVERTS).size)
+            assertEquals(BybitConnector.CONVERTS_DONE, app.exchanges.cursors(account)[BybitConnector.CONVERTS_CURSOR])
+        }
+    }
+
+    @Test
+    fun anInterruptedWindowResumesFromItsNextPage() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val bybit = FakeBybit()
+            bybit.failOnce = { it.path == "/v5/account/transaction-log" && it.query.toMap()["cursor"] == "2" }
+            val connector = BybitConnector { _, request -> bybit.get(request) }
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            val saved = app.exchanges.cursors(account).getValue(BybitConnector.WINDOW_CURSOR + BybitDecoder.LOG)
+            assertTrue(saved.endsWith("|2"))
+            val from = saved.substringBefore('|')
+            bybit.requests.clear()
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            val window = bybit.requests.filter { it.path == "/v5/account/transaction-log" && it.query.toMap()["startTime"] == from }
+            assertEquals(listOf("2"), window.map { it.query.toMap()["cursor"] })
+            assertEquals("", app.exchanges.cursors(account)[BybitConnector.WINDOW_CURSOR + BybitDecoder.LOG])
+            assertEquals(4, app.exchanges.rowKeys(account, BybitDecoder.LOG).size)
         }
     }
 }

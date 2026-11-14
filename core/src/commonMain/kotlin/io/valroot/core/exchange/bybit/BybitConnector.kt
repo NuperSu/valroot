@@ -99,7 +99,7 @@ class BybitConnector(
                 ) { from, to -> readWindow(app, account, uid, stream.name, from, to, budget) }
             if (!complete) unfinished = true
         }
-        readConverts(app, account, uid, budget)
+        if (!readConverts(app, account, uid, budget)) unfinished = true
         // Symbols not matched to a coin yet: Bybit's token contracts let CoinGecko's contract map name the coin.
         val held = balances.filter { it.amount.coefficient.sign != 0 }.map { it.coin }
         val unmatched = app.exchanges.unmatchedSymbols(BYBIT_EXCHANGE, app.exchanges.rowSymbols(ExchangeKind.BYBIT, account) + held)
@@ -133,7 +133,11 @@ class BybitConnector(
         return unfinished
     }
 
-    /** Reads every page of one window and saves its records; returns how many there were, or null when the budget ran out. */
+    /**
+     * Reads every page of one window and saves each page's records; returns how many there were, or null when the
+     * budget ran out. The next page is kept in a cursor while the window is read, so a refresh stopped by the budget or
+     * a failure resumes the window there.
+     */
     private fun readWindow(
         app: PortfolioApplication,
         account: AccountId,
@@ -143,9 +147,16 @@ class BybitConnector(
         to: Long,
         budget: RequestBudget<BybitRequest>,
     ): Int? {
-        var cursor: String? = null
-        var count = 0
-        val rows = mutableListOf<ExchangeRow>()
+        val pageKey = WINDOW_CURSOR + stream
+        val resumed =
+            app.exchanges.cursors(account)[pageKey]?.split('|', limit = 3)?.takeIf {
+                it.size == 3 &&
+                    it[0] == "$from" &&
+                    it[1] == "$to"
+            }
+        var cursor: String? = resumed?.get(2)
+        // A resumed window had records on its earlier pages.
+        var count = if (resumed != null) 1 else 0
         do {
             if (budget.spent) return null
             val request = budget::send
@@ -168,25 +179,36 @@ class BybitConnector(
                             page.items.map { ExchangeRow(stream, it.id, it.atMillis, it.raw, "") } to page.next
                         }
                 }
-            rows += page
+            app.exchanges.saveRows(ExchangeKind.BYBIT, account, uid, page, BybitDecoder.VERSION)
             count += page.size
             cursor = next.takeIf { page.isNotEmpty() && it != cursor }
+            cursor?.let { app.exchanges.saveCursor(account, pageKey, "$from|$to|$it") }
         } while (cursor != null)
-        app.exchanges.saveRows(ExchangeKind.BYBIT, account, uid, rows, BybitDecoder.VERSION)
+        app.exchanges.saveCursor(account, pageKey, "")
         return count
     }
 
-    /** Convert history has no time filter: pages are read, newest first, until one holds only known converts. */
+    /**
+     * Convert history has no time filter: pages are read newest first. New converts are read until a page holds only
+     * known ones; until the history has been read to its last page once, reading then continues from the page saved in
+     * [CONVERTS_CURSOR], so an interrupted refresh resumes there. Returns false when older pages remain.
+     */
     private fun readConverts(
         app: PortfolioApplication,
         account: AccountId,
         uid: String,
         budget: RequestBudget<BybitRequest>,
-    ) {
+    ): Boolean {
         val known = app.exchanges.rowKeys(account, BybitDecoder.CONVERTS)
+        val saved = app.exchanges.cursors(account)[CONVERTS_CURSOR]
+        val readToEnd = saved == CONVERTS_DONE
+        // New converts push older ones to later pages, so resuming at a saved page may read some again but skips none.
+        var resumeAt = saved?.toIntOrNull() ?: 1
         var page = 1
-        while (page <= MAX_CONVERT_PAGES && !budget.spent) {
+        var reads = 0
+        while (reads < MAX_CONVERT_PAGES && !budget.spent) {
             val converts = Bybit.parseConverts(budget.send(Bybit.converts(page)))
+            reads++
             app.exchanges.saveRows(
                 ExchangeKind.BYBIT,
                 account,
@@ -196,9 +218,18 @@ class BybitConnector(
                 },
                 BybitDecoder.VERSION,
             )
-            if (converts.size < CONVERT_PAGE || converts.all { it.id in known }) return
-            page++
+            if (converts.size < CONVERT_PAGE) {
+                app.exchanges.saveCursor(account, CONVERTS_CURSOR, CONVERTS_DONE)
+                return true
+            }
+            if (readToEnd && converts.all { it.id in known }) return true
+            if (!readToEnd) {
+                resumeAt = maxOf(resumeAt, page + 1)
+                app.exchanges.saveCursor(account, CONVERTS_CURSOR, "$resumeAt")
+            }
+            page = if (!readToEnd && converts.all { it.id in known }) resumeAt else page + 1
         }
+        return false
     }
 
     companion object {
@@ -207,6 +238,13 @@ class BybitConnector(
         const val MAX_RETENTION_MILLIS = 5 * 365 * Bybit.DAY_MILLIS
         const val MAX_CONVERT_PAGES = 50
         const val CONVERT_PAGE = 100
+
+        /** Next convert page to read until the history has been read to its end, then [CONVERTS_DONE]. */
+        const val CONVERTS_CURSOR = "converts-page"
+        const val CONVERTS_DONE = "done"
+
+        /** Window and next page of a stream's window the budget stopped, as `from|to|cursor`. */
+        const val WINDOW_CURSOR = "window:"
 
         /** Coins whose contracts are looked up per refresh; the rest follow on later refreshes. */
         const val MAX_COIN_LOOKUPS = 50
