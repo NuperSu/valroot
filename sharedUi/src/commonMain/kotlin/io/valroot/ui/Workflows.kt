@@ -33,6 +33,7 @@ import io.valroot.core.reconcile.ClassificationRule
 import io.valroot.core.reconcile.ReconciliationCandidate
 import io.valroot.core.reconcile.TransferLink
 import io.valroot.core.reconcile.TransferLinkConflict
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 private val assetIdSaver = Saver<AssetId, String>(save = { it.value }, restore = { AssetId(it) })
@@ -84,6 +85,7 @@ internal fun WorkflowDialog(
     val selectedKindState = rememberSaveable(stateSaver = activityKindSaver) { mutableStateOf(ActivityKind.DEPOSIT) }
     var rules by remember { mutableStateOf<List<ClassificationRule>>(emptyList()) }
     var rulesLoaded by remember { mutableStateOf(false) }
+    var loadFailed by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<ClassificationRule?>(null) }
     var showRuleEditor by remember { mutableStateOf(false) }
     val assetState = rememberSaveable(stateSaver = assetIdSaver) { mutableStateOf(initialAsset ?: AssetId("bitcoin:btc")) }
@@ -117,7 +119,8 @@ internal fun WorkflowDialog(
     var transferConflicts by transferConflictsState
     var transfersLoaded by transfersLoadedState
     val error by errorState
-    LaunchedEffect(type) {
+
+    suspend fun loadDetails(type: String) {
         if (type == "rule") {
             rules = withContext(host.dispatcher) { app.transactions.rules() }
             rulesLoaded = true
@@ -140,6 +143,18 @@ internal fun WorkflowDialog(
                     ).distinct().mapNotNull { id -> app.accounting.activitySummary(id)?.let { id to it } }.toMap()
             }
             transfersLoaded = true
+        }
+    }
+
+    LaunchedEffect(type) {
+        try {
+            loadDetails(type)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A failed load says so instead of leaving the dialog loading.
+            loadFailed = true
+            errorState.value = "Could not load this. Close it and try again."
         }
     }
     LaunchedEffect(type, priceRevision, automaticPriceConsent) {
@@ -253,7 +268,7 @@ internal fun WorkflowDialog(
                 )
             "rule" -> {
                 if (!rulesLoaded) {
-                    Text("Loading classification rules…")
+                    if (!loadFailed) Text("Loading classification rules…")
                 } else if (showRuleEditor) {
                     RuleEditor(
                         editingRule,
@@ -308,6 +323,7 @@ internal fun WorkflowDialog(
                     summariesState = summariesState,
                     transferConflictsState = transferConflictsState,
                     transfersLoadedState = transfersLoadedState,
+                    loadFailed = loadFailed,
                 )
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }

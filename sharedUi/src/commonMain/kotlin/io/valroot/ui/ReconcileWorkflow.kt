@@ -31,6 +31,7 @@ internal fun ColumnScope.ReconcileWorkflow(
     summariesState: MutableState<Map<ActivityId, String>>,
     transferConflictsState: MutableState<List<TransferLinkConflict>>,
     transfersLoadedState: MutableState<Boolean>,
+    loadFailed: Boolean = false,
 ) {
     var candidates by candidatesState
     var transferLinks by transferLinksState
@@ -45,7 +46,7 @@ internal fun ColumnScope.ReconcileWorkflow(
         fontSize = 13.sp,
     )
     Text("Accepted relationships", fontWeight = FontWeight.SemiBold)
-    if (!transfersLoaded) Text("Loading transfer review…")
+    if (!transfersLoaded && !loadFailed) Text("Loading transfer review…")
     if (transfersLoaded && transferLinks.isEmpty()) Text("No accepted transfer relationships.")
     transferLinks.forEach { link ->
         HorizontalDivider()

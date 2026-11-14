@@ -261,22 +261,24 @@ internal fun ExchangeAccountDetails(
     LaunchedEffect(account, revision) {
         if (kind.readsPerSymbol) {
             pairs =
-                withContext(host.dispatcher) {
-                    app.exchanges
-                        .pairs(account)
-                        .keys
-                        .sorted()
-                }
+                host
+                    .loadOrNull {
+                        app.exchanges
+                            .pairs(account)
+                            .keys
+                            .sorted()
+                    }.orEmpty()
         }
-        withContext(host.dispatcher) {
-            Triple(app.exchanges.status(account), app.exchanges.hasKey(kind, account), app.exchanges.unresolvedCoins(kind.id)) to
-                app.exchanges.coverage(account)
-        }.let { (loaded, read) ->
-            status = loaded.first
-            hasKey = loaded.second
-            unresolved = loaded.third
-            coverage = read
-        }
+        host
+            .loadOrNull {
+                Triple(app.exchanges.status(account), app.exchanges.hasKey(kind, account), app.exchanges.unresolvedCoins(kind.id)) to
+                    app.exchanges.coverage(account)
+            }?.let { (loaded, read) ->
+                status = loaded.first
+                hasKey = loaded.second
+                unresolved = loaded.third
+                coverage = read
+            } ?: run { status = status.copy(error = "This account's details could not be loaded. Reopen it to try again.") }
     }
     Column(Modifier.fillMaxWidth().testTag("${kind.id}-account-details"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("${kind.label} account", fontWeight = FontWeight.SemiBold)

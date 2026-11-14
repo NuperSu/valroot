@@ -112,11 +112,12 @@ internal fun ModelWorkspace(
             coinAssets = emptySet()
             return@LaunchedEffect
         }
+        // Without them the coin shows only its own asset, as before they load.
         val (ids, choices) =
-            withContext(host.dispatcher) {
+            host.loadOrNull {
                 val coinId = app.market.coinId(coin)
                 (coinId?.let { app.assets.forCoin(it) }?.toSet() ?: emptySet()) to app.evm.chainChoices()
-            }
+            } ?: return@LaunchedEffect
         coinAssets = ids
         chainChoices = choices
     }

@@ -69,7 +69,7 @@ internal fun RevisedMain(
 ) {
     var favorites by remember(app) { mutableStateOf(emptySet<AssetId>()) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(app) { favorites = withContext(host.dispatcher) { app.market.favorites() } }
+    LaunchedEffect(app) { host.loadOrNull { app.market.favorites() }?.let { favorites = it } }
     val assets = snapshot.marketCoins.distinctBy { it.asset }.sortedBy { it.metadata?.symbol ?: it.asset.value }
 
     fun toggle(asset: MarketCoin) {

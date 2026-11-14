@@ -553,12 +553,19 @@ internal fun EvmAddressDetails(
     var states by remember(address) { mutableStateOf<List<EvmChainState>>(emptyList()) }
     var expanded by remember(address) { mutableStateOf(emptySet<Long>()) }
     var adding by remember(address) { mutableStateOf(false) }
+    var failed by remember(address) { mutableStateOf(false) }
     LaunchedEffect(address, revision) {
-        states = withContext(host.dispatcher) { app.evm.chainStates(address) }.sortedBy { it.chainId }
+        val loaded = host.loadOrNull { app.evm.chainStates(address) }
+        failed = loaded == null
+        states = loaded.orEmpty().sortedBy { it.chainId }
     }
     Column(Modifier.fillMaxWidth().testTag("evm-address-details"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("EVM address ${shortEvmAddress(address)}", fontWeight = FontWeight.SemiBold)
-        if (states.isEmpty()) Text("No chains yet. Add chains to load this address's history.")
+        if (failed) {
+            Text("This address's chains could not be loaded. Reopen it to try again.", color = MaterialTheme.colorScheme.error)
+        } else if (states.isEmpty()) {
+            Text("No chains yet. Add chains to load this address's history.")
+        }
         states.forEach { state ->
             val open = state.chainId in expanded
             Column(Modifier.fillMaxWidth().testTag("evm-chain-state-${state.chainId}")) {
