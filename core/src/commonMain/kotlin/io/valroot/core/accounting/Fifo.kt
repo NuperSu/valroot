@@ -252,14 +252,23 @@ object FifoAccounting {
                     val shift = requireNotNull(decimalShift(action.fromQuantity, action.quantity)) { "Transfer amounts differ" }
                     // Lots keep their basis and dates; each part's units follow the incoming asset's decimals, and
                     // the last part takes what rounding left, so the parts add up to the incoming quantity exactly.
+                    // A part that rounds to no incoming units passes its basis to the next part (or back to the last one),
+                    // so the transfer keeps its whole basis; an unknown basis in it leaves the receiving part unknown.
                     var taken = ExactInteger.ZERO
                     var given = ExactInteger.ZERO
+                    var carried: Rational? = Rational.ZERO
+                    var lastPart = -1
                     take(action.from, action.fromAsset, action.fromQuantity).forEachIndexed { index, (lot, sent) ->
                         taken += sent.first
                         val received = shiftUnits(taken, shift) - given
                         given += received
-                        val part = received to sent.second
-                        if (received.sign == 0) return@forEachIndexed
+                        val basis = carried?.let { c -> sent.second?.let { it + c } }
+                        if (received.sign == 0) {
+                            carried = basis
+                            return@forEachIndexed
+                        }
+                        carried = Rational.ZERO
+                        val part = received to basis
                         lotRanks["$key:$index"] = lot?.let { lotRanks.getValue(it.id) } ?: rank
                         lots +=
                             Lot(
@@ -274,6 +283,11 @@ object FifoAccounting {
                                 lot?.opening ?: false,
                                 lot?.acquisitionActivityId,
                             )
+                        lastPart = lots.lastIndex
+                    }
+                    if (carried != Rational.ZERO && lastPart >= 0) {
+                        val last = lots[lastPart]
+                        lots[lastPart] = last.copy(basis = carried?.let { c -> last.basis?.let { it + c } })
                     }
                 }
             }

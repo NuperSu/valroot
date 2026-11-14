@@ -81,6 +81,52 @@ class FifoTransferTest {
     }
 
     @Test
+    fun aPartThatRoundsAwayPassesItsCostOn() {
+        // Half a 6-decimal unit rounds to nothing; its $10 goes with the next part instead of being lost.
+        val transfer =
+            AccountingAction.Transfer(
+                ActivityId("t"),
+                3,
+                "0",
+                exchange,
+                wallet,
+                token,
+                units("1000000"),
+                coin,
+                units("1000000000000000000"),
+            )
+        val moved =
+            FifoAccounting
+                .calculate(listOf(buy("a", 1, "500000000000", "10"), buy("b", 2, "999999500000000000", "20"), transfer), owners, usd)
+                .lots
+                .filter { it.account == wallet }
+        assertEquals(Rational.of("30"), moved.single().basis)
+    }
+
+    @Test
+    fun aPartThatRoundsAwayWithUnknownCostLeavesTheReceivingPartUnknown() {
+        val transfer =
+            AccountingAction.Transfer(
+                ActivityId("t"),
+                3,
+                "0",
+                exchange,
+                wallet,
+                token,
+                units("1000000"),
+                coin,
+                units("1000000000000000000"),
+            )
+        val opening = AccountingAction.Acquisition(ActivityId("a"), 1, "0", exchange, coin, units("500000000000"), null)
+        val moved =
+            FifoAccounting
+                .calculate(listOf(opening, buy("b", 2, "999999500000000000", "1"), transfer), owners, usd)
+                .lots
+                .filter { it.account == wallet }
+        assertNull(moved.single().basis)
+    }
+
+    @Test
     fun differentAmountsAreRefused() {
         assertNull(decimalShift(units("1000001"), units("1000000000000000000")))
         assertEquals(12, decimalShift(units("1000000"), units("1000000000000000000")))
