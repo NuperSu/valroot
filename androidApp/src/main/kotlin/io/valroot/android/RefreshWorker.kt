@@ -14,6 +14,7 @@ import io.valroot.ui.SyncPhase
 import io.valroot.ui.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 /** Uses the same serial queue as the foreground host for database workflows. */
@@ -28,7 +29,13 @@ class RefreshWorker(
             }
         if (!automaticEnabled) return Result.success()
         if (syncStatus.value.phase == SyncPhase.SYNCING) return Result.retry()
-        setForegroundAsync(SyncNotification.foreground(applicationContext)).get()
+        // Android 12+ refuses a foreground service started from the background. The sync then runs as ordinary work:
+        // if the system stops it, the scan is cancelled and the next run tries again.
+        try {
+            setForegroundAsync(SyncNotification.foreground(applicationContext)).get()
+        } catch (_: ExecutionException) {
+        } catch (_: IllegalStateException) {
+        }
         syncStatus.value = SyncStatus(SyncPhase.SYNCING, "Fetching public history…")
         val status =
             syncExecutor
