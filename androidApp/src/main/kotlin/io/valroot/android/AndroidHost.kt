@@ -203,7 +203,7 @@ internal class AndroidHost(
     override fun setLockDelay(millis: Long) = privacyLock.setLockDelay(millis)
 
     /** The app went to the background: lock now, or remember when, depending on the delay. */
-    fun left() = privacyLock.left()
+    fun left() = privacyLock.left(isChoosing)
 
     /** The app came back: lock if it was away at least as long as the delay. */
     fun returned() = privacyLock.returned()

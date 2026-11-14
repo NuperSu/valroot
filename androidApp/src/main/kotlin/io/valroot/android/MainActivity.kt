@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        host?.let { if (!it.isChoosing) it.left() }
+        host?.left()
         super.onStop()
     }
 
