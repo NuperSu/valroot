@@ -218,9 +218,7 @@ class BinanceConnector(
                     }
                 },
                 BinanceStream(BinanceDecoder.DIVIDENDS, Binance.DIVIDEND_WINDOW_MILLIS, { Binance.LAUNCH_MILLIS }, null) { send, from, to ->
-                    BinanceParsers.parseDividends(send(Binance.dividends(from, to))).first.map {
-                        ExchangeRow(BinanceDecoder.DIVIDENDS, it.id, it.atMillis, it.raw, "")
-                    }
+                    dividends(send, from, to)
                 },
                 BinanceStream(BinanceDecoder.CONVERTS, Binance.MONTH_WINDOW_MILLIS, { Binance.LAUNCH_MILLIS }, 12) { send, from, to ->
                     val rows = mutableListOf<ExchangeRow>()
@@ -292,6 +290,26 @@ class BinanceConnector(
         }
 
         /** Reads pages until one is not full: by offset (step = page size) or by page number. */
+        /**
+         * Distributions in a window. Binance returns at most one page (500) per request without paging, so a window
+         * holding more is halved until each half fits; one that still overflows at an hour fails the refresh.
+         */
+        internal fun dividends(
+            send: (BinanceRequest) -> String,
+            from: Long,
+            to: Long,
+        ): List<ExchangeRow> {
+            val (rows, total) = BinanceParsers.parseDividends(send(Binance.dividends(from, to)))
+            if (total > rows.size) {
+                check(to - from > HOUR_MILLIS) { "Binance has more distributions than it returns in one hour; retry later" }
+                val middle = from + (to - from) / 2
+                return dividends(send, from, middle) + dividends(send, middle, to)
+            }
+            return rows.map { ExchangeRow(BinanceDecoder.DIVIDENDS, it.id, it.atMillis, it.raw, "") }
+        }
+
+        private const val HOUR_MILLIS = 3_600_000L
+
         private fun paged(
             size: Int,
             start: Int = 0,

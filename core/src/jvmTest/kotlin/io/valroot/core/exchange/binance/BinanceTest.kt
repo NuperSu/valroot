@@ -209,4 +209,23 @@ class BinanceTest {
         assertFalse(p2p.buy)
         assertTrue(p2p.completed)
     }
+
+    @Test
+    fun `a dividend window holding more than one page is halved until each half fits`() {
+        val day = 86_400_000L
+        val times = (0 until 600).map { it * (100 * day / 600) }
+        val requests = mutableListOf<Pair<Long, Long>>()
+        val rows =
+            BinanceConnector.dividends({ request ->
+                val q = request.query.toMap()
+                val from = q.getValue("startTime").toLong()
+                val to = q.getValue("endTime").toLong()
+                requests += from to to
+                val inside = times.filter { it in from until to }
+                val page = inside.take(500).joinToString(",") { """{"id":$it,"amount":"0.01","asset":"BNB","divTime":$it,"enInfo":"x","tranId":$it}""" }
+                """{"rows":[$page],"total":${inside.size}}"""
+            }, 0L, 100 * day)
+        assertEquals(600, rows.map { it.key }.toSet().size)
+        assertEquals(3, requests.size)
+    }
 }
