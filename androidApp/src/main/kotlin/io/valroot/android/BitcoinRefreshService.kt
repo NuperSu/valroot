@@ -36,7 +36,8 @@ open class BitcoinRefreshService : Service() {
         if (wakeLock == null) {
             wakeLock =
                 getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Valroot:sync").apply {
-                    acquire(60 * 60 * 1000L)
+                    // A safety bound, not a work limit: Android stops a data-sync service after six hours (onTimeout).
+                    acquire(6 * 60 * 60 * 1000L)
                 }
         }
         val walletId = intent?.getStringExtra("wallet_id")

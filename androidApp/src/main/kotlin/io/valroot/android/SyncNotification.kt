@@ -13,6 +13,9 @@ import androidx.work.ForegroundInfo
 
 internal object SyncNotification {
     const val ID = 41
+
+    /** The periodic worker's own notification, so the service removing [ID] never removes the worker's. */
+    const val WORKER_ID = 42
     private const val CHANNEL = "portfolio-sync"
 
     fun create(
@@ -45,9 +48,9 @@ internal object SyncNotification {
         if (Build.VERSION.SDK_INT >=
             29
         ) {
-            ForegroundInfo(ID, create(context, "Fetching public history…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            ForegroundInfo(WORKER_ID, create(context, "Fetching public history…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
-            ForegroundInfo(ID, create(context, "Fetching public history…"))
+            ForegroundInfo(WORKER_ID, create(context, "Fetching public history…"))
         }
 
     @SuppressLint("MissingPermission")
