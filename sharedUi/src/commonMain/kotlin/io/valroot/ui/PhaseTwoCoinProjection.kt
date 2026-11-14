@@ -37,7 +37,15 @@ internal fun coinAccountingMetrics(
             .orEmpty()
             .filter { it.lot.asset in assets }
     val basis = if (heldAssets.any { a -> lots.none { it.asset == a } }) null else total(lots.map { it.basis })
-    val unrealized = if (heldAssets.any { a -> valuations.none { it.lot.asset == a } }) null else total(valuations.map { it.unrealizedGain })
+    val unrealized =
+        if (heldAssets.any { a ->
+                valuations.none { it.lot.asset == a }
+            }
+        ) {
+            null
+        } else {
+            total(valuations.map { it.unrealizedGain })
+        }
     val realized =
         total(
             view

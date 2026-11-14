@@ -97,7 +97,10 @@ class MexcTest {
 
     @Test
     fun `transfers that all name the same two parties count only the user ID as own`() {
-        fun t(from: String, to: String) = MexcInternalTransfer("x", "BTC", d("0.1"), from, to, true, 0L)
+        fun t(
+            from: String,
+            to: String,
+        ) = MexcInternalTransfer("x", "BTC", d("0.1"), from, to, true, 0L)
         val toFriend = listOf(t("me@x.io", "friend@y.io"), t("me@x.io", "friend@y.io"))
         assertEquals(setOf("111"), MexcDecoder.ownIdentifiers("111", toFriend))
         val varied = listOf(t("me@x.io", "a@y.io"), t("b@y.io", "me@x.io"))

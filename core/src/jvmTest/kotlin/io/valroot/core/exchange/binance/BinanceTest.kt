@@ -222,7 +222,11 @@ class BinanceTest {
                 val to = q.getValue("endTime").toLong()
                 requests += from to to
                 val inside = times.filter { it in from until to }
-                val page = inside.take(500).joinToString(",") { """{"id":$it,"amount":"0.01","asset":"BNB","divTime":$it,"enInfo":"x","tranId":$it}""" }
+                val page =
+                    inside
+                        .take(
+                            500,
+                        ).joinToString(",") { """{"id":$it,"amount":"0.01","asset":"BNB","divTime":$it,"enInfo":"x","tranId":$it}""" }
                 """{"rows":[$page],"total":${inside.size}}"""
             }, 0L, 100 * day)
         assertEquals(600, rows.map { it.key }.toSet().size)

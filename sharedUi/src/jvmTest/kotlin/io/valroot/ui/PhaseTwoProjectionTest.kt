@@ -160,8 +160,12 @@ class PhaseTwoProjectionTest {
     @Test
     fun coinMetricsCoverEveryChainTheCoinIsHeldOn() {
         val base = AssetId("evm:8453/native")
-        fun lot(id: String, on: AssetId, basis: String?) =
-            Lot(id, OwnerId("owner"), account, on, 0, "0", ExactInteger.parse("1"), basis?.let(Rational::of), false)
+
+        fun lot(
+            id: String,
+            on: AssetId,
+            basis: String?,
+        ) = Lot(id, OwnerId("owner"), account, on, 0, "0", ExactInteger.parse("1"), basis?.let(Rational::of), false)
         val main = lot("a", asset, "100")
         val other = lot("b", base, "50")
         val held = listOf(valuation("130"), valuation("60").copy(asset = base, amount = AtomicAmount(base, ExactInteger.parse("1"))))

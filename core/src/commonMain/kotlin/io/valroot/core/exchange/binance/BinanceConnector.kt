@@ -289,7 +289,6 @@ class BinanceConnector(
             }
         }
 
-        /** Reads pages until one is not full: by offset (step = page size) or by page number. */
         /**
          * Distributions in a window. Binance returns at most one page (500) per request without paging, so a window
          * holding more is halved until each half fits; one that still overflows at an hour fails the refresh.
@@ -310,6 +309,7 @@ class BinanceConnector(
 
         private const val HOUR_MILLIS = 3_600_000L
 
+        /** Reads pages until one is not full: by offset (step = page size) or by page number. */
         private fun paged(
             size: Int,
             start: Int = 0,
