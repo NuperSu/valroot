@@ -166,6 +166,41 @@ class KrakenPriceTransportTest {
         assertEquals(2, requests)
     }
 
+    @Test fun everyCandleRequestTheAppMakesIsAllowed() {
+        var requests = 0
+        val transport =
+            KrakenPriceTransport(
+                openConnection = {
+                    requests++
+                    object : HttpURLConnection(URI("https://api.kraken.com").toURL()) {
+                        override fun connect() = Unit
+
+                        override fun disconnect() = Unit
+
+                        override fun usingProxy() = false
+
+                        override fun getResponseCode() = 200
+
+                        override fun getInputStream() = "{}".byteInputStream()
+                    }
+                },
+                pacer = KrakenPricePacer(clock = { 0L }, sleep = {}),
+            )
+        CandleRange.entries.forEach { range ->
+            val url =
+                KrakenCandles.url(
+                    KrakenPair("ETH", "USD"),
+                    KrakenCandles.intervalMinutes(range),
+                    1_800_000_000_000L - range.spanMillis,
+                )
+            assertEquals("{}", transport.get(url))
+        }
+        assertEquals(CandleRange.entries.size, requests)
+        assertFailsWith<IllegalArgumentException> {
+            transport.get("https://api.kraken.com/0/public/OHLC?pair=ETHUSD&interval=5&since=1")
+        }
+    }
+
     @Test fun orderBookDepthRequestsAreAllowedOnlyWithinTheCountLimit() {
         var requests = 0
         val response =

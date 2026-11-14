@@ -38,12 +38,16 @@ class KrakenPriceTransport(
     companion object {
         private val sharedPacer = KrakenPricePacer()
         private val OHLC_URL = Regex("https://api\\.kraken\\.com/0/public/OHLC\\?pair=XBT(USD|EUR|GBP)&interval=(60|1440)")
+
+        /** Coin chart candles ([KrakenCandles.url]). */
+        private val CANDLES_URL =
+            Regex("https://api\\.kraken\\.com/0/public/OHLC\\?pair=[A-Z0-9]{4,20}&interval=(1|30|240|1440|10080)&since=[0-9]{1,12}")
         private val DEPTH_URL = Regex("https://api\\.kraken\\.com/0/public/Depth\\?pair=[A-Z0-9]{4,20}&count=([1-9]|1[0-9]|2[0-5])")
     }
 
     /** Public OHLC candles for the Bitcoin price series, or a public order book Depth request; both share one pacer. */
     fun get(url: String): String {
-        require(url.matches(OHLC_URL) || url.matches(DEPTH_URL))
+        require(url.matches(OHLC_URL) || url.matches(CANDLES_URL) || url.matches(DEPTH_URL))
         pacer.await(beforeRequest)
         val connection = openConnection(url)
         try {

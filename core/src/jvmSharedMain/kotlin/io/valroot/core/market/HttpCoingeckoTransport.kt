@@ -29,6 +29,9 @@ class HttpCoingeckoTransport(
             )
         const val TRENDING_PATH = "search/trending"
         val KRAKEN_TICKERS_PATH = Regex("coins/[a-z0-9][a-z0-9-]{0,99}/tickers\\?exchange_ids=kraken")
+
+        /** Coin chart candles ([CoingeckoCandles.url]). */
+        val CANDLES_PATH = Regex("coins/[a-z0-9][a-z0-9-]{0,99}/ohlc\\?vs_currency=[a-z]{2,10}&days=(1|7|30|90|365)")
         const val ASSET_PLATFORMS_PATH = "asset_platforms"
         const val COINS_LIST_PATH = "coins/list?include_platform=true"
         val LINKED_MARKETS_PATH =
@@ -67,7 +70,7 @@ class HttpCoingeckoTransport(
     }
 
     /**
-     * Market feeds, the chain catalog, linked-coin prices and Kraken ticker lookups are not paced here: the application
+     * Market feeds, the chain catalog, linked-coin prices, coin candles and Kraken ticker lookups are not paced here: the application
      * refreshes feeds at most once a minute and pauses after a rate limit.
      */
     @Synchronized
@@ -90,6 +93,7 @@ class HttpCoingeckoTransport(
         path.matches(MARKETS_PATH) ||
             path == TRENDING_PATH ||
             path.matches(KRAKEN_TICKERS_PATH) ||
+            path.matches(CANDLES_PATH) ||
             path == ASSET_PLATFORMS_PATH ||
             path == COINS_LIST_PATH ||
             path.matches(SIMPLE_PRICE_PATH) ||

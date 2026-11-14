@@ -109,6 +109,19 @@ class HttpCoingeckoTransportTest {
         }
     }
 
+    @Test fun everyCandleRequestTheAppMakesIsAllowed() {
+        CandleRange.entries.mapNotNull(CoingeckoCandles::days).forEach { days ->
+            val response = Response(200)
+            val url = CoingeckoCandles.url(base, "shiba-inu", "USD", days)
+            assertEquals("{}", HttpCoingeckoTransport(openConnection = { response }).feed(url, "key"))
+        }
+        listOf(
+            "$base/coins/bitcoin/ohlc?vs_currency=usd&days=2",
+            "$base/coins/bitcoin/ohlc?vs_currency=usd&days=1&precision=full",
+            "$base/coins/Bitcoin/ohlc?vs_currency=usd&days=1",
+        ).forEach { bad -> assertFailsWith<IllegalArgumentException> { HttpCoingeckoTransport().feed(bad, null) } }
+    }
+
     @Test fun chainCatalogAndLinkedPricesRejectOtherShapes() {
         val tooManyIds = (1..51).joinToString(",") { "coin-$it" }
         listOf(
