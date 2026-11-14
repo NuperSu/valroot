@@ -247,8 +247,8 @@ internal fun ColumnScope.ModelCoinBranch(
                     ),
                 ) +
                     if (tracked) {
-                        // Gains and cost basis are amounts; a percentage would stay visible.
-                        coinAccountingMetrics(accounting, asset).map {
+                        // Gains and cost basis cover the same assets as Owned; amounts hide, a percentage would stay visible.
+                        coinAccountingMetrics(accounting, coinHoldings.ifEmpty { listOf(asset) }).map {
                             if (it.value.endsWith("%")) it else it.copy(value = it.value.hiddenIf(amountsHidden))
                         }
                     } else if (listing != null) {

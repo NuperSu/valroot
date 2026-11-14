@@ -156,4 +156,20 @@ class PhaseTwoProjectionTest {
             ).first().value.contains("provisional"),
         )
     }
+
+    @Test
+    fun coinMetricsCoverEveryChainTheCoinIsHeldOn() {
+        val base = AssetId("evm:8453/native")
+        fun lot(id: String, on: AssetId, basis: String?) =
+            Lot(id, OwnerId("owner"), account, on, 0, "0", ExactInteger.parse("1"), basis?.let(Rational::of), false)
+        val main = lot("a", asset, "100")
+        val other = lot("b", base, "50")
+        val held = listOf(valuation("130"), valuation("60").copy(asset = base, amount = AtomicAmount(base, ExactInteger.parse("1"))))
+        val report = AccountingReport(AssetId("USD"), listOf(main, other), emptyList(), emptyList())
+        val view = AccountingView(report, emptyList(), emptyList(), emptyList())
+        assertEquals("150.00 USD", coinAccountingMetrics(view, held).associate { it.label to it.value }["Total Cost Basis"])
+        // A chain held without lots leaves the basis unknown rather than partial.
+        val partial = view.copy(report = report.copy(lots = listOf(main)))
+        assertEquals("—", coinAccountingMetrics(partial, held).associate { it.label to it.value }["Total Cost Basis"])
+    }
 }
