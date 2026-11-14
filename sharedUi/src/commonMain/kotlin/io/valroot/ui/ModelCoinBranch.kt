@@ -401,10 +401,18 @@ internal fun ColumnScope.ModelCoinBranch(
             onOrderRetry = orderBook.retry,
         ),
         transactionControls = {
-            OutlinedTextField(transactionSearch, {
-                transactionSearch = it
-                transactionOffset = 0
-            }, label = { Text("Search transactions") }, modifier = Modifier.fillMaxWidth().testTag("coin-transaction-search"))
+            OutlinedTextField(
+                transactionSearch,
+                {
+                    transactionSearch = it
+                    transactionOffset = 0
+                },
+                label = { Text("Search transactions") },
+                singleLine = true,
+                keyboardOptions = SearchKeyboard,
+                modifier =
+                    Modifier.fillMaxWidth().testTag("coin-transaction-search"),
+            )
             TransactionChoice(
                 "Transaction type",
                 listOf("All", "Buy", "Sell", "Transfer", "Deposit", "Withdrawal", "Reward", "Fee", "Adjustment", "Other").map {

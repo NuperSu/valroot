@@ -69,6 +69,7 @@ internal fun LazyListScope.classicActivityItems(
                 ),
                 label = { Text("Search activity") },
                 singleLine = true,
+                keyboardOptions = SearchKeyboard,
                 shape = RoundedCornerShape(14.dp),
             )
             Button(

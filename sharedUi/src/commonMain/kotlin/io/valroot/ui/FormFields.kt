@@ -57,9 +57,41 @@ internal fun FormDialog(
     }
 }
 
+/**
+ * Keyboard settings for a single-line field: Enter (the keyboard's action key) moves to the next field, or on a form's
+ * [last] field confirms it through [enterActions].
+ */
+internal fun enterKeyboard(
+    last: Boolean = false,
+    base: androidx.compose.foundation.text.KeyboardOptions =
+        androidx.compose.foundation.text.KeyboardOptions.Default,
+) = base.copy(
+    imeAction =
+        if (last) {
+            androidx.compose.ui.text.input.ImeAction.Done
+        } else {
+            androidx.compose.ui.text.input.ImeAction.Next
+        },
+)
+
+/** Keyboard settings for a search field: Enter closes the keyboard, since results update while typing. */
+internal val SearchKeyboard =
+    androidx.compose.foundation.text
+        .KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done)
+
+/** Actions for [enterKeyboard]: [onDone] confirms; without it Enter keeps its default and moves to the next field. */
+internal fun enterActions(onDone: (() -> Unit)?) =
+    if (onDone == null) {
+        androidx.compose.foundation.text.KeyboardActions.Default
+    } else {
+        androidx.compose.foundation.text
+            .KeyboardActions(onDone = { onDone() })
+    }
+
 @Composable internal fun Field(
     label: String,
     value: String,
+    onDone: (() -> Unit)? = null,
     change: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -68,6 +100,8 @@ internal fun FormDialog(
         label = {
             Text(label, fontSize = 12.sp)
         },
+        keyboardOptions = enterKeyboard(onDone != null),
+        keyboardActions = enterActions(onDone),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         shape =
@@ -89,6 +123,7 @@ internal val SecretKeyboard =
 @Composable internal fun SecretField(
     label: String,
     value: String,
+    onDone: (() -> Unit)? = null,
     change: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -96,7 +131,8 @@ internal val SecretKeyboard =
         change,
         label = { Text(label, fontSize = 12.sp) },
         visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = SecretKeyboard,
+        keyboardOptions = enterKeyboard(onDone != null, SecretKeyboard),
+        keyboardActions = enterActions(onDone),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
     )

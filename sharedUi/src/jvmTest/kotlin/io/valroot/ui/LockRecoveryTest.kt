@@ -5,6 +5,9 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import kotlin.test.Test
@@ -47,15 +50,44 @@ class LockRecoveryTest {
                 }
             runDesktopComposeUiTest(width = 390, height = 844) {
                 setContent { ValrootTheme(AppearanceTheme.DARK) { LockScreen(host) } }
-                onNodeWithTag("lock-biometric").performClick()
-                onNodeWithText("Fingerprint not recognized").assertExists()
+                // The prompt opens by itself when the lock shows, once; the button opens it again.
+                waitForIdle()
                 assertEquals(1, attempts)
+                onNodeWithText("Fingerprint not recognized").assertExists()
+                onNodeWithTag("lock-biometric").performClick()
+                assertEquals(2, attempts)
             }
         }
         ModelWorkspaceRestorationTest.RestorationHost().use { host ->
             runDesktopComposeUiTest(width = 390, height = 844) {
                 setContent { ValrootTheme(AppearanceTheme.DARK) { LockScreen(host) } }
                 onNodeWithTag("lock-biometric").assertDoesNotExist()
+            }
+        }
+    }
+
+    @Test fun enterInThePasswordFieldUnlocks() {
+        ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
+            var tried: String? = null
+            val host =
+                object : PlatformActions by delegate {
+                    override fun unlock(
+                        password: String,
+                        onResult: (UnlockResult) -> Unit,
+                    ) {
+                        tried = password
+                        onResult(UnlockResult(false, "Incorrect password"))
+                    }
+                }
+            runDesktopComposeUiTest(width = 390, height = 844) {
+                setContent { ValrootTheme(AppearanceTheme.DARK) { LockScreen(host) } }
+                onNodeWithText("Privacy lock password").performTextInput("secret-pass")
+                onNodeWithText("Privacy lock password").performImeAction()
+                assertEquals("secret-pass", tried)
+                // A physical Enter key does the same on desktop.
+                tried = null
+                onNodeWithText("Privacy lock password").performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Enter) }
+                assertEquals("secret-pass", tried)
             }
         }
     }

@@ -357,7 +357,7 @@ private fun TreatmentDialog(
                                 Text(
                                     "Total cost (${quote.value}), optional",
                                 )
-                            }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
                         } else if (movement.amount.atomicUnits.sign < 0) {
                             val candidates =
                                 movements.filter { other ->
@@ -409,7 +409,7 @@ private fun TreatmentDialog(
                                     Text(
                                         "Total proceeds (${quote.value}), optional",
                                     )
-                                }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
                             }
                         } else {
                             Text(

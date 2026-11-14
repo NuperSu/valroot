@@ -177,7 +177,8 @@ internal fun AlchemyKeyDialog(
                     isError = error != null,
                     label = { Text("$name API key") },
                     visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = SecretKeyboard,
+                    keyboardOptions = enterKeyboard(last = true, base = SecretKeyboard),
+                    keyboardActions = enterActions { if (key.isNotBlank() && !busy) submit(key.trim()) },
                     modifier = Modifier.fillMaxWidth().testTag("$tag-key-field"),
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("$tag-key-error")) }
@@ -271,6 +272,7 @@ internal fun EvmChainPicker(
             singleLine = true,
             enabled = enabled,
             label = { Text("Search chains") },
+            keyboardOptions = SearchKeyboard,
             modifier = Modifier.fillMaxWidth().testTag("evm-chain-search"),
         )
     }
@@ -444,6 +446,7 @@ internal fun EvmConnectDialog(
             enabled = editable,
             singleLine = true,
             label = { Text("Account name") },
+            keyboardOptions = enterKeyboard(),
             modifier = Modifier.fillMaxWidth().testTag("evm-connect-name"),
         )
         OutlinedTextField(
@@ -453,6 +456,8 @@ internal fun EvmConnectDialog(
             singleLine = true,
             isError = addressProblem != null,
             label = { Text("EVM address") },
+            keyboardOptions = enterKeyboard(last = true),
+            keyboardActions = enterActions { if (!requested && !saving && blocker == null) canonical?.let { submit(it) } },
             supportingText = {
                 addressProblem?.let {
                     Text(

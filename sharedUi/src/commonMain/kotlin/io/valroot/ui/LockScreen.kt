@@ -15,6 +15,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,32 +33,57 @@ internal fun LockScreen(host: PlatformActions) {
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val biometric = remember { host.biometricUnlock() } == BiometricUnlock.ON
+
+    fun unlockWithPassword() {
+        if (busy) return
+        busy = true
+        host.unlock(password) { result ->
+            busy = false
+            error = if (result.success) null else result.message ?: "Incorrect password. Your data has not been changed."
+            if (result.success) password = ""
+        }
+    }
+
+    fun unlockWithBiometrics() {
+        busy = true
+        error = null
+        host.unlockWithBiometrics { result ->
+            busy = false
+            if (!result.success) error = result.message
+        }
+    }
+
+    // The fingerprint prompt opens by itself once each time the lock shows, when the app is in the foreground; after
+    // "Use password" the button opens it again.
+    val lifecycle =
+        androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateFlow.collectAsState()
+    var prompted by remember { mutableStateOf(false) }
+    LaunchedEffect(lifecycleState) {
+        if (biometric && !prompted && !busy && lifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            prompted = true
+            unlockWithBiometrics()
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
         Column(Modifier.widthIn(max = 400.dp).fillMaxWidth().padding(28.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Text("valroot", fontSize = 40.sp, fontWeight = FontWeight.SemiBold)
             Text("Welcome back", style = MaterialTheme.typography.headlineMedium)
             Text("Unlock your local portfolio.")
-            SecretField("Privacy lock password", password) {
+            SecretField("Privacy lock password", password, onDone = ::unlockWithPassword) {
                 password = it
                 error = null
             }
-            Button(onClick = {
-                busy = true
-                host.unlock(password) { result ->
-                    busy = false
-                    error = if (result.success) null else result.message ?: "Incorrect password. Your data has not been changed."
-                    if (result.success) password = ""
-                }
-            }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Unlocking…" else "Unlock") }
-            if (remember { host.biometricUnlock() } == BiometricUnlock.ON) {
-                OutlinedButton(onClick = {
-                    busy = true
-                    error = null
-                    host.unlockWithBiometrics { result ->
-                        busy = false
-                        if (!result.success) error = result.message
-                    }
-                }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("lock-biometric")) { Text("Unlock with fingerprint") }
+            Button(onClick = ::unlockWithPassword, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text(if (busy) "Unlocking…" else "Unlock")
+            }
+            if (biometric) {
+                OutlinedButton(
+                    onClick = ::unlockWithBiometrics,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().testTag("lock-biometric"),
+                ) { Text("Unlock with fingerprint") }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             TextButton(onClick = { forgot = true }, enabled = !busy, modifier = Modifier.testTag("lock-forgot")) {
@@ -66,6 +93,15 @@ internal fun LockScreen(host: PlatformActions) {
     }
     if (forgot) {
         var typed by remember { mutableStateOf("") }
+
+        fun erase() {
+            busy = true
+            host.eraseAndRemoveLock { message ->
+                busy = false
+                forgot = false
+                error = message.takeUnless { it.startsWith("Local data erased") }
+            }
+        }
         AlertDialog(
             onDismissRequest = { if (!busy) forgot = false },
             title = { Text("Erase this device's Valroot data?") },
@@ -75,20 +111,20 @@ internal fun LockScreen(host: PlatformActions) {
                         "The password cannot be recovered. You can erase this device's Valroot data and remove the lock, " +
                             "then restore an encrypted backup if you have one. Funds on the blockchain are unaffected.",
                     )
-                    OutlinedTextField(typed, { typed = it }, label = { Text("Type ERASE to confirm") }, singleLine = true)
+                    OutlinedTextField(
+                        typed,
+                        { typed = it },
+                        label = { Text("Type ERASE to confirm") },
+                        singleLine = true,
+                        keyboardOptions = enterKeyboard(last = true),
+                        keyboardActions = enterActions { if (typed == "ERASE" && !busy) erase() },
+                    )
                 }
             },
             confirmButton = {
                 TextButton(
                     enabled = typed == "ERASE" && !busy,
-                    onClick = {
-                        busy = true
-                        host.eraseAndRemoveLock { message ->
-                            busy = false
-                            forgot = false
-                            error = message.takeUnless { it.startsWith("Local data erased") }
-                        }
-                    },
+                    onClick = ::erase,
                     modifier = Modifier.testTag("lock-erase-confirm"),
                 ) { Text("Erase and remove lock") }
             },

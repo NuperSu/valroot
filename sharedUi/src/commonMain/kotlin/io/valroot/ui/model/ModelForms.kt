@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.valroot.ui.enterKeyboard
 
 enum class ModelTransactionType(
     val label: String,
@@ -280,19 +281,33 @@ fun ModelTransactionDialog(
                         controls()
                         OutlinedTextField(state.date, {
                             actions.onField(ModelDraftField.DATE, it)
-                        }, label = { Text("Date & time") }, modifier = Modifier.fillMaxWidth())
+                        }, label = {
+                            Text(
+                                "Date & time",
+                            )
+                        }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
                         if (state.showPrice) {
                             OutlinedTextField(state.price, {
                                 actions.onField(ModelDraftField.PRICE, it)
-                            }, label = { Text(state.priceLabel) }, modifier = Modifier.fillMaxWidth())
+                            }, label = {
+                                Text(
+                                    state.priceLabel,
+                                )
+                            }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
                         }
                         OutlinedTextField(state.amount, {
                             actions.onField(ModelDraftField.AMOUNT, it)
-                        }, label = { Text("Amount (${state.type.label})") }, modifier = Modifier.fillMaxWidth())
+                        }, label = {
+                            Text("Amount (${state.type.label})")
+                        }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
                         if (state.showFee) {
                             OutlinedTextField(state.fee, {
                                 actions.onField(ModelDraftField.FEE, it)
-                            }, label = { Text(state.feeLabel) }, modifier = Modifier.fillMaxWidth())
+                            }, label = {
+                                Text(
+                                    state.feeLabel,
+                                )
+                            }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
                         }
                         actions.onSupportedManual?.let { open -> TextButton(onClick = open) { Text("Record deposit, payment or reward") } }
                         OutlinedTextField(state.notes, {

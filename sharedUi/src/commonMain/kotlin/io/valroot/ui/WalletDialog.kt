@@ -93,6 +93,7 @@ internal fun WalletDialog(
                     label = { Text("Wallet name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    keyboardOptions = enterKeyboard(),
                     enabled = !busy,
                 )
                 OutlinedTextField(

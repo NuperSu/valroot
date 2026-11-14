@@ -252,7 +252,14 @@ internal fun ColumnScope.ProductSettings(
                             visualTransformation =
                                 androidx.compose.ui.text.input
                                     .PasswordVisualTransformation(),
-                            keyboardOptions = SecretKeyboard,
+                            keyboardOptions = enterKeyboard(last = true, base = SecretKeyboard),
+                            keyboardActions =
+                                enterActions {
+                                    if (valid) {
+                                        editing = false
+                                        actions.onCoingeckoKey(key.trim())
+                                    }
+                                },
                             modifier = Modifier.testTag("settings-coingecko-key-field"),
                         )
                     },
@@ -364,6 +371,16 @@ internal fun ColumnScope.ProductSettings(
                             singleLine = true,
                             isError = !valid,
                             supportingText = { Text("Up to 40 characters. Leave empty to use \"${device.defaultName}\".") },
+                            keyboardOptions = enterKeyboard(last = true),
+                            keyboardActions =
+                                enterActions {
+                                    if (valid) {
+                                        naming = false
+                                        actions.onGeneral(
+                                            general.copy(deviceName = name.trim().takeIf { it.isNotEmpty() && it != device.defaultName }),
+                                        )
+                                    }
+                                },
                             modifier = Modifier.testTag("settings-device-name-field"),
                         )
                     },

@@ -246,7 +246,7 @@ internal fun BitcoinConnectDialog(
         Text("Watch-only · Bitcoin mainnet")
         OutlinedTextField(label, { label = it }, enabled = editable, label = {
             Text("Account / wallet name")
-        }, modifier = Modifier.fillMaxWidth().testTag("connect-name"))
+        }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth().testTag("connect-name"))
         OutlinedTextField(expression, { expression = it }, enabled = editable, label = {
             Text("Public address, descriptor or xpub")
         }, modifier = Modifier.fillMaxWidth().testTag("connect-expression"))
@@ -285,7 +285,7 @@ internal fun BitcoinConnectDialog(
             endpoint = it
         }, enabled = editable, label = {
             Text("Bitcoin provider (HTTPS Esplora endpoint)")
-        }, modifier = Modifier.fillMaxWidth().testTag("connect-endpoint"))
+        }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth().testTag("connect-endpoint"))
         Text(
             "The provider receives these addresses and your IP address to read their history.",
             style = MaterialTheme.typography.bodySmall,
@@ -385,7 +385,7 @@ internal fun BitcoinHistoryDialog(
             endpoint = it
         }, enabled = !busy && !running, label = {
             Text("Bitcoin provider (HTTPS Esplora endpoint)")
-        }, modifier = Modifier.fillMaxWidth().testTag("history-endpoint"))
+        }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth().testTag("history-endpoint"))
         Text(
             "The provider receives these addresses and your IP address to read their history.",
             style = MaterialTheme.typography.bodySmall,

@@ -359,6 +359,7 @@ private fun CoinTransactions(
         label = { Text("Search transactions") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
+        keyboardOptions = SearchKeyboard,
     )
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         TextButton(onClick = { kindName = null }) { Text(if (kindName == null) "All types ✓" else "All types") }

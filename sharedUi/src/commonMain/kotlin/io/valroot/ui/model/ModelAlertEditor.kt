@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.valroot.core.alerts.AlertCondition
+import io.valroot.ui.enterActions
+import io.valroot.ui.enterKeyboard
 
 /**
  * The alert editor dialog. [alertId] is null for a new alert. [threshold] is a price in [currency] for ABOVE and BELOW, and a
@@ -92,7 +94,8 @@ fun ModelAlertEditor(
                     label = { Text(if (state.condition == AlertCondition.MOVE) "Move (%)" else "Price (${state.currency})") },
                     singleLine = true,
                     isError = state.error != null,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = enterKeyboard(last = true, base = KeyboardOptions(keyboardType = KeyboardType.Decimal)),
+                    keyboardActions = enterActions { if (!state.saving) onSave() },
                     enabled = !state.saving,
                     modifier = Modifier.fillMaxWidth().testTag("alert-threshold"),
                 )

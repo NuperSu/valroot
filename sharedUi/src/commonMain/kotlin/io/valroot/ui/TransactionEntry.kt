@@ -264,7 +264,14 @@ internal fun TransactionEntry(
         ),
     ) {
         TransactionChoice("Account", accounts.map { it.id.value to it.label }, account) { account = it }
-        OutlinedTextField(accountName, { accountName = it }, label = { Text("New local account name") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            accountName,
+            { accountName = it },
+            label = { Text("New local account name") },
+            singleLine = true,
+            keyboardOptions = enterKeyboard(),
+            modifier = Modifier.fillMaxWidth(),
+        )
         Button(enabled = accountName.isNotBlank() && !saving, onClick = {
             saving = true
             scope.launch {
@@ -311,7 +318,9 @@ internal fun TransactionEntry(
         }
         OutlinedTextField(counterparty, {
             counterparty = it
-        }, label = { Text("External counterparty (optional)") }, modifier = Modifier.fillMaxWidth())
+        }, label = {
+            Text("External counterparty (optional)")
+        }, singleLine = true, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth())
         if (type != "FEE") TransactionChoice("Fee asset", options.map { it.id to it.ticker }, feeAsset) { feeAsset = it }
         if (fee.isNotBlank() &&
             feeAsset != selected &&
@@ -321,6 +330,8 @@ internal fun TransactionEntry(
                 feePrice,
                 { feePrice = it },
                 label = { Text("Evidenced fee unit price ($quote)") },
+                singleLine = true,
+                keyboardOptions = enterKeyboard(),
                 modifier = Modifier.fillMaxWidth(),
             )
         }

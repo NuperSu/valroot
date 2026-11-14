@@ -100,8 +100,37 @@ internal fun ColumnScope.SecurityWorkflow(
         },
         fontSize = 13.sp,
     )
+
+    fun submit() {
+        if (password.length < 8 ||
+            (type != "restore" && password != confirmation)
+        ) {
+            error = "Use at least 8 characters and matching passwords."
+            return
+        }
+        when (type) {
+            "lock" ->
+                host.setLockPassword(password) {
+                    notify(it)
+                    close()
+                }
+            "restore" -> {
+                if (!acceptedBackup) {
+                    error = "Confirm that this backup will replace the local portfolio."
+                    return
+                }
+                host.restoreBackup(password) { message -> lasting?.trySend(message) ?: notify(message) }
+                close()
+            }
+            else -> {
+                host.saveBackup(password) { notify(it) }
+                close()
+            }
+        }
+    }
+    // Enter moves from the password to its confirmation (or the restore checkbox), and confirms on the last field.
     SecretField("Password (at least 8 characters)", password) { password = it }
-    if (type != "restore") SecretField("Confirm password", confirmation) { confirmation = it }
+    if (type != "restore") SecretField("Confirm password", confirmation, onDone = ::submit) { confirmation = it }
     if (type ==
         "restore"
     ) {
@@ -114,33 +143,7 @@ internal fun ColumnScope.SecurityWorkflow(
             )
         }
     }
-    Button(onClick = {
-        if (password.length < 8 ||
-            (type != "restore" && password != confirmation)
-        ) {
-            error = "Use at least 8 characters and matching passwords."
-            return@Button
-        }
-        when (type) {
-            "lock" ->
-                host.setLockPassword(password) {
-                    notify(it)
-                    close()
-                }
-            "restore" -> {
-                if (!acceptedBackup) {
-                    error = "Confirm that this backup will replace the local portfolio."
-                    return@Button
-                }
-                host.restoreBackup(password) { message -> lasting?.trySend(message) ?: notify(message) }
-                close()
-            }
-            else -> {
-                host.saveBackup(password) { notify(it) }
-                close()
-            }
-        }
-    }, modifier = Modifier.fillMaxWidth()) {
+    Button(onClick = ::submit, modifier = Modifier.fillMaxWidth()) {
         Text(
             when (type) {
                 "restore" -> "Choose backup & restore"
@@ -164,15 +167,18 @@ internal fun ColumnScope.WipeWorkflow(
     Text(
         "This removes owners, accounts, activity, prices, corrections and settings from this device. Export a backup first. Funds on the blockchain are unaffected.",
     )
-    Field("Type ERASE to confirm", name) { name = it }
+
+    fun erase() {
+        if (name != "ERASE") return
+        execute("Local portfolio data erased") {
+            app.backup.wipe()
+            applyAutomaticRefresh(app, host, false)
+        }
+        close()
+    }
+    Field("Type ERASE to confirm", name, onDone = ::erase) { name = it }
     Button(
-        onClick = {
-            execute("Local portfolio data erased") {
-                app.backup.wipe()
-                applyAutomaticRefresh(app, host, false)
-            }
-            close()
-        },
+        onClick = ::erase,
         enabled =
             name == "ERASE",
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),

@@ -70,6 +70,7 @@ private fun ExchangeKeyFields(
     enabled: Boolean,
     onKey: (String) -> Unit,
     onSecret: (String) -> Unit,
+    onDone: (() -> Unit)? = null,
 ) {
     OutlinedTextField(
         key,
@@ -79,7 +80,7 @@ private fun ExchangeKeyFields(
         label = { Text("API key") },
         isError = key.isNotEmpty() && !key.trim().matches(EXCHANGE_KEY_TEXT),
         visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = SecretKeyboard,
+        keyboardOptions = enterKeyboard(base = SecretKeyboard),
         modifier = Modifier.fillMaxWidth().testTag("${kind.id}-key"),
     )
     OutlinedTextField(
@@ -90,7 +91,8 @@ private fun ExchangeKeyFields(
         label = { Text("API secret") },
         isError = secret.isNotEmpty() && !secret.trim().matches(EXCHANGE_KEY_TEXT),
         visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = SecretKeyboard,
+        keyboardOptions = enterKeyboard(onDone != null, SecretKeyboard),
+        keyboardActions = enterActions(onDone),
         modifier = Modifier.fillMaxWidth().testTag("${kind.id}-secret"),
     )
 }
@@ -211,6 +213,7 @@ internal fun ExchangeConnectDialog(
             enabled = !saving,
             singleLine = true,
             label = { Text("Account name") },
+            keyboardOptions = enterKeyboard(),
             modifier = Modifier.fillMaxWidth().testTag("${kind.id}-connect-name"),
         )
         ExchangeKeyFields(kind, key, secret, !saving, { key = it }, { secret = it })
@@ -389,9 +392,8 @@ private fun ExchangeKeyDialog(
     var error by remember { mutableStateOf<String?>(null) }
     val ready = key.trim().matches(EXCHANGE_KEY_TEXT) && secret.trim().matches(EXCHANGE_KEY_TEXT)
     AccountFlowDialog("${kind.label} API key", busy, close) {
-        ExchangeKeyFields(kind, key, secret, !busy, { key = it }, { secret = it })
-        Text(exchangeKeyHelp(kind), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(enabled = ready && !busy, modifier = Modifier.fillMaxWidth().testTag("${kind.id}-key-save"), onClick = {
+        fun save() {
+            if (!ready || busy) return
             busy = true
             error = null
             scope.launch {
@@ -419,7 +421,12 @@ private fun ExchangeKeyDialog(
                     busy = false
                 }
             }
-        }) { Text(if (busy) "Checking key…" else "Save key") }
+        }
+        ExchangeKeyFields(kind, key, secret, !busy, { key = it }, { secret = it }, onDone = ::save)
+        Text(exchangeKeyHelp(kind), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(enabled = ready && !busy, modifier = Modifier.fillMaxWidth().testTag("${kind.id}-key-save"), onClick = ::save) {
+            Text(if (busy) "Checking key…" else "Save key")
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("${kind.id}-key-error")) }
     }
 }
@@ -462,10 +469,21 @@ private fun AddPairDialog(
         Text("The coin you traded and the coin you paid or received, for example SOL and USDT.")
         OutlinedTextField(base, {
             base = it
-        }, singleLine = true, label = { Text("Coin") }, modifier = Modifier.fillMaxWidth().testTag("pair-base"))
-        OutlinedTextField(quote, {
-            quote = it
-        }, singleLine = true, label = { Text("Paid or received in") }, modifier = Modifier.fillMaxWidth().testTag("pair-quote"))
+        }, singleLine = true, label = {
+            Text("Coin")
+        }, keyboardOptions = enterKeyboard(), modifier = Modifier.fillMaxWidth().testTag("pair-base"))
+        OutlinedTextField(
+            quote,
+            {
+                quote = it
+            },
+            singleLine = true,
+            label = { Text("Paid or received in") },
+            keyboardOptions = enterKeyboard(last = true),
+            keyboardActions =
+                enterActions { if (ready) add(base.trim(), quote.trim()) },
+            modifier = Modifier.fillMaxWidth().testTag("pair-quote"),
+        )
         Button(
             enabled = ready,
             modifier = Modifier.fillMaxWidth().testTag("pair-save"),
