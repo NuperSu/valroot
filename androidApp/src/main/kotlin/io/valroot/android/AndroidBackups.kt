@@ -178,6 +178,10 @@ internal class AndroidBackups(
                     ) {
                         result = "Backup restored; automatic price scheduling could not be updated"
                     }
+                    // The restored settings decide whether periodic notification checks run.
+                    if (swapped && replacementReady) {
+                        runCatching { state.app.value?.let { NotificationWorker.schedule(state.activity, it.notifications.active()) } }
+                    }
                 }
                 staging?.let { runCatching { Files.deleteIfExists(it) } }
             }
