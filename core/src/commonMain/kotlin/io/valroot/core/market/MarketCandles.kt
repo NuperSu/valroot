@@ -137,6 +137,37 @@ object CoingeckoCandles {
 }
 
 /**
+ * CoinGecko candle responses kept for [MAX_AGE_MILLIS] in this process, by coin, currency and days. Ranges share them:
+ * the 7-day response is both the 1W candles and the 4-hour pieces of a forming 4-day candle, so switching ranges rarely
+ * needs a request, which matters with CoinGecko's few keyless requests a minute.
+ */
+internal object CoingeckoCandleCache {
+    const val MAX_AGE_MILLIS = 3 * 60_000L
+    private const val MAX_ENTRIES = 64
+    private val entries = LinkedHashMap<String, Pair<Long, List<MarketCandle>>>()
+
+    @Synchronized
+    fun get(
+        key: String,
+        now: Long,
+    ): List<MarketCandle>? = entries[key]?.takeIf { now - it.first in 0 until MAX_AGE_MILLIS }?.second
+
+    @Synchronized
+    fun put(
+        key: String,
+        now: Long,
+        candles: List<MarketCandle>,
+    ) {
+        entries.remove(key)
+        entries[key] = now to candles
+        while (entries.size > MAX_ENTRIES) entries.remove(entries.keys.first())
+    }
+
+    @Synchronized
+    fun clear() = entries.clear()
+}
+
+/**
  * Kraken's public OHLC candles for one pair. Rows are `[open time (s), open, high, low, close, vwap, volume, count]`;
  * the last row is the candle still forming.
  */

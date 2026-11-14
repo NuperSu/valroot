@@ -204,6 +204,34 @@ class MarketService internal constructor(
     }
 
     /**
+     * CoinGecko's candles of [coinId] for [days], from [CoingeckoCandleCache] when fetched recently. A rate limit starts
+     * the same one-minute pause as the market lists, and no candle request is made during it.
+     */
+    private fun coingeckoCandles(
+        coinId: String,
+        currency: String,
+        days: Int,
+        coingecko: (url: String, apiKey: String?) -> String,
+        baseUrl: String,
+    ): List<MarketCandle> {
+        val key = "$coinId:${currency.lowercase()}:$days"
+        CoingeckoCandleCache.get(key, now())?.let { return it }
+        marketFeeds.deviceSetting("coingecko_retry_after")?.toLongOrNull()?.takeIf { it > now() }?.let {
+            throw CoingeckoProviderException(CoingeckoProviderFailure.RATE_LIMITED)
+        }
+        val payload =
+            try {
+                coingecko(CoingeckoCandles.url(baseUrl, coinId, currency, days), coingeckoApiKey())
+            } catch (failure: CoingeckoProviderException) {
+                if (failure.failure == CoingeckoProviderFailure.RATE_LIMITED) {
+                    marketFeeds.putDeviceSetting("coingecko_retry_after", (now() + 60_000L).toString())
+                }
+                throw failure
+            }
+        return CoingeckoCandles.parse(payload, CoingeckoCandles.intervalMillis(days)).also { CoingeckoCandleCache.put(key, now(), it) }
+    }
+
+    /**
      * CoinGecko's candle forming after [lastClose], from its shorter candles ([CoingeckoCandles.finerDays]): 4-hour candles
      * up to their last close, then 30-minute ones. Null when none started yet or a shorter request fails, so the closed
      * candles still show.
@@ -221,10 +249,7 @@ class MarketService internal constructor(
         for (shorter in CoingeckoCandles.finerDays(days)) {
             val rows =
                 try {
-                    CoingeckoCandles.parse(
-                        coingecko(CoingeckoCandles.url(baseUrl, coinId, currency, shorter), coingeckoApiKey()),
-                        CoingeckoCandles.intervalMillis(shorter),
-                    )
+                    coingeckoCandles(coinId, currency, shorter, coingecko, baseUrl)
                 } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -256,14 +281,8 @@ class MarketService internal constructor(
         val days = CoingeckoCandles.days(range)
         if (days != null && consent()) {
             try {
-                marketFeeds.deviceSetting("coingecko_retry_after")?.toLongOrNull()?.takeIf { it > now() }?.let {
-                    throw CoingeckoProviderException(CoingeckoProviderFailure.RATE_LIMITED)
-                }
                 val interval = CoingeckoCandles.intervalMillis(days)
-                val candles =
-                    CoingeckoCandles
-                        .parse(coingecko(CoingeckoCandles.url(baseUrl, coinId, currency, days), coingeckoApiKey()), interval)
-                        .filter { it.closeMillis > from }
+                val candles = coingeckoCandles(coinId, currency, days, coingecko, baseUrl).filter { it.closeMillis > from }
                 if (candles.isNotEmpty()) {
                     val forming = formingCoingeckoCandle(coinId, currency, days, candles.last().closeMillis, coingecko, baseUrl)
                     return CandleSeries(CoingeckoCandles.SOURCE, interval, candles + listOfNotNull(forming))

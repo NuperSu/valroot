@@ -3,6 +3,7 @@ package io.valroot.core.market
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.storage.JvmSqliteDatabase
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -10,6 +11,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MarketCandlesTest {
+    @BeforeTest fun forgetCachedCandles() = CoingeckoCandleCache.clear()
+
     private val now = 1_800_000_000_000L
     private val halfHour = 30 * 60_000L
 
@@ -73,7 +76,8 @@ class MarketCandlesTest {
             assertEquals(60_000L, hour.intervalMillis)
             assertTrue(requests.single().startsWith("https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=1&since="))
 
-            // A failed CoinGecko request falls back to Kraken.
+            // A failed CoinGecko request falls back to Kraken (the earlier response is no longer kept).
+            CoingeckoCandleCache.clear()
             requests.clear()
             val failing = { _: String, _: String? -> throw CoingeckoProviderException(CoingeckoProviderFailure.OFFLINE) }
             assertEquals("Kraken XBT/USD", app.market.candles("bitcoin", CandleRange.DAY, failing, fromKraken)!!.source)
@@ -116,6 +120,7 @@ class MarketCandlesTest {
             assertEquals(ExactDecimal.parse("74"), forming.close)
 
             // A failed shorter request leaves the closed candles.
+            CoingeckoCandleCache.clear()
             val failing = { url: String, key: String? ->
                 if (url.endsWith(
                         "days=90",
@@ -135,5 +140,47 @@ class MarketCandlesTest {
     @Test fun krakensLastRowIsTheCandleStillForming() {
         val candles = KrakenCandles.parse(kraken("XXBTZUSD"), 1)
         assertEquals(listOf(false, true), candles.map { it.forming })
+    }
+
+    @Test fun rangesShareRecentResponsesAndARateLimitPausesCandleRequests() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            var at = now
+            val app = PortfolioApplication(db) { at }
+            app.market.setConsent(true)
+            val requests = mutableListOf<String>()
+            val transport = { url: String, _: String? -> coingecko.also { requests += url.substringAfter("days=") } }
+            app.market.candles("bitcoin", CandleRange.QUARTER, transport, { error("Kraken is not needed") })
+            assertEquals(listOf("90", "7", "1"), requests)
+            // 1W and 1D reuse the 7-day and 1-day responses 3M fetched.
+            app.market.candles("bitcoin", CandleRange.WEEK, transport, { error("Kraken is not needed") })
+            app.market.candles("bitcoin", CandleRange.DAY, transport, { error("Kraken is not needed") })
+            assertEquals(listOf("90", "7", "1"), requests)
+
+            // A refused request pauses candle requests for a minute.
+            val limited = { _: String, _: String? ->
+                requests += "limited"
+                throw CoingeckoProviderException(CoingeckoProviderFailure.RATE_LIMITED)
+            }
+            assertFailsWith<CoingeckoProviderException> {
+                app.market.candles(
+                    "bitcoin",
+                    CandleRange.MONTH,
+                    limited,
+                    { error("no Kraken") },
+                )
+            }
+            assertFailsWith<CoingeckoProviderException> {
+                app.market.candles(
+                    "bitcoin",
+                    CandleRange.MONTH,
+                    transport,
+                    { error("no Kraken") },
+                )
+            }
+            assertEquals(listOf("90", "7", "1", "limited"), requests)
+            at += 61_000L
+            app.market.candles("bitcoin", CandleRange.MONTH, transport, { error("no Kraken") })
+            assertEquals("30", requests[4])
+        }
     }
 }
