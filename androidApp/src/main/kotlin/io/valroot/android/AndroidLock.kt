@@ -19,7 +19,6 @@ internal class AndroidLock(
     private val lockStore = SecureLockStore(state.preferences)
     private val biometrics = BiometricLock(state.activity, state.preferences)
     private var leftAt: Long? = null
-    private var leftWhileChoosing = false
 
     val locked: MutableState<Boolean> = mutableStateOf(lockStore.hasLock)
 
@@ -68,20 +67,18 @@ internal class AndroidLock(
 
     /**
      * The app went to the background: lock now, or remember when, depending on the delay. While [choosing] a file the
-     * picker covers the app, so it only remembers when; [returned] then locks after [CHOOSING_GRACE_MILLIS] at least.
+     * picker covers the app, so it only remembers when, and [returned] applies the delay; with no delay that locks on
+     * every return from a picker, since leaving the app through it cannot be told apart.
      */
     fun left(choosing: Boolean = false) {
-        leftWhileChoosing = choosing
         if (delayMillis == 0L && !choosing) lock() else leftAt = android.os.SystemClock.elapsedRealtime()
     }
 
-    /** The app came back: lock if it was away at least as long as the delay (or the picker grace). */
+    /** The app came back: lock if it was away at least as long as the delay. */
     fun returned() {
         val away = leftAt?.let { android.os.SystemClock.elapsedRealtime() - it }
-        val limit = if (leftWhileChoosing) maxOf(delayMillis, CHOOSING_GRACE_MILLIS) else delayMillis
         leftAt = null
-        leftWhileChoosing = false
-        if (away != null && away >= limit) lock()
+        if (away != null && away >= delayMillis) lock()
     }
 
     fun lock() {
@@ -171,6 +168,3 @@ internal class AndroidLock(
         }
     }
 }
-
-/** Time a file picker may cover the app before returning from it locks; leaving through the picker is not seen. */
-internal const val CHOOSING_GRACE_MILLIS = 60_000L
