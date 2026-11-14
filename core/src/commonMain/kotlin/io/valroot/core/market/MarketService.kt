@@ -204,6 +204,40 @@ class MarketService internal constructor(
     }
 
     /**
+     * CoinGecko's candle forming after [lastClose], from its shorter candles ([CoingeckoCandles.finerDays]): 4-hour candles
+     * up to their last close, then 30-minute ones. Null when none started yet or a shorter request fails, so the closed
+     * candles still show.
+     */
+    private fun formingCoingeckoCandle(
+        coinId: String,
+        currency: String,
+        days: Int,
+        lastClose: Long,
+        coingecko: (url: String, apiKey: String?) -> String,
+        baseUrl: String,
+    ): MarketCandle? {
+        val pieces = mutableListOf<MarketCandle>()
+        var covered = lastClose
+        for (shorter in CoingeckoCandles.finerDays(days)) {
+            val rows =
+                try {
+                    CoingeckoCandles.parse(
+                        coingecko(CoingeckoCandles.url(baseUrl, coinId, currency, shorter), coingeckoApiKey()),
+                        CoingeckoCandles.intervalMillis(shorter),
+                    )
+                } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    break
+                }
+            val newer = rows.filter { it.openMillis >= covered }
+            pieces += newer
+            newer.lastOrNull()?.let { covered = it.closeMillis }
+        }
+        return CoingeckoCandles.forming(lastClose, pieces)
+    }
+
+    /**
      * Candles of [coinId] in the display currency for [range], as traded: CoinGecko's first; Kraken's when CoinGecko
      * cannot give them (a range shorter than its shortest candle, no market data consent, or a failed request) and
      * Kraken requests are allowed (the order book consent). Null when neither has candles; a failure is rethrown when
@@ -230,7 +264,10 @@ class MarketService internal constructor(
                     CoingeckoCandles
                         .parse(coingecko(CoingeckoCandles.url(baseUrl, coinId, currency, days), coingeckoApiKey()), interval)
                         .filter { it.closeMillis > from }
-                if (candles.isNotEmpty()) return CandleSeries(CoingeckoCandles.SOURCE, interval, candles)
+                if (candles.isNotEmpty()) {
+                    val forming = formingCoingeckoCandle(coinId, currency, days, candles.last().closeMillis, coingecko, baseUrl)
+                    return CandleSeries(CoingeckoCandles.SOURCE, interval, candles + listOfNotNull(forming))
+                }
             } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
                 throw cancelled
             } catch (failed: Exception) {

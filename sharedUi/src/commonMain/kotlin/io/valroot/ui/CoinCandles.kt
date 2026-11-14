@@ -101,6 +101,7 @@ internal fun candleChartData(
                 it.close.toString().toDouble(),
                 it.openMillis,
                 it.closeMillis,
+                it.forming,
             )
         }
     val span = series.candles.last().closeMillis - series.candles.first().openMillis

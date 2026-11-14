@@ -68,7 +68,7 @@ data class ChartData(
     val known: List<Double> get() = values.filterNotNull()
 }
 
-/** One market candle: open, high, low and close prices traded from [start] to [end]. */
+/** One market candle: open, high, low and close prices traded from [start] to [end]; a [forming] one is still open. */
 data class Candle(
     val open: Double,
     val high: Double,
@@ -76,6 +76,7 @@ data class Candle(
     val close: Double,
     val start: Long,
     val end: Long,
+    val forming: Boolean = false,
 )
 
 /** "+3.21%" style change from [from] to [to]; "—" without a positive starting value. */
@@ -246,7 +247,8 @@ fun ModelInteractiveChart(
                         listOf(
                             "O ${label(candle.open)}  C ${label(candle.close)}",
                             "H ${label(candle.high)}  L ${label(candle.low)}",
-                            "${chartPercent(first, candle.close)} · ${data.formatTime(candle.start)} – ${data.formatTime(candle.end)}",
+                            "${chartPercent(first, candle.close)} · ${data.formatTime(candle.start)} – " +
+                                if (candle.forming) "now" else data.formatTime(candle.end),
                         )
                     } ?: listOf("No price in this period")
                 } else {

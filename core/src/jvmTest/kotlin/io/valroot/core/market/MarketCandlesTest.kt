@@ -83,4 +83,57 @@ class MarketCandlesTest {
             assertFailsWith<CoingeckoProviderException> { app.market.candles("bitcoin", CandleRange.DAY, failing, fromKraken) }
         }
     }
+
+    @Test fun theCandleStillFormingIsBuiltFromShorterClosedCandles() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { now }
+            app.market.setConsent(true)
+            val hour = 3_600_000L
+            val fourDays = 96 * hour
+            val lastClose = now - 95 * hour
+            val requests = mutableListOf<String>()
+            val transport = { url: String, _: String? ->
+                requests += url
+                when (url.substringAfter("days=")) {
+                    // Closed 4-day candles only; the last closed 95 hours ago.
+                    "90" -> """[[${lastClose - fourDays},90,100,80,95],[$lastClose,95,99,90,96]]"""
+                    // 4-hour candles: one before the last close, then two after it.
+                    "7" -> """[[$lastClose,95,96,94,95],[${lastClose + 4 * hour},96,120,93,97],[${lastClose + 8 * hour},97,98,70,72]]"""
+                    // 30-minute candles: older ones are covered by the 4-hour candles already.
+                    else -> """[[${lastClose + 8 * hour},97,98,96,97],[${lastClose + 8 * hour + halfHour},72,75,71,74]]"""
+                }
+            }
+            val series = app.market.candles("bitcoin", CandleRange.QUARTER, transport, { error("Kraken is not needed") })!!
+            assertEquals(listOf("days=90", "days=7", "days=1"), requests.map { "days=" + it.substringAfter("days=") })
+            assertEquals(3, series.candles.size)
+            val forming = series.candles.last()
+            assertTrue(forming.forming)
+            assertEquals(lastClose, forming.openMillis)
+            assertEquals(lastClose + 8 * hour + halfHour, forming.closeMillis)
+            assertEquals(ExactDecimal.parse("96"), forming.open)
+            assertEquals(ExactDecimal.parse("120"), forming.high)
+            assertEquals(ExactDecimal.parse("70"), forming.low)
+            assertEquals(ExactDecimal.parse("74"), forming.close)
+
+            // A failed shorter request leaves the closed candles.
+            val failing = { url: String, key: String? ->
+                if (url.endsWith(
+                        "days=90",
+                    )
+                ) {
+                    transport(url, key)
+                } else {
+                    throw CoingeckoProviderException(CoingeckoProviderFailure.RATE_LIMITED)
+                }
+            }
+            val closed = app.market.candles("bitcoin", CandleRange.QUARTER, failing, { error("Kraken is not needed") })!!
+            assertEquals(2, closed.candles.size)
+            assertTrue(closed.candles.none { it.forming })
+        }
+    }
+
+    @Test fun krakensLastRowIsTheCandleStillForming() {
+        val candles = KrakenCandles.parse(kraken("XXBTZUSD"), 1)
+        assertEquals(listOf(false, true), candles.map { it.forming })
+    }
 }

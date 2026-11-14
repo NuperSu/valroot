@@ -8,7 +8,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** One market candle as the venue reported it: open, high, low and close traded prices of [openMillis]..[closeMillis]. */
+/**
+ * One market candle: open, high, low and close traded prices of [openMillis]..[closeMillis]. A [forming] candle has not
+ * closed yet: its close is the latest price, and [closeMillis] is the time of that price.
+ */
 data class MarketCandle(
     val openMillis: Long,
     val closeMillis: Long,
@@ -16,6 +19,7 @@ data class MarketCandle(
     val high: ExactDecimal,
     val low: ExactDecimal,
     val close: ExactDecimal,
+    val forming: Boolean = false,
 )
 
 /** Candles of one coin for a chart range, with where they come from and the length of each candle. */
@@ -60,6 +64,38 @@ object CoingeckoCandles {
             CandleRange.QUARTER -> 90
             CandleRange.YEAR -> 365
         }
+
+    /**
+     * Shorter candle ranges that cover the candle still forming after the last closed one, longest first: CoinGecko
+     * lists closed candles only, so a 4-day candle can be up to four days behind.
+     */
+    fun finerDays(days: Int): List<Int> =
+        when {
+            days <= 2 -> emptyList()
+            days <= 30 -> listOf(1)
+            else -> listOf(7, 1)
+        }
+
+    /**
+     * The candle forming after [lastClose], combined from shorter closed candles that started at or after it: the first
+     * open, the highest high, the lowest low and the latest close. Null when none started yet.
+     */
+    fun forming(
+        lastClose: Long,
+        shorter: List<MarketCandle>,
+    ): MarketCandle? {
+        val pieces = shorter.filter { it.openMillis >= lastClose }
+        if (pieces.isEmpty()) return null
+        return MarketCandle(
+            lastClose,
+            pieces.last().closeMillis,
+            pieces.first().open,
+            pieces.maxOf { it.high },
+            pieces.minOf { it.low },
+            pieces.last().close,
+            forming = true,
+        )
+    }
 
     fun intervalMillis(days: Int): Long =
         when {
@@ -138,7 +174,7 @@ object KrakenCandles {
                 .single { it.key != "last" }
                 .value as JsonArray
         var previous = Long.MIN_VALUE
-        return rows.map { row ->
+        return rows.mapIndexed { index, row ->
             val cells = row.jsonArray
             require(cells.size == 8)
             val open = cells[0].jsonPrimitive.content.toLong() * 1000
@@ -146,7 +182,7 @@ object KrakenCandles {
             previous = open
             val (first, high, low, close) = (1..4).map { price(cells[it]) }
             requireConsistent(first, high, low, close)
-            MarketCandle(open, open + interval, first, high, low, close)
+            MarketCandle(open, open + interval, first, high, low, close, forming = index == rows.lastIndex)
         }
     }
 }

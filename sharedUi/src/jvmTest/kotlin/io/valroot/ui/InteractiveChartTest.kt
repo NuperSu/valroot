@@ -36,7 +36,7 @@ class InteractiveChartTest {
             { "t${it / 3_600_000L}" },
         )
 
-    /** Two market candles: 100 → 110 (high 115, low 95), then 110 → 140 (high 150, low 105). */
+    /** Two market candles: 100 → 110 (high 115, low 95), then 110 → 140 so far (high 150, low 105). */
     private val withCandles =
         data.copy(
             values = listOf(110.0, 140.0),
@@ -44,7 +44,7 @@ class InteractiveChartTest {
             candles =
                 listOf(
                     Candle(100.0, 115.0, 95.0, 110.0, 0L, 3_600_000L),
-                    Candle(110.0, 150.0, 105.0, 140.0, 3_600_000L, 7_200_000L),
+                    Candle(110.0, 150.0, 105.0, 140.0, 3_600_000L, 7_200_000L, forming = true),
                 ),
         )
 
@@ -70,8 +70,9 @@ class InteractiveChartTest {
             waitForIdle()
             onNodeWithText("O $110  C $140").assertExists()
             onNodeWithText("H $150  L $105").assertExists()
-            // The change is measured from the first candle's open.
+            // The change is measured from the first candle's open; the last candle has not closed yet.
             onNodeWithText("+40.00%", substring = true).assertExists()
+            onNodeWithText("– now", substring = true).assertExists()
         }
     }
 
