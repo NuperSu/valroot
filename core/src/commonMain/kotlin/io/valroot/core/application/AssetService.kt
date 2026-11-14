@@ -157,13 +157,15 @@ class AssetService internal constructor(
 
     /**
      * Returns quote value per atomic unit only for a fresh observation; missing or stale prices stay null. [current]
-     * uses the short current-price window, otherwise the 24-hour historical one.
+     * uses the short current-price window, otherwise the 24-hour historical one. Prices saved up to [knownAtMillis]
+     * count, so a historical price downloaded later values an earlier instant.
      */
     internal fun unitPrice(
         asset: AssetId,
         quote: AssetId,
         atMillis: Long,
         current: Boolean = true,
+        knownAtMillis: Long = atMillis,
     ): QuoteValue? {
         val decimals = market.metadataAt(asset, atMillis)?.decimals ?: return null
         val wholeUnitPrice =
@@ -173,7 +175,7 @@ class AssetService internal constructor(
             ) {
                 Rational.units(ExactInteger.parse("1"))
             } else {
-                val result = market.lookup(asset, quote, atMillis, atMillis, app.prices.policy(current = current))
+                val result = market.lookup(asset, quote, atMillis, maxOf(atMillis, knownAtMillis), app.prices.policy(current = current))
                 val observation = result.observation?.takeIf { result.status == PriceStatus.FRESH } ?: return null
                 Rational.fromDecimal(observation.price.value)
             }

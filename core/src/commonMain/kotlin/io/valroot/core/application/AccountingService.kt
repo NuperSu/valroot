@@ -92,11 +92,19 @@ class AccountingService internal constructor(
         activity: Activity,
         saved: List<Treatment>,
         quote: AssetId,
+        knownAt: Long,
     ): List<Treatment>? {
         val movement = activity.movements.single()
         val unknownCost = saved.singleOrNull()?.let { it is Treatment.Acquire && it.movement == movement.id && it.cost == null }
         if (saved.isNotEmpty() && unknownCost != true) return null
-        val unit = app.assets.unitPrice(movement.amount.assetId, quote, activity.occurredAtEpochMillis, current = false) ?: return null
+        val unit =
+            app.assets.unitPrice(
+                movement.amount.assetId,
+                quote,
+                activity.occurredAtEpochMillis,
+                current = false,
+                knownAtMillis = knownAt,
+            ) ?: return null
         return listOf(Treatment.Acquire(movement.id, QuoteValue(quote, unit.amount * Rational.units(movement.amount.atomicUnits)), true))
     }
 
@@ -115,6 +123,8 @@ class AccountingService internal constructor(
         val isExchange = app.exchanges.exchangeActivities()
         val automatic = mutableListOf<ActivityId>()
         val classifications = mutableMapOf<ActivityId, List<Treatment>>()
+        // Prices saved up to now count, including historical prices downloaded after the activity.
+        val priceAt = now()
 
         // Saved treatments, or the defaults for an unclassified exchange activity.
         fun classified(activity: Activity): List<Treatment> =
@@ -132,8 +142,13 @@ class AccountingService internal constructor(
                             },
                         ) { movement ->
                             app.assets
-                                .unitPrice(movement.amount.assetId, quote, activity.occurredAtEpochMillis, current = false)
-                                ?.let {
+                                .unitPrice(
+                                    movement.amount.assetId,
+                                    quote,
+                                    activity.occurredAtEpochMillis,
+                                    current = false,
+                                    knownAtMillis = priceAt,
+                                )?.let {
                                     QuoteValue(
                                         quote,
                                         it.amount * Rational.units(movement.amount.atomicUnits.let { if (it.sign < 0) -it else it }),
@@ -145,7 +160,6 @@ class AccountingService internal constructor(
                     }
                 }
             }
-        val priceAt = now()
         val confirmedLedger = ledger().activities.filter { it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
         // Replay each owner's full inventory before selecting accounts, preserving transferred lot age and basis.
         val reports =
@@ -202,7 +216,7 @@ class AccountingService internal constructor(
                                 .let { recorded ->
                                     isOpening
                                         ?.takeIf { it(activity) }
-                                        ?.let { estimatedOpening(activity, recorded, quote) }
+                                        ?.let { estimatedOpening(activity, recorded, quote, priceAt) }
                                         ?.also { estimated.add(activity.id) } ?: recorded
                                 }
                         if (saved.isEmpty()) {

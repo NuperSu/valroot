@@ -235,13 +235,15 @@ class MexcConnectorTest {
                     .single()
                     .amount.assetId
             val usd = app.assets.portfolioCurrency(null)
+            // A historical price saved after the opening, as a later price download would.
+            assertTrue(opening.occurredAtEpochMillis < now - 1)
             app.prices.recordManual(
                 PriceObservation(
                     "opening",
                     Price(btc, usd, ExactDecimal.parse("20000")),
                     null,
                     opening.occurredAtEpochMillis,
-                    opening.occurredAtEpochMillis,
+                    now - 1,
                     true,
                 ),
             )
