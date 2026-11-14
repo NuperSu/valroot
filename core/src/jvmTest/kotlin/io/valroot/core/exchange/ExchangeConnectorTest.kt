@@ -212,6 +212,11 @@ class ExchangeConnectorTest {
             assertEquals(101 * day, refused.nextRetryMillis)
             app.readOnce(Exchange { false }, 101 * day)
             assertEquals(HistoryCoverage.COMPLETE, app.exchanges.coverage(account).coverage)
+            // Records a refresh left unread outside the window streams, such as a symbol's trades.
+            app.exchanges.saveCursor(account, ExchangeConnector.UNREAD_CURSOR, "1")
+            assertEquals(HistoryCoverage.READING, app.exchanges.coverage(account).coverage)
+            app.exchanges.saveCursor(account, ExchangeConnector.UNREAD_CURSOR, "")
+            assertEquals(HistoryCoverage.COMPLETE, app.exchanges.coverage(account).coverage)
             app.exchanges.saveStream(account, ExchangeStreamState("withdrawals", 50 * day, 100 * day, false, 0))
             assertEquals(HistoryCoverage.READING, app.exchanges.coverage(account).coverage)
         }

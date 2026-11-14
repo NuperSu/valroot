@@ -82,9 +82,11 @@ abstract class ExchangeConnector(
             jobs +=
                 try {
                     if (options.recoverHistory) app.exchanges.forgetHistory(account)
-                    if (sync(app, account, uid, options)) {
-                        notes += "Older ${kind.label} history is still being read; it continues with the next refresh"
-                    }
+                    // A refresh that fails part way may leave records unread, so it is cleared only after one ends.
+                    app.exchanges.saveCursor(account, UNREAD_CURSOR, "1")
+                    val unread = sync(app, account, uid, options)
+                    if (!unread) app.exchanges.saveCursor(account, UNREAD_CURSOR, "")
+                    if (unread) notes += "Older ${kind.label} history is still being read; it continues with the next refresh"
                     if (app.exchanges
                             .streamEnds(account)
                             .values
@@ -252,6 +254,12 @@ abstract class ExchangeConnector(
 
     companion object {
         const val DAY_MILLIS = 86_400_000L
+
+        /**
+         * Cursor set while a refresh may have left records unread (a window, conversions, a symbol's trades): when the
+         * last one stopped early or failed. History is not complete then even when every window stream is.
+         */
+        const val UNREAD_CURSOR = "history-unread"
 
         /** How often a retention end is checked again, in case the exchange now keeps more. */
         const val RECHECK_MILLIS = 30 * DAY_MILLIS

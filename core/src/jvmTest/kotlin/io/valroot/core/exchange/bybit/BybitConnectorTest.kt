@@ -475,6 +475,7 @@ class BybitConnectorTest {
             val connector = BybitConnector { _, request -> bybit.get(request) }
             assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
             assertEquals(200, app.exchanges.rowKeys(account, BybitDecoder.CONVERTS).size)
+            assertEquals(io.valroot.core.exchange.HistoryCoverage.READING, app.exchanges.coverage(account).coverage)
             connector.refresh(app, SourceRefreshOptions())
             assertEquals(250, app.exchanges.rowKeys(account, BybitDecoder.CONVERTS).size)
             assertEquals(BybitConnector.CONVERTS_DONE, app.exchanges.cursors(account)[BybitConnector.CONVERTS_CURSOR])

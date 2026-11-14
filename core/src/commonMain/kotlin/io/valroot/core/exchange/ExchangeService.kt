@@ -388,14 +388,18 @@ class ExchangeService internal constructor(
         }
     }
 
-    /** Where the account's history begins and whether it is complete; READING until the first refresh reads it. */
+    /**
+     * Where the account's history begins and whether it is complete; READING until the first refresh reads it and while
+     * a refresh leaves records unread.
+     */
     fun coverage(account: AccountId): io.valroot.core.exchange.ExchangeCoverage {
         val streams = exchangeSync.streams(account).values
+        val unread = exchangeSync.cursors(account)[io.valroot.core.exchange.ExchangeConnector.UNREAD_CURSOR] == "1"
         val refused = exchangeSync.streamEnds(account).values.filter { it.reason == io.valroot.core.exchange.StreamEndReason.REFUSED }
         val coverage =
             when {
                 refused.isNotEmpty() -> io.valroot.core.exchange.HistoryCoverage.INCOMPLETE
-                streams.isEmpty() || streams.any { !it.complete } -> io.valroot.core.exchange.HistoryCoverage.READING
+                unread || streams.isEmpty() || streams.any { !it.complete } -> io.valroot.core.exchange.HistoryCoverage.READING
                 else -> io.valroot.core.exchange.HistoryCoverage.COMPLETE
             }
         return io.valroot.core.exchange.ExchangeCoverage(
