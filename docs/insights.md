@@ -8,7 +8,7 @@ Code: `core/…/application/MoneyWeightedReturn.kt` (rate solver and result type
 
 - **History:** the portfolio value series, shared with Portfolio. A time without a fresh price for every holding is a gap; the line or candles never bridge it with a guess.
 - **Portfolio Performance:** the money-weighted return (internal rate of return) over the range.
-  - **Flows:** contributions and withdrawals are transfer movements that enter or leave the scope's accounts, valued with a fresh saved price at their time. Transfers between accounts in the scope cancel out.
+  - **Flows:** contributions and withdrawals are transfer movements that enter or leave the scope's accounts, valued with a fresh saved price at their time. Transfers between accounts in the scope cancel out, within one activity or as the two sides of an accepted transfer link when both fall in the period.
   - **Not flows:** trades (internal to the portfolio), fees and rewards are part of the return.
   - **Investor view:** the start value and money put in are negative, money taken out and the end value are positive. An activity exactly at the start time is part of the start value.
   - **Shown figures:** the rate compounded over the range, plus an annual rate only for ranges of a year or more, because annualising shorter periods exaggerates them. Money in, money out, start and end values, and the investment gain (end − start − money in + money out) are exact.

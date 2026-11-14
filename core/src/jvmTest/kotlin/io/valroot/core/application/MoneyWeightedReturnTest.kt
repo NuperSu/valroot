@@ -12,6 +12,7 @@ import io.valroot.core.model.Price
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
+import io.valroot.core.reconcile.LinkState
 import io.valroot.core.storage.JvmSqliteDatabase
 import kotlin.math.abs
 import kotlin.math.pow
@@ -67,6 +68,7 @@ class MoneyWeightedReturnTest {
         price: String? = null,
         account: AccountId = a,
         destination: AccountId? = null,
+        incoming: Boolean = false,
     ) = TransactionDraft(
         ActivityId(id),
         type,
@@ -77,6 +79,7 @@ class MoneyWeightedReturnTest {
         usd,
         price?.let(ExactDecimal::parse),
         destination,
+        incomingExternal = incoming,
     )
 
     private fun record(app: PortfolioApplication) {
@@ -136,6 +139,33 @@ class MoneyWeightedReturnTest {
             assertNull(missing.gain)
             val month = app.analytics.moneyWeightedReturn(null, now - 30 * day, now)
             assertNull(month.annualReturn)
+        }
+    }
+
+    @Test fun anAcceptedLinkBetweenScopedAccountsIsNotAFlow() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            app.transactions.saveTransaction(draft("deposit", TransactionType.DEPOSIT, usd, "1000", 10))
+            app.transactions.saveTransaction(draft("buy", TransactionType.BUY, btc, "0.1", 10, "10000"))
+            // The arrival has no price on its day: as two flows the rate would be unavailable.
+            app.transactions.saveTransaction(draft("out", TransactionType.WITHDRAWAL, btc, "0.05", 100))
+            app.transactions.saveTransaction(draft("in", TransactionType.TRANSFER, btc, "0.05", 150, account = b, incoming = true))
+            assertEquals(ReturnStatus.MISSING_PRICES, app.analytics.moneyWeightedReturn(null, 5 * day, now).status)
+            app.transactions.setDecision(ActivityId("out"), ActivityId("in"), LinkState.ACCEPTED)
+            val linked = app.analytics.moneyWeightedReturn(null, 5 * day, now)
+            assertEquals(ReturnStatus.OK, linked.status)
+            assertEquals(0, linked.contributions!!.compareTo(ExactDecimal.parse("1000")))
+            assertEquals(0, linked.withdrawals!!.compareTo(ExactDecimal.parse("0")))
+        }
+    }
+
+    @Test fun anExchangeCurrencyDepositIsWorthItsAmount() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val fiat = app.exchanges.assets("bybit", setOf("USD")).getValue("USD")
+            app.transactions.saveTransaction(draft("cash", TransactionType.DEPOSIT, fiat, "500", 10))
+            val result = app.analytics.moneyWeightedReturn(null, 5 * day, now)
+            assertEquals(0, result.contributions!!.compareTo(ExactDecimal.parse("500")))
         }
     }
 }

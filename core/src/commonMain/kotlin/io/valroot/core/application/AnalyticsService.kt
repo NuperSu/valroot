@@ -170,6 +170,27 @@ class AnalyticsService internal constructor(
                     it.movements.any { movement -> movement.accountId in accounts }
             }.sortedBy { it.occurredAtEpochMillis }
 
+    /** Both sides of each accepted transfer link whose two movements are in [activities] and in [accounts]. */
+    private fun internalTransferSides(
+        activities: List<Activity>,
+        accounts: Set<AccountId>,
+    ): Set<Pair<io.valroot.core.model.ActivityId, io.valroot.core.model.EventId>> {
+        val byId = activities.associateBy { it.id }
+
+        fun movement(
+            activity: io.valroot.core.model.ActivityId,
+            event: io.valroot.core.model.EventId,
+        ) = byId[activity]?.movements?.firstOrNull { it.id == event }
+        return ledger()
+            .transferLinks
+            .filter { link ->
+                val out = movement(link.outgoingActivity, link.outgoingEvent)
+                val into = movement(link.incomingActivity, link.incomingEvent)
+                out != null && into != null && out.accountId in accounts && into.accountId in accounts
+            }.flatMap { listOf(it.outgoingActivity to it.outgoingEvent, it.incomingActivity to it.incomingEvent) }
+            .toSet()
+    }
+
     /** The value of [amount] in [quote] at [atMillis] from a fresh saved price, or null without one. */
     private fun valueAt(
         amount: AtomicAmount,
@@ -178,7 +199,13 @@ class AnalyticsService internal constructor(
         knownAt: Long,
     ): ExactDecimal? {
         val decimals = market.metadataAt(amount.assetId, atMillis)?.decimals ?: return null
-        if (amount.assetId == quote) return amount.decimal(decimals)
+        // A currency held on an exchange is worth one of the same currency, as in holdings.
+        if (amount.assetId == quote ||
+            io.valroot.core.exchange.ExchangeAssets
+                .currencyOf(amount.assetId) == quote
+        ) {
+            return amount.decimal(decimals)
+        }
         val result = market.lookup(amount.assetId, quote, atMillis, knownAt, app.prices.policy(current = atMillis >= knownAt - 86_400_000L))
         return if (result.status == PriceStatus.FRESH) result.value(amount, decimals) else null
     }
@@ -206,15 +233,21 @@ class AnalyticsService internal constructor(
         val (startPoint, endPoint) = historySeries(listOf(startMillis, endMillis), portfolio)
         val startValue = total(startPoint)
         val endValue = total(endPoint)
-        // Transfer movements that leave or enter the scope are flows; transfers between scoped accounts cancel out.
+        // Transfer movements that leave or enter the scope are flows; transfers between scoped accounts cancel out,
+        // within one activity or across the two sides of an accepted transfer link inside the period.
         var contributions = ExactDecimal.parse("0")
         var withdrawals = ExactDecimal.parse("0")
         var unpriced = 0
         val flows = mutableListOf<Pair<Long, ExactDecimal>>()
-        activitiesBetween(selected, startMillis, endMillis).forEach { activity ->
+        val period = activitiesBetween(selected, startMillis, endMillis)
+        val internal = internalTransferSides(period, selected)
+        period.forEach { activity ->
             activity.movements
-                .filter { it.accountId in selected && it.role == io.valroot.core.ledger.MovementRole.TRANSFER }
-                .groupBy { it.amount.assetId }
+                .filter {
+                    it.accountId in selected &&
+                        it.role == io.valroot.core.ledger.MovementRole.TRANSFER &&
+                        (activity.id to it.id) !in internal
+                }.groupBy { it.amount.assetId }
                 .forEach { (asset, movements) ->
                     val net = movements.fold(io.valroot.core.model.ExactInteger.ZERO) { sum, movement -> sum + movement.amount.atomicUnits }
                     if (net.sign == 0) return@forEach
