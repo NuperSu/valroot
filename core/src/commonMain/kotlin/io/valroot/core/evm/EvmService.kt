@@ -71,21 +71,21 @@ class EvmService internal constructor(
     }
 
     /** The optional 1inch API key that recovers contract payments Alchemy does not list; a device setting, not part of backups. */
-    fun oneInchApiKey(): String? = marketFeeds.deviceSetting("oneinch_api_key")
+    fun oneInchApiKey(): String? = secrets.get("oneinch_api_key")
 
     fun setOneInchApiKey(key: String?) {
         val trimmed = key?.trim()?.takeIf { it.isNotEmpty() }
         require(trimmed == null || trimmed.matches(Regex("[A-Za-z0-9_-]{16,200}"))) { "That does not look like a 1inch API key" }
-        marketFeeds.putDeviceSetting("oneinch_api_key", trimmed)
+        secrets.put("oneinch_api_key", trimmed)
     }
 
     /** The Alchemy API key for EVM history; a device setting, not part of backups. */
-    fun alchemyApiKey(): String? = marketFeeds.deviceSetting("alchemy_api_key")
+    fun alchemyApiKey(): String? = secrets.get("alchemy_api_key")
 
     fun setAlchemyApiKey(key: String?) {
         val trimmed = key?.trim()?.takeIf { it.isNotEmpty() }
         require(trimmed == null || trimmed.matches(Regex("[A-Za-z0-9_-]{16,100}"))) { "That does not look like an Alchemy API key" }
-        marketFeeds.putDeviceSetting("alchemy_api_key", trimmed)
+        secrets.put("alchemy_api_key", trimmed)
     }
 
     /** EVM chains whose history Alchemy serves, named from CoinGecko's catalog when it is cached. */

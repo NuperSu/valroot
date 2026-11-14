@@ -6,7 +6,7 @@ Code: `core/…/exchange/bybit/` (`Bybit.kt` client and parsers, `BybitConnector
 
 A Bybit account is added from Add or Connect with an API key and its secret. Before anything is saved, Bybit's `GET /v5/user/query-api` is asked what the key may do. Only a key with `readOnly = 1` is accepted. The key's user ID becomes the account's identity (target `bybit` / `uid`), so one Bybit account cannot be tracked twice, and a replacement key must belong to the same account.
 
-The key and secret are device settings (`bybit_key:<account>`, `bybit_secret:<account>`). They are not in backups, so after a restore the account asks for its key again. They are sent only as Bybit's signing headers, never in a URL, message or log.
+The key and secret are device settings (`bybit_key:<account>`, `bybit_secret:<account>`), sealed with the device key described in [architecture](architecture.md). They are not in backups, so after a restore the account asks for its key again. They are sent only as Bybit's signing headers, never in a URL, message or log.
 
 Bybit keys without a bound IP address expire after 90 days; the account shows the expiry date Bybit reports.
 

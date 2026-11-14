@@ -70,13 +70,13 @@ class MarketService internal constructor(
     fun setConsent(accepted: Boolean) = putSetting("market_data_consent", accepted.toString())
 
     /** The optional CoinGecko Demo key raises request limits. It stays on this device and is not part of backups. */
-    fun coingeckoApiKey(): String? = marketFeeds.deviceSetting("coingecko_api_key")
+    fun coingeckoApiKey(): String? = secrets.get("coingecko_api_key")
 
     fun setCoingeckoApiKey(key: String?) {
         val trimmed = key?.trim()?.takeIf { it.isNotEmpty() }
         require(trimmed == null || trimmed.matches(Regex("[A-Za-z0-9_-]{10,100}"))) { "That does not look like a CoinGecko API key" }
         db.transaction {
-            marketFeeds.putDeviceSetting("coingecko_api_key", trimmed)
+            secrets.put("coingecko_api_key", trimmed)
             // A new key may lift a rate limit reached without one.
             marketFeeds.putDeviceSetting("coingecko_retry_after", null)
         }

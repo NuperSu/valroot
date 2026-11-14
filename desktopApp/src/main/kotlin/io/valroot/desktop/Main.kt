@@ -7,6 +7,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import io.valroot.core.ApplicationInfo
+import io.valroot.core.storage.DeviceSecretKeyFile
 import io.valroot.ui.ValrootApp
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,6 +32,8 @@ fun main(args: Array<String>) {
             .takeIf { it >= 0 }
             ?.let { args.getOrNull(it + 1)?.toIntOrNull() }
             ?.coerceIn(320, 4096) ?: fallback
+    // API secrets in the database are sealed with a key kept outside the data folder; the demo keeps it in memory.
+    if (!demo) DeviceSecretKeyFile.use(deviceSecretKeyFile(Path.of(System.getProperty("user.home"))))
     val host = runCatching { DesktopHost(directory, demo) }.getOrNull()
     val appIcon =
         runCatching {
@@ -83,6 +86,9 @@ internal fun dataDirectory(share: Path): Path {
     }
     return directory
 }
+
+/** The key that seals API secrets: in the configuration folder, so copying the data folder does not copy it. */
+internal fun deviceSecretKeyFile(home: Path): Path = home.resolve(".config").resolve("valroot").resolve("device-secret.key")
 
 /** The Valroot logo (watch-only wallet), rendered from `design/logo/valroot.svg`. */
 internal fun appIconImage(): androidx.compose.ui.graphics.ImageBitmap =

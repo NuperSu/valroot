@@ -234,13 +234,13 @@ class ExchangeService internal constructor(
         account: AccountId,
     ): Boolean = key(kind, account) != null
 
-    /** An exchange account's API key and secret; device settings, not part of backups. */
+    /** An exchange account's API key and secret; sealed device settings, not part of backups. */
     fun key(
         kind: io.valroot.core.exchange.ExchangeKind,
         account: AccountId,
     ): Pair<String, String>? {
-        val key = marketFeeds.deviceSetting("${kind.id}_key:${account.value}") ?: return null
-        val secret = marketFeeds.deviceSetting("${kind.id}_secret:${account.value}") ?: return null
+        val key = secrets.get("${kind.id}_key:${account.value}") ?: return null
+        val secret = secrets.get("${kind.id}_secret:${account.value}") ?: return null
         return key to secret
     }
 
@@ -257,8 +257,8 @@ class ExchangeService internal constructor(
         require(k == null || k.matches(EXCHANGE_KEY)) { "That does not look like a ${kind.label} API key" }
         require(s == null || s.matches(EXCHANGE_KEY)) { "That does not look like a ${kind.label} API secret" }
         db.transaction {
-            marketFeeds.putDeviceSetting("${kind.id}_key:${account.value}", k)
-            marketFeeds.putDeviceSetting("${kind.id}_secret:${account.value}", s)
+            secrets.put("${kind.id}_key:${account.value}", k)
+            secrets.put("${kind.id}_secret:${account.value}", s)
         }
     }
 

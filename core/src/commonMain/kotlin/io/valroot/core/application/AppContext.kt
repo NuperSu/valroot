@@ -42,6 +42,7 @@ internal class AppContext(
     val activities = ActivityRepository(db)
     val overlays = OverlayRepository(db)
     val marketFeeds = MarketFeedRepository(db)
+    val secrets = SecretSettings(marketFeeds)
     val holdings = HoldingsRepository(db)
     val market = MarketRepository(db)
     val treatments = TreatmentRepository(db)
@@ -116,6 +117,7 @@ abstract class AppService internal constructor(
     protected val activities get() = ctx.activities
     protected val overlays get() = ctx.overlays
     protected val marketFeeds get() = ctx.marketFeeds
+    internal val secrets get() = ctx.secrets
     protected val holdings get() = ctx.holdings
     protected val market get() = ctx.market
     protected val treatments get() = ctx.treatments
