@@ -119,11 +119,9 @@ internal fun ColumnScope.ProductSettings(
                     currencyMenu = true
                 }
                 DropdownMenu(currencyMenu, { currencyMenu = false }) {
-                    currencies.forEach { (code, label) ->
-                        DropdownMenuItem(text = { Text(label) }, onClick = {
-                            currencyMenu = false
-                            actions.onCurrency(code)
-                        })
+                    CurrencyMenuItems(label = ::currencyLabel) { code ->
+                        currencyMenu = false
+                        actions.onCurrency(code)
                     }
                 }
             }
@@ -135,17 +133,18 @@ internal fun ColumnScope.ProductSettings(
                     tag = "settings-secondary-currency",
                 ) { secondaryMenu = true }
                 DropdownMenu(secondaryMenu, { secondaryMenu = false }) {
-                    (listOf<Pair<String?, String>>(null to "None") + currencies.filter { it.first != data?.currency?.value })
-                        .forEach { (code, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = {
-                                    secondaryMenu = false
-                                    actions.onGeneral(general.copy(secondaryCurrency = code?.let(::AssetId)))
-                                },
-                                modifier = Modifier.testTag("settings-secondary-${code ?: "none"}"),
-                            )
-                        }
+                    DropdownMenuItem(
+                        text = { Text("None") },
+                        onClick = {
+                            secondaryMenu = false
+                            actions.onGeneral(general.copy(secondaryCurrency = null))
+                        },
+                        modifier = Modifier.testTag("settings-secondary-none"),
+                    )
+                    CurrencyMenuItems(exclude = data?.currency?.value, label = ::currencyLabel) { code ->
+                        secondaryMenu = false
+                        actions.onGeneral(general.copy(secondaryCurrency = AssetId(code)))
+                    }
                 }
             }
             var landingMenu by remember { mutableStateOf(false) }

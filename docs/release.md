@@ -16,7 +16,7 @@ Valroot 1.0.0 is a local-first, watch-only portfolio tracker for Android (8.0 an
 
 ## Prices and market data
 
-- Bitcoin prices for USD, EUR and GBP come from Kraken; historical prices for other coins from CoinGecko. Market lists, trending coins and alerts use CoinGecko's top-250 list without a key; an optional free Demo key raises CoinGecko's limits ([market data](market-data.md)).
+- Values are shown in US dollars only for now ([currencies](market-data.md#currencies)). Prices come from CoinGecko first, with Kraken and then DefiLlama as fallbacks ([price sources](market-data.md#price-sources)). Market lists, trending coins and alerts use CoinGecko's top-250 list without a key; an optional free Demo key raises CoinGecko's limits ([market data](market-data.md)).
 - Order books are Kraken's, for one pair, refreshed every 10 seconds while open ([order book](order-book.md)).
 - A missing or stale price is shown as missing, never estimated.
 

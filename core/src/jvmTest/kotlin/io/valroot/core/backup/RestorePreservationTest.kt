@@ -73,7 +73,7 @@ class RestorePreservationTest {
     private val walletA = AccountId("wallet-a")
     private val walletB = AccountId("wallet-b")
     private val usd = AssetId("USD")
-    private val eur = AssetId("EUR")
+    private val secondary = AssetId("USD")
     private val csvHeader = "Date,Type,Asset,Quantity,Price,Fee,Notes\r\n"
     private val csvKept =
         csvHeader +
@@ -261,7 +261,7 @@ class RestorePreservationTest {
         app.notifications.setAlertEnabled(below.id, false)
 
         app.settings.setLandingPage(LandingPage.INSIGHTS)
-        app.settings.setSecondaryCurrency(eur)
+        app.settings.setSecondaryCurrency(secondary)
         app.settings.setShowPortfolioChart(false)
         app.settings.setZeroBasisRewards(true)
         app.settings.setDeviceName("My Pixel")
@@ -372,7 +372,7 @@ class RestorePreservationTest {
                 val expectedPreferences =
                     GeneralPreferences(
                         landing = LandingPage.INSIGHTS,
-                        secondaryCurrency = eur,
+                        secondaryCurrency = secondary,
                         showPortfolioChart = false,
                         zeroBasisRewards = true,
                         deviceName = "My Pixel",

@@ -125,7 +125,7 @@ class ModelWorkspaceRestorationTest {
     }
 
     @Test
-    fun portfolioQuoteAndRangeSurviveHostRecreation() {
+    fun portfolioChoiceAndRangeSurviveHostRecreation() {
         JvmSqliteDatabase(":memory:").use { db ->
             RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
@@ -135,9 +135,9 @@ class ModelWorkspaceRestorationTest {
                     io.valroot.core.ownership
                         .Portfolio(
                             io.valroot.core.model
-                                .PortfolioId("euro-test"),
-                            "Euro test",
-                            "EUR",
+                                .PortfolioId("second-test"),
+                            "Second test",
+                            "USD",
                         ),
                 )
                 val visible = mutableStateOf(true)
@@ -151,8 +151,8 @@ class ModelWorkspaceRestorationTest {
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithTag("model-PORTFOLIO").fetchSemanticsNodes().isNotEmpty() }
                     onNodeWithTag("model-PORTFOLIO").performClick()
                     onNodeWithText("All portfolios").performClick()
-                    onNodeWithText("Euro test").performClick()
-                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("EUR").fetchSemanticsNodes().isNotEmpty() }
+                    onNodeWithText("Second test").performClick()
+                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Second test").fetchSemanticsNodes().size == 1 }
                     onNodeWithText("1W").performClick().assertIsSelected()
                     var saved = emptyMap<String, List<Any?>>()
                     runOnIdle {
@@ -163,8 +163,8 @@ class ModelWorkspaceRestorationTest {
                         registry = SaveableStateRegistry(saved, canBeSaved = { true })
                         visible.value = true
                     }
-                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("EUR").fetchSemanticsNodes().isNotEmpty() }
-                    onNodeWithText("Euro test").assertIsDisplayed()
+                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Second test").fetchSemanticsNodes().isNotEmpty() }
+                    onNodeWithText("Second test").assertIsDisplayed()
                     onNodeWithText("1W").assertIsSelected()
                 }
             }

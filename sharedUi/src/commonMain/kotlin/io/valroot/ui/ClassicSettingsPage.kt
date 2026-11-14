@@ -109,11 +109,14 @@ internal fun LazyListScope.classicSettingsItems(
             )
             Text("Display currency", color = Muted, fontSize = 12.sp)
             WrapActions(
-                listOf(
-                    "USD" to { onCurrency(AssetId("USD")) },
-                    "EUR" to { onCurrency(AssetId("EUR")) },
-                    "GBP" to { onCurrency(AssetId("GBP")) },
-                ),
+                io.valroot.core.application.DISPLAY_CURRENCIES
+                    .map { code -> code to { onCurrency(AssetId(code)) } },
+            )
+            Text(
+                io.valroot.core.application.PLANNED_CURRENCIES
+                    .joinToString(" and ") + " are planned.",
+                color = Muted,
+                fontSize = 12.sp,
             )
             Text(
                 "Current: ${data.currency.value}. Add a manual quote for each asset and currency you use.",

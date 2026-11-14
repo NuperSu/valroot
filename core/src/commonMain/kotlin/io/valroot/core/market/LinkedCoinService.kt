@@ -9,7 +9,7 @@ import io.valroot.core.model.ProviderId
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
-/** CoinGecko linked-coin history ranges for currencies other than USD: daily prices for a year first, then hourly prices for 90 days. */
+/** CoinGecko linked-coin history ranges: daily prices for a year first, then hourly prices for 90 days. */
 private val LINKED_HISTORY_DAYS = listOf(365, 90)
 
 /** DefiLlama hourly history covers this many recent days; daily history reaches back to a coin's first movement. */
@@ -25,18 +25,18 @@ private const val LINKED_LOGO_MAX_AGE_MILLIS = 7 * 86_400_000L
 class LinkedCoinService internal constructor(
     ctx: AppContext,
 ) : AppService(ctx) {
-    /** The display and secondary currencies; USD is left to DefiLlama, so CoinGecko quotes only the others. */
+    /** The display and secondary currencies, which CoinGecko quotes first; DefiLlama's US dollar prices are the fallback. */
     private fun linkedCurrencies(): List<AssetId> =
-        listOfNotNull(app.assets.currency(), app.settings.general().secondaryCurrency).distinct().filter { it != USD }
+        listOfNotNull(app.assets.currency(), app.settings.general().secondaryCurrency).distinct()
 
     /** True when USD is the display or secondary currency, which DefiLlama prices. */
     private fun usdWanted(): Boolean = app.assets.currency() == USD || app.settings.general().secondaryCurrency == USD
 
     /**
-     * Current CoinGecko prices for held coins linked to EVM assets, in the display and secondary currencies other than
-     * USD, from one keyless request per 50 coins; USD comes from [refreshUsdPrices]. Each price is saved for
-     * every asset linked to that coin, so ETH on Base and on Ethereum get the same observation. Needs market data
-     * consent. Returns how many prices were saved.
+     * Current CoinGecko prices for held coins linked to EVM assets and exchange coins, in the display and secondary
+     * currencies, from one request per 50 coins. They are the first choice; [refreshUsdPrices] adds DefiLlama's US dollar
+     * prices as the fallback. Each price is saved for every asset linked to that coin, so ETH on Base and on Ethereum get
+     * the same observation. Needs market data consent. Returns how many prices were saved.
      */
     fun refreshPrices(
         transport: (url: String, apiKey: String?) -> String,
@@ -93,8 +93,8 @@ class LinkedCoinService internal constructor(
 
     /**
      * Current DefiLlama USD prices for held coins linked to EVM assets, one keyless request per 50 coins, when USD is the
-     * display or secondary currency. Each price is saved for every asset linked to the coin. Needs market data consent.
-     * Returns how many prices were saved.
+     * display or secondary currency: the fallback for coins CoinGecko does not price. Each price is saved for every asset
+     * linked to the coin. Needs market data consent. Returns how many prices were saved.
      */
     fun refreshUsdPrices(
         fetch: (url: String) -> String,
@@ -136,7 +136,7 @@ class LinkedCoinService internal constructor(
 
     /**
      * Fills the USD price history of linked coins the ledger has moved from DefiLlama, so the portfolio chart can value
-     * them back to their first movement.
+     * them back to their first movement: the fallback behind CoinGecko's history, which reaches back only a year.
      *
      * - Daily prices reach from a day before the coin's first movement to now; hourly prices cover the last
      *   [LINKED_HOURLY_DAYS] days. Daily ranges of every coin come before hourly ones, and coins held now come first.
@@ -227,8 +227,8 @@ class LinkedCoinService internal constructor(
 
     /**
      * Fills the price history of linked coins the ledger has moved from CoinGecko's `/market_chart`, once per coin and
-     * currency other than USD (see [backfillUsdHistory]), so the portfolio chart can value them before the
-     * address was tracked. The keyless API reaches back one year. Every coin first gets a year of daily prices, which
+     * display currency, so the portfolio chart can value them before the address was tracked. CoinGecko is the first
+     * choice but reaches back only one year; DefiLlama ([backfillUsdHistory]) covers older US dollar prices. Every coin first gets a year of daily prices, which
      * keeps each chart point within the one-day price age; then 90 days of hourly prices. Makes at most [maxRequests]
      * requests per call, calling [pause] with [intervalMillis] before each so a paced transport accepts it; the rest
      * follow on later calls. Returns the number of prices recorded.

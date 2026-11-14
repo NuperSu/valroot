@@ -2,6 +2,7 @@ package io.valroot.ui
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -31,9 +32,9 @@ class PhaseTwoControlsTest {
                     io.valroot.core.ownership
                         .Portfolio(
                             io.valroot.core.model
-                                .PortfolioId("euro"),
-                            "Euro test",
-                            "EUR",
+                                .PortfolioId("second"),
+                            "Second test",
+                            "USD",
                         ),
                 )
                 runDesktopComposeUiTest(width = 600, height = 900) {
@@ -41,8 +42,8 @@ class PhaseTwoControlsTest {
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithTag("model-PORTFOLIO").fetchSemanticsNodes().isNotEmpty() }
                     onNodeWithTag("model-PORTFOLIO").performClick()
                     onNodeWithText("All portfolios").performClick()
-                    onNodeWithText("Euro test").performClick()
-                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("EUR").fetchSemanticsNodes().isNotEmpty() }
+                    onNodeWithText("Second test").performClick()
+                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Second test").fetchSemanticsNodes().size == 1 }
                     onNodeWithTag("model-MAIN").performClick()
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("BTC").fetchSemanticsNodes().isNotEmpty() }
                     onNodeWithText("BTC").performScrollTo().performClick()
@@ -51,7 +52,7 @@ class PhaseTwoControlsTest {
                     onNodeWithText("93250.00 USD", substring = true).performScrollTo().assertIsDisplayed()
                     onNodeWithText("All portfolios").performScrollTo().assertIsDisplayed()
                     onNodeWithTag("model-PORTFOLIO").performClick()
-                    onNodeWithText("Euro test").assertIsDisplayed()
+                    onNodeWithText("Second test").assertIsDisplayed()
                 }
             }
         }
@@ -80,10 +81,11 @@ class PhaseTwoControlsTest {
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Hide empty: false").fetchSemanticsNodes().isNotEmpty() }
                     onNodeWithText("Hide empty: false").performClick()
                     waitUntil(timeoutMillis = 10_000) { app.settings.assetList().hideEmpty }
+                    // Other currencies are listed as planned and cannot be chosen while prices are in US dollars only.
                     onNodeWithText("USD").performScrollTo().performClick()
-                    onNodeWithText("EUR").performClick()
-                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("EUR").fetchSemanticsNodes().isNotEmpty() }
-                    assertEquals(AssetId("EUR"), app.snapshot().currency)
+                    onNodeWithTag("currency-EUR").assertIsNotEnabled()
+                    onNodeWithTag("currency-USD").performClick()
+                    assertEquals(AssetId("USD"), app.snapshot().currency)
                     assertTrue(PortfolioApplication(db) { 1_800_000_000_000L }.settings.assetList().hideEmpty)
                 }
             }

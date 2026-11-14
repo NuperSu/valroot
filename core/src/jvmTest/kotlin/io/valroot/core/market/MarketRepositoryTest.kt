@@ -124,6 +124,32 @@ class MarketRepositoryTest {
         }
     }
 
+    @Test fun aPreferredSourceWinsWhileItHasAFreshPriceAndTheFallbackOtherwise() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            Store(db)
+            val repository = MarketRepository(db)
+            register(repository)
+            val policy = PricePolicy(listOf(provider1, provider2), 1000, preferLatest = true, preferSource = true)
+            val preferred = PriceObservation("preferred", Price(token1, usd, ExactDecimal.parse("100")), provider1, 10, 10)
+            val fallback = PriceObservation("fallback", Price(token1, usd, ExactDecimal.parse("101")), provider2, 20, 20)
+            repository.recordPrice(preferred)
+            repository.recordPrice(fallback)
+            // Both fresh: the preferred source, though the fallback's price is newer.
+            assertEquals(preferred, repository.lookup(token1, usd, 30, 30, policy).observation)
+            assertEquals(fallback, repository.lookup(token1, usd, 30, 30, policy.copy(preferSource = false)).observation)
+            // The preferred price has gone stale: the fresh fallback.
+            assertEquals(fallback, repository.lookup(token1, usd, 1015, 1015, policy).observation)
+            // A newer manual price still wins over the preferred source.
+            val manual = PriceObservation("manual", Price(token1, usd, ExactDecimal.parse("99")), null, 25, 25, true)
+            repository.recordPrice(manual)
+            assertEquals(manual, repository.lookup(token1, usd, 30, 30, policy).observation)
+            assertEquals(
+                listOf(manual),
+                repository.lookupSeries(token1, usd, listOf(30), 30, { policy }).map { it.observation },
+            )
+        }
+    }
+
     private val usd = AssetId("fiat:usd")
     private val token1 = AssetId("evm:one")
     private val token2 = AssetId("evm:two")

@@ -311,7 +311,7 @@ class RewriteAcceptanceTest {
     }
 
     @Test
-    fun refreshRequestsExplicitConsentForAdditionalPortfolioCurrencies() {
+    fun aPortfolioSavedInEurosRefreshesInUsDollarsWithoutAskingForMoreConsent() {
         JvmSqliteDatabase(":memory:").use { db ->
             Host().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
@@ -327,7 +327,6 @@ class RewriteAcceptanceTest {
                 )
                 app.prices.setAutomaticConsent(true)
                 app.prices.setAutomaticPortfolioConsent(false)
-                assertEquals(listOf(AssetId("USD")), app.prices.automaticCurrencies())
                 runDesktopComposeUiTest(width = 390, height = 844) {
                     setContent { ValrootApp(app, host) }
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithTag("model-menu").fetchSemanticsNodes().isNotEmpty() }
@@ -335,15 +334,9 @@ class RewriteAcceptanceTest {
                     onNodeWithTag("destination-HOME").performClick()
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithTag("main-market").fetchSemanticsNodes().isNotEmpty() }
                     onNodeWithText("↻").performClick()
-                    onNodeWithTag("automatic-portfolio-price-consent").assertExists()
-                    assertEquals(0, host.refreshCalls)
-                    assertEquals(false, app.prices.automaticPortfolioConsent())
-                    onNodeWithTag("automatic-portfolio-price-consent").performScrollTo().performClick()
-                    waitUntil(timeoutMillis = 10_000) { app.prices.automaticPortfolioConsent() }
-                    onNodeWithText("Close").performScrollTo().performClick()
-                    onNodeWithText("↻").performClick()
                     waitUntil(timeoutMillis = 10_000) { host.refreshCalls == 1 }
-                    assertEquals(setOf(AssetId("USD"), AssetId("EUR")), app.prices.automaticCurrencies().toSet())
+                    onNodeWithTag("automatic-portfolio-price-consent").assertDoesNotExist()
+                    assertEquals(listOf(AssetId("USD")), app.prices.automaticCurrencies())
                 }
             }
         }

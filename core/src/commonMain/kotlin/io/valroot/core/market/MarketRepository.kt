@@ -376,8 +376,32 @@ class MarketRepository(
     ): PriceResult {
         fun isStale(observation: PriceObservation): Boolean =
             atMillis >= Long.MIN_VALUE + policy.maxAgeMillis && observation.validAtMillis < atMillis - policy.maxAgeMillis
+
+        fun staleRank(observation: PriceObservation) = if (policy.preferFresh && isStale(observation)) 1 else 0
+        val candidates =
+            if (policy.preferSource) {
+                val automatic = observations.filter { !it.manual }
+                val freshest = automatic.minOfOrNull(::staleRank)
+                val source =
+                    automatic
+                        .filter { staleRank(it) == freshest }
+                        .minByOrNull {
+                            policy.providerPriority.indexOf(it.providerId).let { rank ->
+                                if (rank <
+                                    0
+                                ) {
+                                    Int.MAX_VALUE
+                                } else {
+                                    rank
+                                }
+                            }
+                        }?.providerId
+                observations.filter { it.manual || it.providerId == source }
+            } else {
+                observations
+            }
         val selected =
-            observations.minWithOrNull(
+            candidates.minWithOrNull(
                 compareBy<PriceObservation> { if (policy.preferFresh && isStale(it)) 1 else 0 }
                     .thenByDescending { if (policy.preferLatest) it.validAtMillis else Long.MIN_VALUE }
                     .thenBy { if (it.manual) 0 else 1 }

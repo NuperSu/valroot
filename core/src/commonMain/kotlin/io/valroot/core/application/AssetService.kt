@@ -146,7 +146,7 @@ class AssetService internal constructor(
 
     internal fun portfolioCurrency(portfolio: PortfolioId?): AssetId =
         portfolio?.let { id ->
-            AssetId(
+            displayCurrency(
                 ownership
                     .load()
                     .portfolios
@@ -253,6 +253,7 @@ class AssetService internal constructor(
     fun setCurrency(currency: AssetId) {
         ensureDefaults()
         require(market.asset(currency) != null) { "Unknown currency asset" }
+        require(currency.value in DISPLAY_CURRENCIES) { "Unsupported currency" }
         db.execute(
             "INSERT OR REPLACE INTO application_settings VALUES ('currency', ?)",
             listOf(currency.value),
@@ -286,7 +287,5 @@ class AssetService internal constructor(
     }
 
     fun currency(): AssetId =
-        AssetId(
-            db.query("SELECT value FROM application_settings WHERE key='currency'").singleOrNull()?.single() ?: "USD",
-        )
+        displayCurrency(db.query("SELECT value FROM application_settings WHERE key='currency'").singleOrNull()?.single())
 }

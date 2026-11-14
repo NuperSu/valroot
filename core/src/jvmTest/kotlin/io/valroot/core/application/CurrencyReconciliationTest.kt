@@ -30,6 +30,7 @@ import io.valroot.core.storage.JvmSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -44,7 +45,9 @@ class CurrencyReconciliationTest {
                 app.demo.seed()
                 at++
                 val market = MarketRepository(db)
-                for ((code, name) in listOf("USD" to "US Dollar", "EUR" to "Euro", "GBP" to "Pound Sterling")) {
+                // Prices are in US dollars only for now; euros and pounds stay registered for transactions.
+                assertFailsWith<IllegalArgumentException> { app.assets.setCurrency(AssetId("EUR")) }
+                for ((code, name) in listOf("USD" to "US Dollar")) {
                     val currency = AssetId(code)
                     app.assets.setCurrency(currency)
                     assertEquals(currency, app.snapshot().currency)
@@ -83,7 +86,7 @@ class CurrencyReconciliationTest {
             }
             JvmSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { 15552000001L }
-                assertEquals(AssetId("GBP"), app.snapshot().currency)
+                assertEquals(AssetId("USD"), app.snapshot().currency)
                 assertEquals(
                     "150.00000000",
                     app
@@ -93,9 +96,9 @@ class CurrencyReconciliationTest {
                         .value
                         .toString(),
                 )
-                app.backup.wipe()
-                app.assets.setCurrency(AssetId("EUR"))
-                assertEquals(AssetId("EUR"), app.snapshot().currency)
+                // A currency saved before prices were limited to US dollars reads as US dollars.
+                db.execute("INSERT OR REPLACE INTO application_settings VALUES ('currency', 'EUR')")
+                assertEquals(AssetId("USD"), app.snapshot().currency)
             }
         } finally {
             Files.deleteIfExists(file)

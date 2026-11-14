@@ -267,5 +267,14 @@ internal val USD = AssetId("USD")
 /** Delivered notifications kept in the history. */
 const val NOTIFICATION_HISTORY_SIZE = 500
 
-/** Fiat currencies with automatic Kraken prices. */
-val DISPLAY_CURRENCIES = listOf("USD", "EUR", "GBP")
+/**
+ * Currencies values are shown in. Prices are fetched in US dollars only for now; other currencies are planned as US
+ * dollar prices converted with an exchange rate (docs/market-data.md, Currencies).
+ */
+val DISPLAY_CURRENCIES = listOf("USD")
+
+/** Display currencies planned once prices can be converted from US dollars; settings show them dimmed. */
+val PLANNED_CURRENCIES = listOf("EUR", "GBP")
+
+/** [code] as a display currency; a saved currency that is not available yet reads as US dollars. */
+fun displayCurrency(code: String?): AssetId = AssetId(code?.takeIf { it in DISPLAY_CURRENCIES } ?: "USD")

@@ -326,7 +326,7 @@ internal fun Product(
                 }
             val missingCurrencyConsent =
                 snapshot?.ownership?.portfolios.orEmpty().any {
-                    it.valuationCurrency in setOf("USD", "EUR", "GBP") && it.valuationCurrency !in allowedCurrencies
+                    it.valuationCurrency in io.valroot.core.application.DISPLAY_CURRENCIES && it.valuationCurrency !in allowedCurrencies
                 }
             if (!promptForConsent && !consent) {
                 priceRequested = false

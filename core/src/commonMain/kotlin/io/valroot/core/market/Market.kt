@@ -66,6 +66,11 @@ data class PricePolicy(
     val maxAgeMillis: Long,
     val preferFresh: Boolean = true,
     val preferLatest: Boolean = false,
+    /**
+     * Among provider prices, only the first provider in [providerPriority] with a price as fresh as any counts, so a
+     * fallback source is used only when the preferred one has nothing fresh; manual prices still compete by time.
+     */
+    val preferSource: Boolean = false,
 ) {
     init {
         require(providerPriority.distinct().size == providerPriority.size)

@@ -8,12 +8,10 @@ import io.valroot.core.model.ActivityId
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.OwnerId
-import io.valroot.core.model.PortfolioId
 import io.valroot.core.model.Rational
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.ownership.Portfolio
 import io.valroot.core.storage.JvmSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
@@ -243,23 +241,14 @@ class TransactionDraftTest {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
-            app.transactions.saveTransaction(draft("buy", TransactionType.BUY, "2", "100"))
-            val eur = PortfolioId("eur")
-            app.accounts.savePortfolio(Portfolio(eur, "EUR", "EUR"))
-            val view = app.accounting.report(eur)
+            // Reports are in US dollars; a buy paid in euros keeps its lot, but its basis in dollars is unknown.
+            app.transactions.saveTransaction(draft("buy", TransactionType.BUY, "2", "100").copy(quote = AssetId("EUR")))
+            val view = app.accounting.report()
             assertEquals(listOf(ActivityId("buy")), view.currencyMismatch)
             assertTrue(view.invalidTreatments.isEmpty(), "a currency change must not invalidate the treatment")
             val lot = view.report.lots.single { it.acquisitionActivityId == ActivityId("buy") && it.asset == btc }
             assertEquals("200000000", lot.quantity.toString())
             assertNull(lot.basis)
-            // The same ledger still reports the USD basis in its own currency.
-            val usdView = app.accounting.report()
-            assertTrue(usdView.currencyMismatch.isEmpty())
-            val usdLot =
-                usdView.report.lots.single {
-                    it.acquisitionActivityId == ActivityId("buy") && it.asset == btc
-                }
-            assertEquals(Rational.of("200"), usdLot.basis)
         }
     }
 }

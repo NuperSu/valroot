@@ -10,7 +10,6 @@ import io.valroot.core.holdings.BalanceCoverage
 import io.valroot.core.ledger.ActivityStatus
 import io.valroot.core.market.LinkedCoinService
 import io.valroot.core.market.MarketService
-import io.valroot.core.model.AssetId
 import io.valroot.core.ownership.AccountService
 import io.valroot.core.reconcile.EffectiveActivity
 import io.valroot.core.storage.SqliteDatabase
@@ -64,7 +63,8 @@ class PortfolioApplication(
         val fullBalance = ctx.holdings.current(coverage, at)
         val balance = fullBalance.copy(quantities = fullBalance.quantities.filterKeys { it.account in selected })
         val currency =
-            filter.portfolio?.let { id -> AssetId(catalog.portfolios.single { it.id == id }.valuationCurrency) } ?: assets.currency()
+            filter.portfolio?.let { id -> displayCurrency(catalog.portfolios.single { it.id == id }.valuationCurrency) }
+                ?: assets.currency()
         val secondary = settings.general().secondaryCurrency?.takeIf { it != currency }
         val candidates =
             ledger.activities

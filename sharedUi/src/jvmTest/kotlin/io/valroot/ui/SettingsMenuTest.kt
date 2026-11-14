@@ -115,8 +115,11 @@ class SettingsMenuTest {
             onNodeWithTag("settings-general").performClick()
             onNodeWithText("Language").assertDoesNotExist()
             onNodeWithTag("settings-secondary-currency").performClick()
-            onNodeWithTag("settings-secondary-EUR").performClick()
-            onNodeWithText("Euro (EUR)").assertExists()
+            // Other currencies are planned: shown, but not selectable while prices are in US dollars only.
+            onNodeWithTag("currency-EUR").assertIsNotEnabled()
+            onNodeWithText("Euro (EUR) · planned").assertExists()
+            onNodeWithTag("currency-USD").performClick()
+            onNodeWithText("US dollar (USD)").assertExists()
             onNodeWithTag("settings-landing").performClick()
             onNodeWithTag("settings-landing-portfolio").performClick()
             onNodeWithTag("settings-back").performClick()
@@ -152,7 +155,7 @@ class SettingsMenuTest {
             onNodeWithTag("help-backups").assertExists()
             assertEquals(listOf("appearance:light", "biometric:true", "lock-delay:900000", "coingecko:CG-abcdefghijklmnop"), calls)
             assertEquals(
-                GeneralPreferences(LandingPage.PORTFOLIO, AssetId("EUR"), false, true, "Work phone"),
+                GeneralPreferences(LandingPage.PORTFOLIO, AssetId("USD"), false, true, "Work phone"),
                 saved.last(),
             )
         }

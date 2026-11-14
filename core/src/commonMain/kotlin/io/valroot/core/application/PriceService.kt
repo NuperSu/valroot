@@ -105,7 +105,7 @@ class PriceService internal constructor(
         (
             listOf(app.assets.currency()) + listOfNotNull(app.settings.general().secondaryCurrency) +
                 if (automaticPortfolioConsent()) {
-                    db.query("SELECT DISTINCT currency FROM portfolios").map { AssetId(requireNotNull(it.single())) }
+                    db.query("SELECT DISTINCT currency FROM portfolios").map { displayCurrency(it.single()) }
                 } else {
                     emptyList()
                 }
@@ -309,16 +309,20 @@ class PriceService internal constructor(
         )
     }
 
-    /** Saved provider quotes remain selectable offline, independently of permission for new requests. */
+    /**
+     * Saved provider quotes remain selectable offline, independently of permission for new requests. CoinGecko comes
+     * first, Kraken is the fallback and DefiLlama the last one; a newer manual price still replaces an older provider one.
+     */
     internal fun policy(current: Boolean = false) =
         PricePolicy(
             listOf(
+                ProviderId(CoingeckoPrices.PROVIDER_ID),
                 ProviderId(KrakenPrices.PROVIDER_ID),
                 ProviderId(DefiLlamaPrices.PROVIDER_ID),
-                ProviderId(CoingeckoPrices.PROVIDER_ID),
             ),
             if (current) 7_200_000L else 86_400_000L,
             preferLatest = true,
+            preferSource = true,
         )
 
     fun recordManual(value: PriceObservation) {

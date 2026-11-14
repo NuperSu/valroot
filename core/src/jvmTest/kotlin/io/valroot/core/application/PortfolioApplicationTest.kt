@@ -100,15 +100,16 @@ class PortfolioApplicationTest {
             val app = PortfolioApplication(db) { 1000L }
             assertEquals(GeneralPreferences(), app.settings.general())
             app.settings.setLandingPage(LandingPage.INSIGHTS)
-            app.settings.setSecondaryCurrency(AssetId("EUR"))
+            app.settings.setSecondaryCurrency(AssetId("USD"))
             app.settings.setShowPortfolioChart(false)
             app.settings.setZeroBasisRewards(true)
             app.settings.setDeviceName("  My Pixel  ")
             app.settings.setHideAmounts(true)
             assertFails { app.settings.setSecondaryCurrency(AssetId("JPY")) }
+            assertFails { app.settings.setSecondaryCurrency(AssetId("EUR")) }
             assertFails { app.settings.setDeviceName("two\nlines") }
             assertFails { app.settings.setDeviceName("x".repeat(41)) }
-            val expected = GeneralPreferences(LandingPage.INSIGHTS, AssetId("EUR"), false, true, "My Pixel", hideAmounts = true)
+            val expected = GeneralPreferences(LandingPage.INSIGHTS, AssetId("USD"), false, true, "My Pixel", hideAmounts = true)
             assertEquals(expected, PortfolioApplication(db) { 1000L }.settings.general())
             val backup = app.backup.export("fixture-password".toCharArray())
             JvmSqliteDatabase(":memory:").use { staging ->
@@ -122,15 +123,15 @@ class PortfolioApplicationTest {
     }
 
     @Test
-    fun secondaryCurrencyIsRefreshedAndValuesTheSameBalances() {
+    fun aSecondaryCurrencyWaitsForPricesInOtherCurrencies() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.assets.setCurrency(AssetId("USD"))
-            app.settings.setSecondaryCurrency(AssetId("EUR"))
-            assertEquals(listOf("USD", "EUR"), app.prices.automaticCurrencies().map { it.value })
-            val snapshot = app.snapshot()
-            assertEquals(AssetId("EUR"), snapshot.secondaryCurrency)
-            assertEquals(snapshot.valuations.map { it.amount }, snapshot.secondaryValuations.map { it.amount })
+            // Prices are in US dollars only, so no other currency can be shown next to them yet.
+            assertFails { app.settings.setSecondaryCurrency(AssetId("EUR")) }
+            db.execute("INSERT OR REPLACE INTO application_settings VALUES ('secondary_currency', 'EUR')")
+            assertEquals(null, app.settings.general().secondaryCurrency)
+            assertEquals(listOf("USD"), app.prices.automaticCurrencies().map { it.value })
             app.settings.setSecondaryCurrency(AssetId("USD"))
             assertEquals(null, app.snapshot().secondaryCurrency)
         }

@@ -123,12 +123,13 @@ class AutomaticPriceWorkflowTest {
         }
     }
 
-    @Test fun refreshCoversPortfolioCurrenciesAndContinuesAfterOneMarketFails() {
+    @Test fun aEuroPortfolioIsValuedInUsDollarsAndRefreshContinuesAfterOneRequestFails() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.accounts.savePortfolio(Portfolio(PortfolioId("euro"), "Euro", "EUR"))
             app.prices.setAutomaticConsent(true)
-            db.execute("DELETE FROM application_settings WHERE key='automatic_price_scope'")
+            // Prices are in US dollars only for now, including for a portfolio saved in euros.
+            app.prices.setAutomaticPortfolioConsent(true)
             assertEquals(
                 listOf(
                     io.valroot.core.model
@@ -136,28 +137,17 @@ class AutomaticPriceWorkflowTest {
                 ),
                 app.prices.automaticCurrencies(),
             )
-            app.prices.setAutomaticPortfolioConsent(true)
-            assertEquals(
-                setOf(
-                    io.valroot.core.model
-                        .AssetId("USD"),
-                    io.valroot.core.model
-                        .AssetId("EUR"),
-                ),
-                app.prices.automaticCurrencies().toSet(),
-            )
             val urls = mutableListOf<String>()
             val transport: (String) -> String = { url ->
                 urls += url
-                if (url.contains("XBTUSD") && url.endsWith("interval=60")) error("fixture failure")
+                if (url.endsWith("interval=60")) error("fixture failure")
                 val interval = if (url.endsWith("interval=1440")) 86_400_000L else hour
                 val current = now / interval * interval
-                val pair = if (url.contains("XBTEUR")) "XXBTZEUR" else "XXBTZUSD"
-                """{"error":[],"result":{"$pair":[${candle(current - interval, "40000")},${candle(current, "41000")}],"last":0}}"""
+                """{"error":[],"result":{"XXBTZUSD":[${candle(current - interval, "40000")},${candle(current, "41000")}],"last":0}}"""
             }
             assertFailsWith<IllegalStateException> { app.prices.refreshAutomaticSet(transport) }
-            assertEquals(4, urls.size)
-            assertEquals(setOf("USD", "EUR"), db.query("SELECT DISTINCT quote_asset FROM market_prices").map { it.single() }.toSet())
+            assertEquals(2, urls.size)
+            assertEquals(listOf("USD"), db.query("SELECT DISTINCT quote_asset FROM market_prices").map { it.single() })
             assertEquals("1", db.query("SELECT COUNT(*) FROM market_prices WHERE quote_asset='USD'").single().single())
         }
     }

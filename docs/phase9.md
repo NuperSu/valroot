@@ -6,7 +6,7 @@ Provider identifiers are mapped explicitly to assets. Price observations carry e
 
 The market repository owns a versioned transactional SQLite schema. Assets, metadata versions and price observations are durable and idempotently inserted; conflicts fail instead of silently changing identity or history. No live market provider is required. Callers own query time, observation cutoff and staleness policy, allowing deterministic historical replay.
 
-The application registers USD, EUR and GBP fiat identities and metadata for display-currency selection. Selecting a currency does not manufacture exchange rates; missing quotes remain unpriced.
+The application registers USD, EUR and GBP fiat identities and metadata. Values are shown in US dollars only for now ([market data](market-data.md#currencies)); no exchange rate is manufactured, and missing quotes remain unpriced.
 
 The price workflow supports opt-in automatic Kraken Bitcoin hourly and daily history and separately consented CoinGecko range imports in USD, EUR or GBP. The CoinGecko Demo key is held only for the current request/session and sent in a request header; it is not saved in the database or backups. Access denial, unavailable data, malformed responses and rate limits do not create zero prices or remove saved observations. Host transports restrict HTTPS endpoints, reject redirects, bound payload sizes and pace requests without sleeping on the UI queue. See the [CoinGecko Demo chart contract](https://docs.coingecko.com/demo/reference/coins-id-market-chart).
 

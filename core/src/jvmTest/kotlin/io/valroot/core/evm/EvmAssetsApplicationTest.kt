@@ -117,8 +117,7 @@ class EvmAssetsApplicationTest {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val requests = mutableListOf<String>()
-            // USD comes from DefiLlama only, so CoinGecko is not asked while USD is the only currency.
-            assertEquals(0, app.linkedCoins.refreshPrices({ url, _ -> error("unexpected $url") }))
+            // DefiLlama's US dollar prices are the fallback; CoinGecko's come first (see usdComesFromCoingeckoFirst).
             val saved =
                 app.linkedCoins.refreshUsdPrices({ url ->
                     requests += url
@@ -143,16 +142,29 @@ class EvmAssetsApplicationTest {
         }
     }
 
-    @Test fun nonUsdCurrenciesComeFromCoingecko() {
+    @Test fun usdComesFromCoingeckoFirst() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
-            app.settings.setSecondaryCurrency(AssetId("EUR"))
             val requests = mutableListOf<String>()
             app.linkedCoins.refreshPrices({ url, _ ->
                 requests += url
-                """{"ethereum":{"eur":2800,"last_updated_at":1799999990}}"""
+                """{"ethereum":{"usd":2800,"last_updated_at":1799999990}}"""
             })
-            assertTrue(requests.single().contains("ids=ethereum,usd-coin&vs_currencies=eur&"))
+            assertTrue(requests.single().contains("ids=ethereum,usd-coin&vs_currencies=usd&"))
+            // DefiLlama's price for the same coin does not replace CoinGecko's.
+            app.linkedCoins.refreshUsdPrices({
+                """{"coins":{"coingecko:ethereum":{"price":3000,"symbol":"ETH","timestamp":1799999995,"confidence":0.99}}}"""
+            })
+            assertEquals(
+                "2800",
+                app
+                    .snapshot()
+                    .valuations
+                    .single { it.asset == ethMain }
+                    .value
+                    ?.toString()
+                    ?.substringBefore('.'),
+            )
         }
     }
 
@@ -210,7 +222,6 @@ class EvmAssetsApplicationTest {
     @Test fun linkedCoinHistoryIsFilledOnceDailyFirstAndValuesEveryLinkedAsset() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
-            app.settings.setSecondaryCurrency(AssetId("EUR"))
             val now = 1_800_000_000_000L
             val day = 86_400_000L
             val requests = mutableListOf<String>()
@@ -225,10 +236,10 @@ class EvmAssetsApplicationTest {
             // A pause precedes every request, so the host's paced CoinGecko transport accepts each one.
             assertEquals(listOf(6_100L, 6_100L), pauses)
             assertEquals(
-                listOf("ethereum/market_chart?vs_currency=eur&days=365", "usd-coin/market_chart?vs_currency=eur&days=365"),
+                listOf("ethereum/market_chart?vs_currency=usd&days=365", "usd-coin/market_chart?vs_currency=usd&days=365"),
                 requests.map { it.substringAfter("/coins/") },
             )
-            val past = app.analytics.priceSeries(ethBase, AssetId("EUR"), listOf(now - 100 * day)).single()
+            val past = app.analytics.priceSeries(ethBase, AssetId("USD"), listOf(now - 100 * day)).single()
             assertEquals(
                 "3000",
                 past.price
@@ -263,7 +274,6 @@ class EvmAssetsApplicationTest {
                     manual = true,
                 ),
             )
-            app.settings.setSecondaryCurrency(AssetId("EUR"))
             val requests = mutableListOf<String>()
             app.linkedCoins.backfillHistory({ url, _ ->
                 requests += url

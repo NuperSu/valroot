@@ -1,6 +1,6 @@
 # Market data on Main
 
-Main's market sections come from CoinGecko's public API. Kraken still prices owned Bitcoin for portfolio values.
+Main's market sections come from CoinGecko's public API. CoinGecko is also the first source for every price the app values holdings with; see [Price sources](#price-sources).
 
 Code: `core/…/market/MarketFeeds.kt` (parsing and cache), `MarketService.refreshFeeds` / `overview` (`app.market`), `sharedUi/…/MarketPresentation.kt` (sections), and `HttpCoingeckoTransport` in `core/src/jvmSharedMain/kotlin/io/valroot/core/market/`.
 
@@ -22,6 +22,22 @@ Code: `core/…/market/MarketFeeds.kt` (parsing and cache), `MarketService.refre
 - **Identity.** Coins are identified by CoinGecko coin ID, never by symbol. `bitcoin` maps to the portfolio's `bitcoin:btc`, so favorites and coin pages match holdings; other coins are `coingecko:<id>`.
 - **Caching.** Each feed is cached per display currency, with the time CoinGecko returned it, in `market_feed_cache`. The cache is excluded from backups and refetched after a restore. Each feed is saved independently: a failed trending request keeps the market list, and every failure keeps the previous copy.
 - **Trending prices.** A trending coin's price is its `price_btc` times CoinGecko's Bitcoin price in the display currency from the market list. Its 24-hour change comes from the trending entry in that currency.
+
+## Price sources
+
+Every price is looked for in this order, and a later source is used only when the earlier ones have nothing fresh enough (two hours for current values, a day for history):
+
+1. **CoinGecko**: current prices of linked coins (`/simple/price`), their history (`/market_chart`, a year of daily prices, then 90 days of hourly ones) and Bitcoin history fetched on request. The free Demo key reaches back 365 days.
+2. **Kraken**: Bitcoin's hourly and daily prices from automatic refresh, and the fallback for candles.
+3. **DefiLlama**: US dollar prices of linked coins (EVM tokens, exchange coins), current and back to each coin's first movement. It fills coins CoinGecko does not price and history older than CoinGecko's year.
+
+A manual price newer than the chosen provider price still replaces it (`PricePolicy.preferSource` in `Market.kt`, `PriceService.policy`).
+
+## Currencies
+
+Values are shown in US dollars only for now (`DISPLAY_CURRENCIES` in `ApplicationTypes.kt`). The currency selectors on Portfolio and in Settings list euros and pounds as planned and do not select them. A display, secondary or portfolio currency saved earlier reads as US dollars and stays saved. Euros and pounds remain assets: a trade paid in euros is recorded in euros, and its cost basis in dollars is unknown until it is classified with a dollar value.
+
+Planned: every price is fetched in US dollars, and each other currency's exchange rate (such as EUR/USD) is fetched separately; a value in euros is the dollar value converted at the rate of the same time. One price history per coin then serves every currency, so adding a currency costs one rate history instead of a second price history per coin.
 
 ## Sections and semantics
 

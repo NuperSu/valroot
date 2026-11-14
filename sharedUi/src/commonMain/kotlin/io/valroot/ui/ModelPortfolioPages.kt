@@ -237,11 +237,9 @@ internal fun ColumnScope.ModelPortfolioPages(
                 onCurrency = { currencyMenu = true },
                 currencyMenuContent = {
                     DropdownMenu(currencyMenu, { currencyMenu = false }) {
-                        listOf("USD", "EUR", "GBP").forEach { code ->
-                            DropdownMenuItem(text = { Text(code) }, onClick = {
-                                currencyMenu = false
-                                onCurrency(AssetId(code))
-                            })
+                        CurrencyMenuItems { code ->
+                            currencyMenu = false
+                            onCurrency(AssetId(code))
                         }
                     }
                 },

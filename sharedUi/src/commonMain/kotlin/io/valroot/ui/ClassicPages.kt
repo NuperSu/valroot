@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,13 +66,9 @@ internal fun LazyListScope.classicOverviewItems(
             Box {
                 TextButton(onClick = { currencyMenu = true }) { Text("${data.currency.value} ⌄") }
                 DropdownMenu(currencyMenu, { currencyMenu = false }) {
-                    listOf("USD", "EUR", "GBP").forEach { currency ->
-                        DropdownMenuItem(text = { Text(currency) }, onClick = {
-                            currencyMenu = false
-                            execute(
-                                "Display currency saved",
-                            ) { app.assets.setCurrency(AssetId(currency)) }
-                        })
+                    CurrencyMenuItems { currency ->
+                        currencyMenu = false
+                        execute("Display currency saved") { app.assets.setCurrency(AssetId(currency)) }
                     }
                 }
             }
