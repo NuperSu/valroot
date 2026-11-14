@@ -15,6 +15,7 @@ enum class PriceRefreshPhase { IDLE, QUEUED, RUNNING }
 
 private val idlePriceRefresh = MutableStateFlow(PriceRefreshPhase.IDLE)
 private val noOpenedBackup = MutableStateFlow<String?>(null)
+private val noBackupWork = MutableStateFlow<String?>(null)
 
 data class SyncStatus(
     val phase: SyncPhase = SyncPhase.IDLE,
@@ -95,6 +96,12 @@ interface PlatformActions {
 
     /** Drops [openedBackup] when its restore dialog closes without restoring. */
     fun forgetOpenedBackup() {}
+
+    /**
+     * What a backup save or restore is doing once its file is chosen, such as "Restoring backup…", or null when none
+     * runs. The app shows it until the result arrives.
+     */
+    val backupWork: StateFlow<String?> get() = noBackupWork
 
     val hasLock: Boolean
 

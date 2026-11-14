@@ -116,6 +116,8 @@ internal class DesktopHost(
         onResult: (String) -> Unit,
     ) = backups.restoreBackup(password, onResult)
 
+    override val backupWork: kotlinx.coroutines.flow.StateFlow<String?> get() = state.backupWork
+
     internal fun restoreBackup(
         path: Path,
         password: String,

@@ -102,6 +102,8 @@ internal class AndroidHost(
 
     override fun forgetOpenedBackup() = backups.forgetOpenedBackup()
 
+    override val backupWork: kotlinx.coroutines.flow.StateFlow<String?> get() = state.backupWork
+
     /** A file the user opened with Valroot. */
     fun receive(uri: android.net.Uri) = backups.receive(uri)
 

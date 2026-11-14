@@ -66,6 +66,7 @@ internal class DesktopBackups(
                 onResult("Backup was not saved")
                 return@invokeLater
             }
+            state.backupWork.value = "Saving backup…"
             state.executor.execute {
                 val secret = password.toCharArray()
                 // Written beside the destination and moved into place, so a failed export never leaves a partial backup.
@@ -87,7 +88,10 @@ internal class DesktopBackups(
                             runCatching { Files.deleteIfExists(temp) }
                         }
                     }
-                SwingUtilities.invokeLater { onResult(message) }
+                SwingUtilities.invokeLater {
+                    state.backupWork.value = null
+                    onResult(message)
+                }
             }
         }
     }
@@ -112,6 +116,7 @@ internal class DesktopBackups(
         password: String,
         onResult: (String) -> Unit,
     ) {
+        state.backupWork.value = "Restoring backup…"
         state.executor.execute {
             var message = "Could not restore backup"
             val accepted =
@@ -185,7 +190,10 @@ internal class DesktopBackups(
                     message = result
                 }
             if (!accepted) message = "Wait for the active sync to finish, then restore"
-            SwingUtilities.invokeLater { onResult(message) }
+            SwingUtilities.invokeLater {
+                state.backupWork.value = null
+                onResult(message)
+            }
         }
     }
 }

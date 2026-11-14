@@ -1,24 +1,33 @@
 package io.valroot.ui
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import io.valroot.core.application.PortfolioApplication
 
 /**
@@ -27,6 +36,36 @@ import io.valroot.core.application.PortfolioApplication
  */
 internal val LocalLastingNotices =
     androidx.compose.runtime.staticCompositionLocalOf<kotlinx.coroutines.channels.Channel<String>?> { null }
+
+/**
+ * Blocks the screen while a backup is saved or restored, so a long restore does not look like a failure. It sits outside
+ * the screens a restore rebuilds, so it stays up until the restore ends.
+ */
+@Composable
+internal fun BackupWorkDialog(host: PlatformActions) {
+    val work by host.backupWork.collectAsState()
+    val message = work ?: return
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.testTag("backup-work"),
+        ) {
+            Row(
+                Modifier.padding(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(Modifier.size(28.dp))
+                Column(Modifier.padding(start = 16.dp)) {
+                    Text(message)
+                    Text("Keep Valroot open until it finishes.", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 internal fun ColumnScope.SecurityWorkflow(

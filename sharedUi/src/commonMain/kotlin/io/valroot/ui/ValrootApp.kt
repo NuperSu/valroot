@@ -72,6 +72,7 @@ fun ValrootApp(
                     OnboardingProduct(application, platform, appearance) { selected -> appearance = selected }
                 }
             }
+            BackupWorkDialog(platform)
             if (locked) {
                 Surface(Modifier.fillMaxSize(), color = Paper) { LockScreen(platform) }
             }

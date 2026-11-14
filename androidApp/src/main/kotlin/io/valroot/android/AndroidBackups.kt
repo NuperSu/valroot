@@ -62,6 +62,7 @@ internal class AndroidBackups(
                 if (uri == null) {
                     onResult("Backup was not saved")
                 } else {
+                    state.backupWork.value = "Saving backup…"
                     state.executor.execute {
                         val secret = password.toCharArray()
                         val success =
@@ -74,7 +75,10 @@ internal class AndroidBackups(
                             } finally {
                                 secret.fill('\u0000')
                             }
-                        state.main.post { onResult(if (success) "Backup saved" else "Could not save backup") }
+                        state.main.post {
+                            state.backupWork.value = null
+                            onResult(if (success) "Backup saved" else "Could not save backup")
+                        }
                     }
                 }
             }
@@ -132,6 +136,7 @@ internal class AndroidBackups(
         // Restore replaces the database file, so it shares the sync thread and cannot overlap a running scan. Every use
         // of the live connection runs on the database executor through [onDb], in turn with the screens' queries and
         // the activity's close, so none of them meets a connection being closed or replaced.
+        state.backupWork.value = "Restoring backup…"
         RefreshWorker.syncExecutor.execute {
             var staging: java.nio.file.Path? = null
             var result = "Could not restore backup"
@@ -209,7 +214,10 @@ internal class AndroidBackups(
                 staging?.let { runCatching { Files.deleteIfExists(it) } }
             }
             val message = result
-            state.main.post { if (!state.closed) onResult(message) }
+            state.main.post {
+                state.backupWork.value = null
+                if (!state.closed) onResult(message)
+            }
         }
     }
 

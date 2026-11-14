@@ -36,6 +36,9 @@ internal class DesktopState(
     val syncStatus = MutableStateFlow(SyncStatus())
     val priceRefreshStatus = MutableStateFlow(PriceRefreshPhase.IDLE)
 
+    /** What a running backup save or restore is doing, for the progress dialog. */
+    val backupWork = MutableStateFlow<String?>(null)
+
     /** Held by price, market and notification work while it reads or writes, and by a restore while it swaps the file. */
     val priceGate = Any()
 

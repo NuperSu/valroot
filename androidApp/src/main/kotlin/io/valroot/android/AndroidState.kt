@@ -34,6 +34,9 @@ internal class AndroidState(
     val openedBackup = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     var openedBackupUri: android.net.Uri? = null
 
+    /** What a running backup save or restore is doing, for the progress dialog. */
+    val backupWork = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     /** Opened on [executor]; a restore replaces it. */
     lateinit var db: AndroidSqliteDatabase
 
