@@ -126,7 +126,8 @@ abstract class ExchangeConnector(
      * back towards [StreamWindows.limitMillis] while [hasBudget]. [read] reads and saves one window and returns its record count, or null
      * when the budget ran out. Returns false when reading stopped early.
      *
-     * When the exchange refuses an older window, the newest window already read is requested again. If it still reads,
+     * When the exchange refuses an older window, the newest window already read is requested again, then the window
+     * before the refused one and the stream's oldest window. If the newest still reads and both older ones are refused,
      * only age is refused: the exchange keeps nothing older and the stream ends there ([StreamEndReason.RETENTION],
      * checked again monthly). Otherwise, or when the answer has no specific code, history stays incomplete and the
      * window is tried again later ([StreamEndReason.REFUSED]).
@@ -164,8 +165,11 @@ abstract class ExchangeConnector(
                     if (start < state.fromMillis) read(start, state.fromMillis) ?: return false else 0
                 } catch (refused: ExchangeApiException) {
                     if (refused.stopsRefresh) throw refused
-                    val newerStillReads = if (refused.unreadable) false else newestWindowReads(state, stream, read) ?: return false
-                    val reason = if (newerStillReads) StreamEndReason.RETENTION else StreamEndReason.REFUSED
+                    val ageOnly =
+                        !refused.unreadable &&
+                            (newestWindowReads(state, stream, read) ?: return false) &&
+                            (olderWindowsRefused(start, stream, read) ?: return false)
+                    val reason = if (ageOnly) StreamEndReason.RETENTION else StreamEndReason.REFUSED
                     val attempts = if (end?.reason == reason) end.attempts + 1 else 1
                     val wait = if (reason == StreamEndReason.RETENTION) RECHECK_MILLIS else retryWait(attempts)
                     app.exchanges.saveStreamEnd(
@@ -218,6 +222,32 @@ abstract class ExchangeConnector(
             if (refused.stopsRefresh) throw refused
             false
         }
+    }
+
+    /**
+     * Requests the window before the refused one starting at [refusedFrom] and the oldest window of the stream: true when
+     * every one is refused too, as when the exchange keeps nothing older; false when one reads, so the refusal concerned
+     * that window only; null when the budget ran out. Records found are saved.
+     */
+    private fun olderWindowsRefused(
+        refusedFrom: Long,
+        stream: StreamWindows,
+        read: (from: Long, to: Long) -> Int?,
+    ): Boolean? {
+        val probes =
+            listOf(
+                maxOf(refusedFrom - stream.windowMillis, stream.limitMillis) to refusedFrom,
+                stream.limitMillis to minOf(stream.limitMillis + stream.windowMillis, refusedFrom),
+            ).filter { (from, to) -> from < to }.distinct()
+        for ((from, to) in probes) {
+            try {
+                read(from, to) ?: return null
+                return false
+            } catch (refused: ExchangeApiException) {
+                if (refused.stopsRefresh) throw refused
+            }
+        }
+        return true
     }
 
     companion object {

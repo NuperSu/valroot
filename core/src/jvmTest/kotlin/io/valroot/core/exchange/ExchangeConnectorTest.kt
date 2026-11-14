@@ -75,12 +75,29 @@ class ExchangeConnectorTest {
             val end = app.exchanges.streamEnds(account).getValue("deposits")
             assertEquals(StreamEndReason.RETENTION, end.reason)
             assertEquals(130 * day, end.retryAtMillis)
-            // After the day of overlap forward, the probe read the newest window again.
-            assertEquals(listOf(99 * day, 43 * day, 36 * day, 93 * day), exchange.asked)
+            // After the day of overlap forward, the probes read the newest window again, then the window before the
+            // refused one and the oldest.
+            assertEquals(listOf(99 * day, 43 * day, 36 * day, 93 * day, 29 * day, 0), exchange.asked)
             // Until the monthly check, nothing older is requested.
             exchange.asked.clear()
             assertTrue(app.readOnce(exchange, 100 * day))
             assertEquals(listOf(99 * day), exchange.asked)
+        }
+
+    @Test
+    fun aRefusedWindowWithReadableOlderHistoryKeepsHistoryOpen() =
+        withApp { app ->
+            app.exchanges.saveStream(account, ExchangeStreamState("deposits", 50 * day, 100 * day, false, 0))
+            val exchange = Exchange { it in 36 * day until 43 * day }
+            assertTrue(app.readOnce(exchange, 100 * day))
+            assertFalse(
+                app.exchanges
+                    .streams(account)
+                    .getValue("deposits")
+                    .complete,
+            )
+            assertEquals(StreamEndReason.REFUSED, app.exchanges.streamEnds(account).getValue("deposits").reason)
+            assertEquals(listOf(99 * day, 43 * day, 36 * day, 93 * day, 29 * day), exchange.asked)
         }
 
     @Test
