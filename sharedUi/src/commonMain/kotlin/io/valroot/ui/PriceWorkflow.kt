@@ -49,7 +49,6 @@ internal fun ColumnScope.PriceWorkflow(
     errorState: MutableState<String?>,
     priceConsentState: MutableState<Boolean>,
     automaticPriceConsentState: MutableState<Boolean>,
-    automaticPortfolioPricesState: MutableState<Boolean>,
     automaticPriceStatusState: MutableState<String?>,
     priceDaysState: MutableIntState,
     fetchingPriceState: MutableState<Boolean>,
@@ -62,7 +61,6 @@ internal fun ColumnScope.PriceWorkflow(
     var error by errorState
     var priceConsent by priceConsentState
     var automaticPriceConsent by automaticPriceConsentState
-    var automaticPortfolioPrices by automaticPortfolioPricesState
     val automaticPriceStatus by automaticPriceStatusState
     var priceDays by priceDaysState
     var fetchingPrice by fetchingPriceState
@@ -122,8 +120,8 @@ internal fun ColumnScope.PriceWorkflow(
     HorizontalDivider()
     Text("Automatic Bitcoin prices", fontWeight = FontWeight.SemiBold)
     Text(
-        "Kraken receives Bitcoin pairs for your USD, EUR and GBP portfolio currencies and your IP address; wallet addresses " +
-            "are not sent. This switch also turns on automatic wallet history refresh. " +
+        "Kraken's US dollar Bitcoin prices are the fallback when CoinGecko has none. Kraken receives Bitcoin price requests " +
+            "and your IP address; wallet addresses are not sent. This switch also turns on automatic wallet history refresh. " +
             "Closed hourly and daily prices refresh while scheduling is available. No API key is needed.",
         fontSize = 13.sp,
     )
@@ -131,7 +129,6 @@ internal fun ColumnScope.PriceWorkflow(
         Modifier
             .toggleable(value = automaticPriceConsent, role = Role.Checkbox) { accepted ->
                 automaticPriceConsent = accepted
-                if (accepted) automaticPortfolioPrices = true
                 execute("Refresh settings saved") { applyAutomaticRefresh(app, host, accepted) }
             }.testTag("automatic-price-consent"),
     ) {
@@ -139,16 +136,6 @@ internal fun ColumnScope.PriceWorkflow(
         Text("Allow automatic Kraken prices and wallet refresh", modifier = Modifier.padding(top = 12.dp))
     }
     if (automaticPriceConsent) {
-        Row(
-            Modifier
-                .toggleable(value = automaticPortfolioPrices, role = Role.Checkbox) { accepted ->
-                    automaticPortfolioPrices = accepted
-                    execute("Price currencies saved") { app.prices.setAutomaticPortfolioConsent(accepted) }
-                }.testTag("automatic-portfolio-price-consent"),
-        ) {
-            Checkbox(checked = automaticPortfolioPrices, onCheckedChange = null)
-            Text("Include other portfolio currencies", modifier = Modifier.padding(top = 12.dp))
-        }
         Text(
             automaticPriceStatus ?: "Waiting for the first price refresh.",
             color = Muted,

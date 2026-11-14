@@ -51,8 +51,8 @@ internal object MarketFeedRefresher {
     }
 
     /**
-     * Refreshes the CoinGecko chain catalog, then linked-coin prices (USD from DefiLlama, other currencies from
-     * CoinGecko), logos and missing price history. Each step is isolated, so a failure never fails the caller. Does
+     * Refreshes the CoinGecko chain catalog, then the prices of Bitcoin and linked coins (CoinGecko first, DefiLlama's
+     * US dollar prices as the fallback), logos and missing price history. Each step is isolated, so a failure never fails the caller. Does
      * nothing without market data consent.
      */
     fun refreshEvmCatalogAndPrices(app: PortfolioApplication) {

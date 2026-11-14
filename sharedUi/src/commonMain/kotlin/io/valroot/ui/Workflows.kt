@@ -92,7 +92,6 @@ internal fun WorkflowDialog(
     val consentState = rememberSaveable { mutableStateOf(data.sourceConsent) }
     val priceConsentState = rememberSaveable { mutableStateOf(false) }
     val automaticPriceConsentState = remember { mutableStateOf(false) }
-    val automaticPortfolioPricesState = remember { mutableStateOf(false) }
     val automaticPriceStatusState = remember { mutableStateOf<String?>(null) }
     val priceDaysState = rememberSaveable { mutableIntStateOf(90) }
     val fetchingPriceState = remember { mutableStateOf(false) }
@@ -111,7 +110,6 @@ internal fun WorkflowDialog(
     val scope = rememberCoroutineScope()
     var priceConsent by priceConsentState
     var automaticPriceConsent by automaticPriceConsentState
-    var automaticPortfolioPrices by automaticPortfolioPricesState
     var automaticPriceStatus by automaticPriceStatusState
     var candidates by candidatesState
     var transferLinks by transferLinksState
@@ -128,7 +126,6 @@ internal fun WorkflowDialog(
         if (type == "price") {
             priceConsent = withContext(host.dispatcher) { app.prices.sourceConsent() }
             automaticPriceConsent = withContext(host.dispatcher) { app.prices.automaticConsent() }
-            automaticPortfolioPrices = withContext(host.dispatcher) { app.prices.automaticPortfolioConsent() }
         }
         if (type == "reconcile") {
             withContext(host.dispatcher) {
@@ -227,7 +224,6 @@ internal fun WorkflowDialog(
                     errorState = errorState,
                     priceConsentState = priceConsentState,
                     automaticPriceConsentState = automaticPriceConsentState,
-                    automaticPortfolioPricesState = automaticPortfolioPricesState,
                     automaticPriceStatusState = automaticPriceStatusState,
                     priceDaysState = priceDaysState,
                     fetchingPriceState = fetchingPriceState,

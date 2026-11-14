@@ -142,8 +142,8 @@ internal class DesktopPrices(
     }
 
     /**
-     * Refreshes the CoinGecko chain catalog, then linked-coin prices (USD from DefiLlama, other currencies from
-     * CoinGecko), logos and missing price history. Each step is isolated, so a failure leaves the caller's refresh
+     * Refreshes the CoinGecko chain catalog, then the prices of Bitcoin and linked coins (CoinGecko first, DefiLlama's
+     * US dollar prices as the fallback), logos and missing price history. Each step is isolated, so a failure leaves the caller's refresh
      * successful. Does nothing without market data consent.
      */
     internal fun refreshEvmCatalogAndPrices(application: PortfolioApplication) {
@@ -156,8 +156,8 @@ internal class DesktopPrices(
     }
 
     /**
-     * Fills missing linked-coin price history in the background: USD from DefiLlama, then other currencies from
-     * CoinGecko. Later calls while one is queued do nothing.
+     * Fills missing linked-coin price history in the background: DefiLlama's US dollar history back to each coin's
+     * first movement, then CoinGecko's year, which is preferred where both exist. Later calls while one is queued do nothing.
      */
     private fun backfillLinkedCoinHistory() {
         if (state.closing.get() || !historyBackfillQueued.compareAndSet(false, true)) return

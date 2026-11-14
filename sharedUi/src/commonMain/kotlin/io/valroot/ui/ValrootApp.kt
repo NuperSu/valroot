@@ -317,24 +317,13 @@ internal fun Product(
         if (priceRequested || pricePhase != PriceRefreshPhase.IDLE) return
         priceRequested = true
         priceScope.launch {
-            val (allowedCurrencies, consent) =
-                withContext(host.dispatcher) {
-                    app.prices
-                        .automaticCurrencies()
-                        .map { it.value }
-                        .toSet() to app.prices.automaticConsent()
-                }
-            val missingCurrencyConsent =
-                snapshot?.ownership?.portfolios.orEmpty().any {
-                    it.valuationCurrency in io.valroot.core.application.DISPLAY_CURRENCIES && it.valuationCurrency !in allowedCurrencies
-                }
+            val consent = withContext(host.dispatcher) { app.prices.automaticConsent() }
             if (!promptForConsent && !consent) {
                 priceRequested = false
                 return@launch
             }
-            if (!consent || missingCurrencyConsent) {
+            if (!consent) {
                 priceRequested = false
-                if (missingCurrencyConsent) presenter.notify("Allow other portfolio currencies in price setup to refresh all portfolios.")
                 selectedAsset = null
                 dialog = "price"
                 return@launch
@@ -445,9 +434,10 @@ internal fun Product(
             title = { Text("Turn on automatic refresh?") },
             text = {
                 Text(
-                    "Automatic refresh updates Bitcoin prices, market lists and wallet history on a schedule. Kraken receives " +
-                        "Bitcoin pairs for your portfolio currencies and your IP address; CoinGecko receives your display " +
-                        "currency and IP address; wallet addresses are sent to neither. Your Bitcoin provider receives watched " +
+                    "Automatic refresh updates Bitcoin prices, market lists and wallet history on a schedule. CoinGecko, the first " +
+                        "price source, receives the coins you hold and your IP address; Kraken, the Bitcoin price fallback, " +
+                        "receives Bitcoin price requests and your IP address; wallet addresses are sent to neither. " +
+                        "Your Bitcoin provider receives watched " +
                         "addresses when wallet history refreshes, and only if you have allowed it. Turning this off withdraws " +
                         "automatic price consent.",
                 )

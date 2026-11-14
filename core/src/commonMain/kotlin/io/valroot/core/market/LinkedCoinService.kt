@@ -21,10 +21,13 @@ private const val LINKED_HISTORY_EXTEND_AFTER_MILLIS = 86_400_000L
 /** Saved linked-coin logo URLs are refetched after a week. */
 private const val LINKED_LOGO_MAX_AGE_MILLIS = 7 * 86_400_000L
 
-/** Prices, price history and logos for assets linked to a CoinGecko coin (EVM tokens and exchange coins). */
+/** Prices, price history and logos for assets linked to a CoinGecko coin (Bitcoin, EVM tokens and exchange coins). */
 class LinkedCoinService internal constructor(
     ctx: AppContext,
 ) : AppService(ctx) {
+    /** Assets priced through their CoinGecko coin: the saved links, and wallet Bitcoin as the coin `bitcoin`. */
+    private fun pricedLinks(): Map<AssetId, String> = assetLinks.links() + (io.valroot.core.bitcoin.BITCOIN_ASSET to "bitcoin")
+
     /** The display and secondary currencies, which CoinGecko quotes first; DefiLlama's US dollar prices are the fallback. */
     private fun linkedCurrencies(): List<AssetId> =
         listOfNotNull(app.assets.currency(), app.settings.general().secondaryCurrency).distinct()
@@ -164,7 +167,7 @@ class LinkedCoinService internal constructor(
             }
         }
         val hidden = app.assets.hiddenAmong(firstMoved.keys)
-        val links = assetLinks.links().filterKeys { it in firstMoved && it !in hidden }
+        val links = pricedLinks().filterKeys { it in firstMoved && it !in hidden }
         val held = app.assets.held()
         val coins =
             links.values
@@ -222,7 +225,7 @@ class LinkedCoinService internal constructor(
     private fun shownLinks(): Map<AssetId, String> {
         val held = app.assets.held()
         val hidden = app.assets.hiddenAmong(held)
-        return assetLinks.links().filterKeys { it in held && it !in hidden }
+        return pricedLinks().filterKeys { it in held && it !in hidden }
     }
 
     /**
@@ -248,7 +251,7 @@ class LinkedCoinService internal constructor(
                 .flatMap { entry -> entry.activity.movements.map { it.amount.assetId } }
                 .toSet()
         val hidden = app.assets.hiddenAmong(moved)
-        val links = assetLinks.links().filterKeys { it in moved && it !in hidden }
+        val links = pricedLinks().filterKeys { it in moved && it !in hidden }
         val currencies = linkedCurrencies()
         // Coins held now come first: they carry today's value, and the free API allows only a few requests a minute.
         val held = app.assets.held()
