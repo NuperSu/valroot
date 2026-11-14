@@ -29,7 +29,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * - **Deposits** (successful) and **withdrawals** (successful) are transfers; a withdrawal's fee is its own movement,
  *   and on-chain ones keep their transaction for matching with wallets.
  * - **Transfers with other MEXC users** are transfers in or out; the account's own identifier is its user ID, or the
- *   email or phone that every such transfer shares (with a single transfer, only the user ID tells).
+ *   one email or phone that every such transfer shares (with a single transfer, or when all name the same two
+ *   parties, only the user ID tells).
  * - **Spot↔futures transfers** are transfers out and in: futures balances are not read.
  * - **Balance check:** MEXC keeps a month of trades and 90 days of transfers, so most of an older account's coins are
  *   explained by nothing: they are an opening amount at the start of the records, and gaps fill moments a coin would
@@ -163,8 +164,11 @@ object MexcDecoder : ExchangeHistory {
         return ledger.result()
     }
 
-    /** The account's own identifiers: its user ID, and whatever email or phone appears on every transfer. */
-    private fun ownIdentifiers(
+    /**
+     * The account's own identifiers: its user ID, and the one email or phone that appears on every transfer. When every
+     * transfer names the same two parties, nothing tells which one is the account, so only the user ID counts.
+     */
+    internal fun ownIdentifiers(
         uid: String,
         transfers: List<MexcInternalTransfer>,
     ): Set<String> {
@@ -172,9 +176,8 @@ object MexcDecoder : ExchangeHistory {
         val shared =
             transfers
                 .map { setOf(it.fromAccount, it.toAccount).filter(String::isNotBlank).toSet() }
-                .reduceOrNull { a, b -> a intersect b }
-                .orEmpty()
-        return shared + uid
+                .reduce { a, b -> a intersect b }
+        return if (shared.size == 1) shared + uid else setOf(uid)
     }
 
     private fun negate(value: ExactDecimal) = ExactDecimal(-value.coefficient, value.scale)

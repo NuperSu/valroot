@@ -167,7 +167,7 @@ MEXC drops trades after a month and transfers after 90 days, so Valroot keeps ev
 
 ## From records to activities
 
-Activity IDs are `mexc:<user ID>:<kind>:<record>`. Trades, dust conversions (into MX, with MEXC's fee), deposits (status SUCCESS or COMPLETED), withdrawals (SUCCESS; network fee as its own movement; on-chain hash kept for matching with wallets), transfers with other MEXC users (incoming when addressed to the account's user ID, or to the email or phone every such transfer shares), and spot↔futures transfers (out and in: futures balances are not read).
+Activity IDs are `mexc:<user ID>:<kind>:<record>`. Trades, dust conversions (into MX, with MEXC's fee), deposits (status SUCCESS or COMPLETED), withdrawals (SUCCESS; network fee as its own movement; on-chain hash kept for matching with wallets), transfers with other MEXC users (incoming when addressed to the account's user ID, or to the one email or phone every such transfer shares; when all name the same two parties only the user ID counts), and spot↔futures transfers (out and in: futures balances are not read).
 
 Balance check: as for Binance, each coin's running balance fills gaps 1 ms before it would fall below zero. Because MEXC keeps so little, coins nothing explains are an opening amount at the start of the records rather than an adjustment after the latest one; a negative difference (coins the kept records over-count, such as MX spent in older trades) follows the latest record.
 
