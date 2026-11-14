@@ -18,7 +18,8 @@ class BackupFiles {
 
     fun chooseBackupDestination(): Path? = choose(FileDialog.SAVE, "Save encrypted backup", "valroot-backup.valroot")
 
-    fun chooseBackup(): Path? = choose(FileDialog.LOAD, "Restore encrypted backup")
+    /** Lists only Valroot backups (`.valroot`). */
+    fun chooseBackup(): Path? = choose(FileDialog.LOAD, "Restore encrypted backup", extension = ".valroot")
 
     fun chooseImport(): Path? = choose(FileDialog.LOAD, "Import CSV file")
 
@@ -26,10 +27,12 @@ class BackupFiles {
         mode: Int,
         title: String,
         name: String = "valroot-backup.enc",
+        extension: String? = null,
     ): Path? {
         val dialog = FileDialog(null as Frame?, title, mode)
         try {
             if (mode == FileDialog.SAVE) dialog.file = name
+            extension?.let { wanted -> dialog.setFilenameFilter { _, file -> file.endsWith(wanted, ignoreCase = true) } }
             dialog.isVisible = true
             val name = dialog.file ?: return null
             return Path.of(dialog.directory, name)

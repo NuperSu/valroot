@@ -98,7 +98,12 @@ internal class DesktopBackups(
     ) {
         SwingUtilities.invokeLater {
             val path = runCatching { files.chooseBackup() }.getOrNull()
-            if (path == null) onResult("No backup selected") else restoreBackup(path, password, onResult)
+            when {
+                path == null -> onResult("No backup selected")
+                // Some native dialogs ignore the filter.
+                !path.fileName.toString().endsWith(".valroot", ignoreCase = true) -> onResult("Choose a Valroot backup (a .valroot file)")
+                else -> restoreBackup(path, password, onResult)
+            }
         }
     }
 
