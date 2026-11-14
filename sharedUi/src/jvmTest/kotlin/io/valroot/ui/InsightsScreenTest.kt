@@ -39,6 +39,8 @@ class InsightsScreenTest {
                     )) {
                         onNodeWithTag(tag).performScrollTo()
                     }
+                    // Every example holding has a price, so no account value leaves one out.
+                    assertTrue(onAllNodesWithTag("insights-location-note").fetchSemanticsNodes().isEmpty())
                     assertTrue(onAllNodesWithText("Decisions").fetchSemanticsNodes().isEmpty())
                     assertTrue(onAllNodesWithText("Unavailable").fetchSemanticsNodes().isEmpty())
                     onNodeWithTag("insights-range-1Y").performScrollTo().performClick()

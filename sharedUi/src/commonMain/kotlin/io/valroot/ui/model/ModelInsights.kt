@@ -83,6 +83,8 @@ data class ModelInsightsState(
     val gains: List<ModelGainRow> = emptyList(),
     val gainsNote: String? = null,
     val location: List<ModelSlice> = emptyList(),
+    /** Holdings without a price, which account values and shares leave out. */
+    val locationNote: String? = null,
     val accountUse: List<ModelMetric> = emptyList(),
     val trades: String = "—",
     val tradedAssets: String = "—",
@@ -229,6 +231,14 @@ fun ModelInsights(
             MarketCard(Modifier.testTag("insights-location")) {
                 SliceDonut(state.location, Modifier.align(Alignment.CenterHorizontally).size(if (wide) 220.dp else 180.dp))
                 SliceLegend(state.location) {}
+                state.locationNote?.let {
+                    Text(
+                        it,
+                        color = c.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        modifier = Modifier.testTag("insights-location-note"),
+                    )
+                }
                 Text("Most used accounts · ${state.range}", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                 if (state.accountUse.isEmpty()) Text("No activity in this period", color = c.onSurfaceVariant, fontSize = 12.sp)
                 MetricRows(state.accountUse)

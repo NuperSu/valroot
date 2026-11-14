@@ -167,6 +167,12 @@ internal fun insightsState(
                 tone(unrealized),
             )
         }
+    val unpricedHoldings =
+        insights
+            ?.analytics
+            ?.accounts
+            .orEmpty()
+            .sumOf { account -> account.valuations.count { it.value == null } }
     val location =
         insights
             ?.analytics
@@ -249,6 +255,8 @@ internal fun insightsState(
                 else -> null
             },
         location = location,
+        locationNote =
+            if (unpricedHoldings > 0) "$unpricedHoldings unpriced holding(s) are not in these account values." else null,
         accountUse =
             activity?.accounts.orEmpty().map {
                 ModelMetric(it.label, "${it.activities} activit${if (it.activities == 1) "y" else "ies"}")
