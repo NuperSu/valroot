@@ -112,6 +112,39 @@ class AccountingService internal constructor(
         val zeroBasisRewards = app.settings.general().zeroBasisRewards
         val isOpening = if (app.settings.general().estimateOpeningBasis) app.exchanges.completeOpenings() else null
         val estimated = mutableListOf<ActivityId>()
+        val isExchange = app.exchanges.exchangeActivities()
+        val automatic = mutableListOf<ActivityId>()
+        val classifications = mutableMapOf<ActivityId, List<Treatment>>()
+
+        // Saved treatments, or the defaults for an unclassified exchange activity.
+        fun classified(activity: Activity): List<Treatment> =
+            classifications.getOrPut(activity.id) {
+                treatments.load(activity.id).ifEmpty {
+                    if (isExchange(activity)) {
+                        automatic.add(activity.id)
+                        DefaultTreatments.exchange(
+                            activity,
+                            quote,
+                            {
+                                it == quote ||
+                                    io.valroot.core.exchange.ExchangeAssets
+                                        .currencyOf(it) != null
+                            },
+                        ) { movement ->
+                            app.assets
+                                .unitPrice(movement.amount.assetId, quote, activity.occurredAtEpochMillis, current = false)
+                                ?.let {
+                                    QuoteValue(
+                                        quote,
+                                        it.amount * Rational.units(movement.amount.atomicUnits.let { if (it.sign < 0) -it else it }),
+                                    )
+                                }
+                        }
+                    } else {
+                        emptyList()
+                    }
+                }
+            }
         val priceAt = now()
         val confirmedLedger = ledger().activities.filter { it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
         // Replay each owner's full inventory before selecting accounts, preserving transferred lot age and basis.
@@ -151,8 +184,12 @@ class AccountingService internal constructor(
                             out.accountId in ownerAccounts &&
                             into.accountId in ownerAccounts &&
                             out.accountId != into.accountId &&
-                            treatments.load(link.outgoingActivity).any { it is Treatment.Dispose && it.movement == link.outgoingEvent } &&
-                            treatments.load(link.incomingActivity).any { it is Treatment.Acquire && it.movement == link.incomingEvent }
+                            classified(byId.getValue(link.outgoingActivity).activity).any {
+                                it is Treatment.Dispose && it.movement == link.outgoingEvent
+                            } &&
+                            classified(byId.getValue(link.incomingActivity).activity).any {
+                                it is Treatment.Acquire && it.movement == link.incomingEvent
+                            }
                     }
                 val linkedOut = linked.associateBy { it.outgoingActivity to it.outgoingEvent }
                 val linkedIn = linked.map { it.incomingActivity to it.incomingEvent }.toSet()
@@ -160,10 +197,8 @@ class AccountingService internal constructor(
                     val activity = entry.activity
                     try {
                         val saved =
-                            treatments
-                                .load(
-                                    activity.id,
-                                ).let { if (zeroBasisRewards) withZeroBasisRewards(activity, it, quote) else it }
+                            classified(activity)
+                                .let { if (zeroBasisRewards) withZeroBasisRewards(activity, it, quote) else it }
                                 .let { recorded ->
                                     isOpening
                                         ?.takeIf { it(activity) }
@@ -361,6 +396,7 @@ class AccountingService internal constructor(
             orderingUncertain.distinct(),
             currencyMismatch.distinct(),
             estimated.distinct(),
+            automatic.distinct(),
         )
     }
 

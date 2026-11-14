@@ -346,16 +346,29 @@ class ExchangeService internal constructor(
 
     fun status(account: AccountId): io.valroot.core.exchange.ExchangeAccountStatus = exchangeSync.status(account)
 
+    /** The activity ID prefix of each tracked exchange account. */
+    private fun activityPrefixes(): Map<AccountId, String> =
+        io.valroot.core.exchange.ExchangeKind.entries
+            .flatMap { kind -> targets(kind).map { (account, uid) -> account to "${kind.id}:$uid:" } }
+            .toMap()
+
+    /** A check for activities derived from a tracked exchange account's records, with every movement in that account. */
+    fun exchangeActivities(): (io.valroot.core.ledger.Activity) -> Boolean {
+        val prefixes = activityPrefixes()
+        return { activity ->
+            val accounts = activity.movements.map { it.accountId }.distinct()
+            val prefix = accounts.singleOrNull()?.let { prefixes[it] }
+            prefix != null && activity.id.value.startsWith(prefix)
+        }
+    }
+
     /**
      * A check for opening amounts of exchange accounts whose history is complete: a single incoming movement recorded for
      * coins held before the account's records begin (Bybit's per-wallet openings, or a balance fill placed before the
      * history start). Accounts and their coverage are read once per check.
      */
     fun completeOpenings(): (io.valroot.core.ledger.Activity) -> Boolean {
-        val prefixes =
-            io.valroot.core.exchange.ExchangeKind.entries
-                .flatMap { kind -> targets(kind).map { (account, uid) -> account to "${kind.id}:$uid:" } }
-                .toMap()
+        val prefixes = activityPrefixes()
         val starts = mutableMapOf<AccountId, Long?>()
 
         fun completeFrom(account: AccountId) =

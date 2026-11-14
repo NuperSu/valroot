@@ -186,10 +186,42 @@ class MexcConnectorTest {
     }
 
     @Test
+    fun unclassifiedExchangeActivityCountsWithDefaultsAndASavedClassificationWins() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            MexcConnector { _, request -> FakeMexc().get(request) }.refresh(app, SourceRefreshOptions())
+            val view = app.accounting.report()
+            assertTrue(view.missingTreatments.isEmpty())
+            val trade = view.automaticTreatments.first { it.value.contains(":trade:BTCUSDT:") }
+            // 150 bought lots plus the opening, all held: BTC is in the FIFO results.
+            assertTrue(view.report.lots.count { it.acquisitionActivityId?.value?.contains(":trade:BTCUSDT:") == true } == 150)
+            val movements =
+                app
+                    .snapshot(ActivityFilter(account = account, limit = 500))
+                    .activities
+                    .single { it.activity.id == trade }
+                    .activity.movements
+            app.accounting.saveTreatments(
+                trade,
+                movements.map { m ->
+                    if (m.amount.atomicUnits.sign > 0) {
+                        io.valroot.core.accounting.Treatment
+                            .Acquire(m.id, null, opening = true)
+                    } else {
+                        io.valroot.core.accounting.Treatment
+                            .Dispose(m.id, null, fee = m.role == io.valroot.core.ledger.MovementRole.FEE)
+                    }
+                },
+            )
+            assertTrue(trade !in app.accounting.report().automaticTreatments)
+        }
+    }
+
+    @Test
     fun anOpeningCountsAtItsMarketValueOnlyWhenChosenAndHistoryIsComplete() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
-            // Without trades the opening is BTC's only activity, so FIFO needs no other classification.
+            // Without trades the opening is BTC's only lot.
             val mexc = FakeMexc().apply { trades.clear() }
             MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
             val opening =
@@ -213,9 +245,14 @@ class MexcConnectorTest {
                     true,
                 ),
             )
-            // Off by default: the unclassified opening leaves BTC without FIFO results.
+            // Off by default: the unclassified opening is an opening of unknown cost.
             val off = app.accounting.report()
-            assertTrue(opening.id in off.missingTreatments)
+            assertTrue(opening.id in off.automaticTreatments)
+            assertNull(
+                off.report.lots
+                    .single { it.acquisitionActivityId == opening.id }
+                    .basis,
+            )
             assertTrue(off.estimatedBasis.isEmpty())
 
             app.settings.setEstimateOpeningBasis(true)

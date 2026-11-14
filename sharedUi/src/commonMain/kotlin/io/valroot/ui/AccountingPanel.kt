@@ -216,6 +216,7 @@ internal fun AccountingPanel(
                     when (item.activity.id) {
                         in current.view.invalidTreatments -> "Review"
                         in current.view.missingTreatments -> "Needs treatment"
+                        in current.view.automaticTreatments -> "Automatic"
                         else -> "Classified"
                     }
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {

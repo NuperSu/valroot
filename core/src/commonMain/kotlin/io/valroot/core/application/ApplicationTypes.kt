@@ -100,6 +100,8 @@ data class AccountingView(
     val currencyMismatch: List<ActivityId> = emptyList(),
     /** Exchange opening amounts whose cost is their market value when the account's history begins, not a recorded cost. */
     val estimatedBasis: List<ActivityId> = emptyList(),
+    /** Exchange activities without a saved classification, counted with the defaults for their recorded roles. */
+    val automaticTreatments: List<ActivityId> = emptyList(),
 ) {
     /** Assets with an open lot or a disposal whose basis includes an [estimatedBasis] opening. */
     val estimatedAssets: Set<AssetId>
