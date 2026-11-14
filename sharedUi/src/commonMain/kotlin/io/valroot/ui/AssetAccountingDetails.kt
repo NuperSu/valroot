@@ -134,6 +134,7 @@ internal fun AssetAccountingContent(
         if (view.orderingUncertain.isNotEmpty()) {
             Text("Some portfolio activity has unverified ordering; FIFO results are provisional.", color = Orange, fontSize = 12.sp)
         }
+        if (asset in view.estimatedAssets) Text(ESTIMATED_COST_NOTE, color = Muted, fontSize = 12.sp)
         Text("Open lots (${lots.size})", fontWeight = FontWeight.SemiBold)
         if (lots.isEmpty()) Text("No classified open lots for this asset.", color = Muted, fontSize = 12.sp)
         lots.drop(lotPage * 10).take(10).forEach { lot ->
@@ -144,7 +145,12 @@ internal fun AssetAccountingContent(
                     "${if (lot.acquisitionActivityId == null) "Acquisition unknown" else "Acquired $acquired UTC"} · basis ${lot.basis.displayAmount()} $quote",
                     fontSize = 12.sp,
                 )
-                Text("Lot ${lot.id} · exact basis ${lot.basis ?: "unknown"}", color = Muted, fontSize = 11.sp)
+                Text(
+                    "Lot ${lot.id} · ${if (lot.acquisitionActivityId in view.estimatedBasis) "estimated" else "exact"} basis " +
+                        "${lot.basis ?: "unknown"}",
+                    color = Muted,
+                    fontSize = 11.sp,
+                )
                 lot.acquisitionActivityId?.let { acquisition ->
                     TextButton(onClick = { onActivity(acquisition) }) { Text("View acquisition activity") }
                 }
@@ -193,3 +199,7 @@ private fun AssetAccountingPages(
         Text("${page + 1} / ${(total + 9) / 10}", fontSize = 12.sp)
     }
 }
+
+/** How gains that include an estimated opening cost are labelled. */
+internal const val ESTIMATED_COST_NOTE =
+    "Includes an estimated cost for coins held before exchange history begins: their market value then."

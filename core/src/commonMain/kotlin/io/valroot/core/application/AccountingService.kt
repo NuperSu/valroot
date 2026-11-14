@@ -84,6 +84,22 @@ class AccountingService internal constructor(
         }
     }
 
+    /**
+     * An exchange opening amount, unclassified or classified as an opening of unknown cost, counted at its market value
+     * when the account's history begins. Null when no historical price exists or it was classified otherwise.
+     */
+    private fun estimatedOpening(
+        activity: Activity,
+        saved: List<Treatment>,
+        quote: AssetId,
+    ): List<Treatment>? {
+        val movement = activity.movements.single()
+        val unknownCost = saved.singleOrNull()?.let { it is Treatment.Acquire && it.movement == movement.id && it.cost == null }
+        if (saved.isNotEmpty() && unknownCost != true) return null
+        val unit = app.assets.unitPrice(movement.amount.assetId, quote, activity.occurredAtEpochMillis, current = false) ?: return null
+        return listOf(Treatment.Acquire(movement.id, QuoteValue(quote, unit.amount * Rational.units(movement.amount.atomicUnits)), true))
+    }
+
     fun report(portfolio: PortfolioId? = null): AccountingView {
         app.assets.ensureDefaults()
         val catalog = ownership.load()
@@ -94,6 +110,8 @@ class AccountingService internal constructor(
         val currencyMismatch = mutableListOf<ActivityId>()
         val quote = app.assets.portfolioCurrency(portfolio)
         val zeroBasisRewards = app.settings.general().zeroBasisRewards
+        val isOpening = if (app.settings.general().estimateOpeningBasis) app.exchanges.completeOpenings() else null
+        val estimated = mutableListOf<ActivityId>()
         val priceAt = now()
         val confirmedLedger = ledger().activities.filter { it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
         // Replay each owner's full inventory before selecting accounts, preserving transferred lot age and basis.
@@ -146,6 +164,12 @@ class AccountingService internal constructor(
                                 .load(
                                     activity.id,
                                 ).let { if (zeroBasisRewards) withZeroBasisRewards(activity, it, quote) else it }
+                                .let { recorded ->
+                                    isOpening
+                                        ?.takeIf { it(activity) }
+                                        ?.let { estimatedOpening(activity, recorded, quote) }
+                                        ?.also { estimated.add(activity.id) } ?: recorded
+                                }
                         if (saved.isEmpty()) {
                             if (affectsSelection(activity)) missing.add(activity.id)
                             incompleteAssets.addAll(ownerAssets(activity))
@@ -336,6 +360,7 @@ class AccountingService internal constructor(
             invalid.distinct(),
             orderingUncertain.distinct(),
             currencyMismatch.distinct(),
+            estimated.distinct(),
         )
     }
 

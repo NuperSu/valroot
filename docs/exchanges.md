@@ -66,6 +66,9 @@ A stream marked complete short of its limit without a recorded end is checked on
 
 Each log records the balance after every row, so each wallet's balance before its first row is known: the current balance less every change since. It is recorded as one opening amount per wallet and coin, 1 ms before that wallet's first row. Coins held where there is no history (Earn, bots, copy trading, loans), and anything the records do not explain, are one adjustment per coin just after the latest record, derived again on each refresh. With complete logs the remainder is what sits in those products. An activity that moves a coin still waiting for the user's choice is left out until then, so its other side shows in the remainder meanwhile.
 
+
+Opening amounts carry no recorded cost. With Settings > Portfolio > "Estimate cost of coins held before exchange history" on, an opening amount counts at its market value when it occurs, in the report currency, provided the account's history is complete (every stream reached its limit, its first record or the exchange's retention; see [History ends](#history-ends)) and a historical price exists within 24 hours. This applies to Bybit's per-wallet openings and to balance fills placed before the history start, unclassified or classified as an opening of unknown cost; other classifications are kept. The estimate is calculated by each report and never stored, so it moves with the history start when older records arrive. Reports list the estimated openings (`AccountingView.estimatedBasis`), and lots, gains and Insights that use them are labelled as estimated.
+
 ## Coins
 
 An exchange balance is a claim on a coin, not a token of one chain, so every exchange shares one asset per CoinGecko coin: `coin:<coingecko-id>`, with 30 decimals (MEXC reports MX to 25). Bybit reports BTC to 14 decimals, so Bybit BTC is `coin:bitcoin`, not the 8-decimal `bitcoin:btc` of Bitcoin wallets. Prices and logos come through the asset's coin link.

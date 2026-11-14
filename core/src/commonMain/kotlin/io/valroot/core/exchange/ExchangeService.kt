@@ -346,6 +346,35 @@ class ExchangeService internal constructor(
 
     fun status(account: AccountId): io.valroot.core.exchange.ExchangeAccountStatus = exchangeSync.status(account)
 
+    /**
+     * A check for opening amounts of exchange accounts whose history is complete: a single incoming movement recorded for
+     * coins held before the account's records begin (Bybit's per-wallet openings, or a balance fill placed before the
+     * history start). Accounts and their coverage are read once per check.
+     */
+    fun completeOpenings(): (io.valroot.core.ledger.Activity) -> Boolean {
+        val prefixes =
+            io.valroot.core.exchange.ExchangeKind.entries
+                .flatMap { kind -> targets(kind).map { (account, uid) -> account to "${kind.id}:$uid:" } }
+                .toMap()
+        val starts = mutableMapOf<AccountId, Long?>()
+
+        fun completeFrom(account: AccountId) =
+            starts.getOrPut(account) {
+                coverage(account).takeIf { it.coverage == io.valroot.core.exchange.HistoryCoverage.COMPLETE }?.historyFromMillis
+            }
+        return { activity ->
+            val movement = activity.movements.singleOrNull()?.takeIf { it.amount.atomicUnits.sign > 0 }
+            val prefix = movement?.let { prefixes[it.accountId] }?.takeIf { activity.id.value.startsWith(it) }
+            val from = prefix?.let { completeFrom(movement.accountId) }
+            if (from == null) {
+                false
+            } else {
+                val key = activity.id.value.removePrefix(prefix)
+                key.startsWith("opening:") || key.startsWith("balance:") && activity.occurredAtEpochMillis < from
+            }
+        }
+    }
+
     /** Where the account's history begins and whether it is complete; READING until the first refresh reads it. */
     fun coverage(account: AccountId): io.valroot.core.exchange.ExchangeCoverage {
         val streams = exchangeSync.streams(account).values

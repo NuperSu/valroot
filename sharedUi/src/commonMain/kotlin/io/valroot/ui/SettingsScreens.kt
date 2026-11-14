@@ -185,6 +185,14 @@ internal fun ColumnScope.ProductSettings(
                         "instead of their recorded value. Their recorded value is kept.",
                 tag = "settings-zero-basis",
             ) { actions.onGeneral(general.copy(zeroBasisRewards = it)) }
+            SettingsSwitchRow(
+                "Estimate cost of coins held before exchange history",
+                general.estimateOpeningBasis,
+                description =
+                    "When an exchange account's history is complete, coins it already held when the history begins count " +
+                        "at their market value on that date. Gains that use this are marked as estimated.",
+                tag = "settings-estimate-opening",
+            ) { actions.onGeneral(general.copy(estimateOpeningBasis = it)) }
             SettingsActionRow("Classification rules", tag = "settings-rules") { actions.onDialog("rule") }
         }
         "notifications" -> {

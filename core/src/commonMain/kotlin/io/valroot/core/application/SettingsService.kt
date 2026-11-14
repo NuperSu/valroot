@@ -67,6 +67,7 @@ class SettingsService internal constructor(
             secondaryCurrency = setting("secondary_currency")?.takeIf { it in DISPLAY_CURRENCIES }?.let(::AssetId),
             showPortfolioChart = setting("show_portfolio_chart") != "false",
             zeroBasisRewards = setting("zero_basis_rewards") == "true",
+            estimateOpeningBasis = setting("estimate_opening_basis") == "true",
             deviceName = setting("device_name"),
             hideAmounts = setting("hide_amounts") == "true",
             candleCharts = setting("chart_style") == "candles",
@@ -97,6 +98,12 @@ class SettingsService internal constructor(
      * recorded value. The recorded value is kept, so turning this off restores it; reports replay with the current choice.
      */
     fun setZeroBasisRewards(enabled: Boolean) = putSetting("zero_basis_rewards", enabled.toString())
+
+    /**
+     * Coins an exchange account held before its complete history begins (its opening amounts) count with their market
+     * value at that moment as an estimated cost. Nothing is stored: reports replay with the current choice and prices.
+     */
+    fun setEstimateOpeningBasis(enabled: Boolean) = putSetting("estimate_opening_basis", enabled.toString())
 
     /** Null or blank restores the host's default device name. */
     fun setDeviceName(name: String?) {

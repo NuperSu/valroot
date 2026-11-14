@@ -98,7 +98,22 @@ data class AccountingView(
     val orderingUncertain: List<ActivityId>,
     /** Treatments priced in another quote currency; their cost or proceeds are unknown in the report currency. */
     val currencyMismatch: List<ActivityId> = emptyList(),
-)
+    /** Exchange opening amounts whose cost is their market value when the account's history begins, not a recorded cost. */
+    val estimatedBasis: List<ActivityId> = emptyList(),
+) {
+    /** Assets with an open lot or a disposal whose basis includes an [estimatedBasis] opening. */
+    val estimatedAssets: Set<AssetId>
+        get() {
+            val estimated = estimatedBasis.toSet()
+            return report.lots
+                .filter { it.acquisitionActivityId in estimated }
+                .map { it.asset }
+                .toSet() +
+                report.disposals
+                    .filter { disposal -> disposal.consumed.any { it.acquisitionActivityId in estimated } }
+                    .map { it.asset }
+        }
+}
 
 data class SavedObservation(
     val source: String,
@@ -219,6 +234,8 @@ data class GeneralPreferences(
     val hideAmounts: Boolean = false,
     /** Charts draw candles instead of a line. */
     val candleCharts: Boolean = false,
+    /** Coins held before an exchange account's complete history begins count at their market value then. */
+    val estimateOpeningBasis: Boolean = false,
 )
 
 /** The default public Esplora endpoint. */

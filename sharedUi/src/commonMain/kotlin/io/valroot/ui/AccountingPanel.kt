@@ -142,6 +142,14 @@ internal fun AccountingPanel(
                     fontSize = 12.sp,
                 )
             }
+            if (current.view.estimatedBasis.isNotEmpty()) {
+                Text(
+                    "${current.view.estimatedBasis.size} exchange opening amounts use an estimated cost: their market value " +
+                        "when the exchange history begins.",
+                    color = Muted,
+                    fontSize = 12.sp,
+                )
+            }
             if (current.view.invalidTreatments.isNotEmpty()) {
                 Text(
                     "${current.view.invalidTreatments.size} activities have conflicting treatments and need review.",

@@ -314,6 +314,7 @@ private fun CoinAccountingSummary(
             style = MaterialTheme.typography.bodySmall,
         )
     }
+    if (asset.asset in view.estimatedAssets) Text(ESTIMATED_COST_NOTE, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

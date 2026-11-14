@@ -7,10 +7,14 @@ import io.valroot.core.exchange.ExchangeAssets
 import io.valroot.core.exchange.ExchangeKind
 import io.valroot.core.exchange.ExchangeTransfer
 import io.valroot.core.ledger.ActivityKind
+import io.valroot.core.market.PriceObservation
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ActivityId
+import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.OwnerId
+import io.valroot.core.model.Price
+import io.valroot.core.model.Rational
 import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
@@ -177,6 +181,66 @@ class MexcConnectorTest {
                     .streams(account)
                     .values
                     .all { it.complete },
+            )
+        }
+    }
+
+    @Test
+    fun anOpeningCountsAtItsMarketValueOnlyWhenChosenAndHistoryIsComplete() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            // Without trades the opening is BTC's only activity, so FIFO needs no other classification.
+            val mexc = FakeMexc().apply { trades.clear() }
+            MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
+            val opening =
+                app
+                    .snapshot(ActivityFilter(account = account, limit = 500))
+                    .activities
+                    .single { it.activity.id.value == "mexc:$uid:balance:BTC" }
+                    .activity
+            val btc =
+                opening.movements
+                    .single()
+                    .amount.assetId
+            val usd = app.assets.portfolioCurrency(null)
+            app.prices.recordManual(
+                PriceObservation(
+                    "opening",
+                    Price(btc, usd, ExactDecimal.parse("20000")),
+                    null,
+                    opening.occurredAtEpochMillis,
+                    opening.occurredAtEpochMillis,
+                    true,
+                ),
+            )
+            // Off by default: the unclassified opening leaves BTC without FIFO results.
+            val off = app.accounting.report()
+            assertTrue(opening.id in off.missingTreatments)
+            assertTrue(off.estimatedBasis.isEmpty())
+
+            app.settings.setEstimateOpeningBasis(true)
+            val on = app.accounting.report()
+            assertEquals(listOf(opening.id), on.estimatedBasis)
+            assertTrue(opening.id !in on.missingTreatments)
+            val lot = on.report.lots.single { it.acquisitionActivityId == opening.id }
+            // 0.5 BTC held at 20,000 USD.
+            assertEquals(Rational.of("10000"), lot.basis)
+            assertTrue(btc in on.estimatedAssets)
+
+            // Coins held before history that is still being read are not estimated.
+            app.exchanges.saveStream(
+                account,
+                app.exchanges
+                    .streams(account)
+                    .values
+                    .first()
+                    .copy(complete = false),
+            )
+            assertTrue(
+                app.accounting
+                    .report()
+                    .estimatedBasis
+                    .isEmpty(),
             )
         }
     }
