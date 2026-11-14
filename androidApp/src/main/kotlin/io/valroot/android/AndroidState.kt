@@ -39,6 +39,9 @@ internal class AndroidState(
     /** Set in [AndroidHost.close]. Callbacks posted to the main thread check it and do nothing once it is set. */
     @Volatile var closed = false
 
+    /** Held by a backup restore for its whole run and by [AndroidHost.close] to release the database, so neither cuts into the other. */
+    val restoreLock = Any()
+
     /** Storage Access Framework pickers for exports and backups. */
     val files = BackupFiles(activity)
     val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { }

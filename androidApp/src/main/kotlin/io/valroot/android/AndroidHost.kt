@@ -210,10 +210,10 @@ internal class AndroidHost(
 
     /**
      * Marks the host closed and releases the database on the background executor once queued work has run. The close
-     * waits for a restore swapping the database file, which closes its replacement itself when the host is closed.
+     * waits for a running restore, which closes its replacement database itself when it finds the host closed.
      */
     fun close() {
         state.closed = true
-        state.executor.execute { synchronized(AutomaticPriceGate.lock) { if (state.dbOpen) runCatching { state.db.close() } } }
+        state.executor.execute { synchronized(state.restoreLock) { if (state.dbOpen) runCatching { state.db.close() } } }
     }
 }

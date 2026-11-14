@@ -97,69 +97,53 @@ internal class AndroidBackups(
     ) {
         // Restore replaces the database file, so it shares the sync thread and cannot overlap a running scan.
         RefreshWorker.syncExecutor.execute {
-            var staging: java.nio.file.Path? = null
-            var result = "Could not restore backup"
-            var swapped = false
-            var reopened = false
-            var pricePaused = false
-            var replacementReady = false
-            try {
-                staging = Files.createTempFile(state.file.parent, "restore-", ".sqlite")
-                AndroidSqliteDatabase(
-                    staging.toString(),
-                ).use { stagingDb ->
-                    state.files.read(uri) { input ->
-                        requireNotNull(state.app.value).backup.restoreToStaging(
-                            stagingDb,
-                            { b, o, l -> input.read(b, o, l) },
-                            password.toCharArray(),
-                        )
+            // Holding the restore lock keeps the activity's close from releasing the database while it is in use here.
+            synchronized(state.restoreLock) {
+                if (state.closed) return@execute
+                var staging: java.nio.file.Path? = null
+                var result = "Could not restore backup"
+                var swapped = false
+                var reopened = false
+                var pricePaused = false
+                var replacementReady = false
+                try {
+                    staging = Files.createTempFile(state.file.parent, "restore-", ".sqlite")
+                    AndroidSqliteDatabase(
+                        staging.toString(),
+                    ).use { stagingDb ->
+                        state.files.read(uri) { input ->
+                            requireNotNull(state.app.value).backup.restoreToStaging(
+                                stagingDb,
+                                { b, o, l -> input.read(b, o, l) },
+                                password.toCharArray(),
+                            )
+                        }
                     }
-                }
-                java.nio.channels.FileChannel
-                    .open(staging, java.nio.file.StandardOpenOption.WRITE)
-                    .use { it.force(true) }
-                AutomaticPriceGate.paused = true
-                pricePaused = true
-                requireNotNull(state.app.value).prices.invalidateAutomaticRequests()
-                PriceHistoryWorker.invalidate()
-                // This short transaction waits for earlier price commits and invalidates their consent generation.
-                requireNotNull(state.app.value).let { it.prices.setSourceConsent(it.prices.sourceConsent()) }
-                synchronized(AutomaticPriceGate.lock) {
-                    state.db.close()
-                    try {
-                        // Another connection still holding a write-ahead log would replay it into the restored file.
-                        check(walIsEmpty(state.file)) { "Valroot is still writing; retry the restore" }
-                        Files.move(staging, state.file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-                        swapped = true
-                    } finally {
-                        state.db = AndroidSqliteDatabase(state.file.toString())
-                        reopened = true
-                    }
-                    // The activity closed during the restore: its database is released here, and the next launch opens the file.
-                    if (state.closed) {
+                    java.nio.channels.FileChannel
+                        .open(staging, java.nio.file.StandardOpenOption.WRITE)
+                        .use { it.force(true) }
+                    AutomaticPriceGate.paused = true
+                    pricePaused = true
+                    requireNotNull(state.app.value).prices.invalidateAutomaticRequests()
+                    PriceHistoryWorker.invalidate()
+                    // This short transaction waits for earlier price commits and invalidates their consent generation.
+                    requireNotNull(state.app.value).let { it.prices.setSourceConsent(it.prices.sourceConsent()) }
+                    synchronized(AutomaticPriceGate.lock) {
                         state.db.close()
-                        return@execute
-                    }
-                    val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
-                    val updated = java.util.concurrent.CountDownLatch(1)
-                    state.main.post {
-                        state.app.value = replacement
-                        state.dataRevision.update { it + 1 }
-                        updated.countDown()
-                    }
-                    updated.await()
-                    replacementReady = true
-                }
-                result = "Backup restored"
-            } catch (failure: Exception) {
-                // Validation messages (wrong password, damaged or unsupported backup) explain a rejected file.
-                if (!swapped && failure is IllegalArgumentException) result = failure.message ?: result
-                if (swapped) result = "Backup restored; reopen the app to load it"
-                if (reopened && !swapped && state.closed) {
-                    runCatching { state.db.close() }
-                } else if (reopened && !swapped) {
-                    runCatching {
+                        try {
+                            // Another connection still holding a write-ahead log would replay it into the restored file.
+                            check(walIsEmpty(state.file)) { "Valroot is still writing; retry the restore" }
+                            Files.move(staging, state.file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                            swapped = true
+                        } finally {
+                            state.db = AndroidSqliteDatabase(state.file.toString())
+                            reopened = true
+                        }
+                        // The activity closed during the restore: its database is released here, and the next launch opens the file.
+                        if (state.closed) {
+                            state.db.close()
+                            return@execute
+                        }
                         val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
                         val updated = java.util.concurrent.CountDownLatch(1)
                         state.main.post {
@@ -168,25 +152,45 @@ internal class AndroidBackups(
                             updated.countDown()
                         }
                         updated.await()
+                        replacementReady = true
                     }
+                    result = "Backup restored"
+                } catch (failure: Exception) {
+                    // Validation messages (wrong password, damaged or unsupported backup) explain a rejected file.
+                    if (!swapped && failure is IllegalArgumentException) result = failure.message ?: result
+                    if (swapped) result = "Backup restored; reopen the app to load it"
+                    if (reopened && !swapped && state.closed) {
+                        runCatching { state.db.close() }
+                    } else if (reopened && !swapped) {
+                        runCatching {
+                            val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
+                            val updated = java.util.concurrent.CountDownLatch(1)
+                            state.main.post {
+                                state.app.value = replacement
+                                state.dataRevision.update { it + 1 }
+                                updated.countDown()
+                            }
+                            updated.await()
+                        }
+                    }
+                } finally {
+                    if (pricePaused) {
+                        AutomaticPriceGate.paused = false
+                        if (swapped && replacementReady &&
+                            runCatching { state.app.value?.let { sync.reconcileRefreshPreferences(it) } }.isFailure
+                        ) {
+                            result = "Backup restored; automatic price scheduling could not be updated"
+                        }
+                        // The restored settings decide whether periodic notification checks run.
+                        if (swapped && replacementReady) {
+                            runCatching { state.app.value?.let { NotificationWorker.schedule(state.activity, it.notifications.active()) } }
+                        }
+                    }
+                    staging?.let { runCatching { Files.deleteIfExists(it) } }
                 }
-            } finally {
-                if (pricePaused) {
-                    AutomaticPriceGate.paused = false
-                    if (swapped && replacementReady &&
-                        runCatching { state.app.value?.let { sync.reconcileRefreshPreferences(it) } }.isFailure
-                    ) {
-                        result = "Backup restored; automatic price scheduling could not be updated"
-                    }
-                    // The restored settings decide whether periodic notification checks run.
-                    if (swapped && replacementReady) {
-                        runCatching { state.app.value?.let { NotificationWorker.schedule(state.activity, it.notifications.active()) } }
-                    }
-                }
-                staging?.let { runCatching { Files.deleteIfExists(it) } }
+                val message = result
+                state.main.post { onResult(message) }
             }
-            val message = result
-            state.main.post { onResult(message) }
         }
     }
 }
