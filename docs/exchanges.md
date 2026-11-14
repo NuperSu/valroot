@@ -33,7 +33,7 @@ Requests are spaced 150 ms apart across the process, and deposit records 650 ms 
 ## What a refresh reads
 
 1. The key check, then the three balance requests.
-2. Each history stream forward from where it stopped, with one day of overlap for records Bybit adds late; then further back until the stream's start: two years for the Unified log (Bybit's retention), five years for the Funding history (it can be quiet for months while deposits and withdrawals happen), and for deposits and withdrawals until a year passes without a record, at most five years. A window Bybit refuses as too old ends that stream's history.
+2. Each history stream forward from where it stopped, with one day of overlap for records Bybit adds late; then further back until the stream's start: two years for the Unified log (Bybit's retention), five years for the Funding history (it can be quiet for months while deposits and withdrawals happen), and for deposits and withdrawals until a year passes without a record, at most five years. A window Bybit refuses as too old ends that stream's history; a server error (no `retCode`, 10000, 10016) fails the refresh instead, and the stream is read again next time.
 3. Convert history, newest first, until a page holds only known converts.
 4. Token contracts of symbols not matched to a coin yet.
 
@@ -109,7 +109,7 @@ Signed requests carry the query, then `timestamp` and `recvWindow=10000`, then `
 | `/sapi/v1/asset/dribblet` (dust) | Binance's last 100 | 0.15 s |
 | `/sapi/v1/capital/config/getall` | coin contracts, when coins are unmatched | 0.15 s |
 
-HTTP 429 or 418 stops requests for Binance's `Retry-After` (one minute to an hour). A `-1021` answer reads `/api/v3/time`, keeps the offset and tries once more. Binance's error answers reach the decoder as they are, so a window Binance refuses as too old ends that stream. At most 600 requests are made per account and refresh; a first refresh takes several minutes, mostly for withdrawal history.
+HTTP 429 or 418 stops requests for Binance's `Retry-After` (one minute to an hour). A `-1021` answer reads `/api/v3/time`, keeps the offset and tries once more. Binance's error answers reach the decoder as they are, so a window Binance refuses as too old ends that stream; server errors (-1000, -1001, -1006 to -1008) fail the refresh instead. At most 600 requests are made per account and refresh; a first refresh takes several minutes, mostly for withdrawal history.
 
 ## Trades
 

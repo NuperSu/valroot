@@ -39,6 +39,7 @@ class BybitConnectorTest {
     private inner class FakeBybit {
         var readOnly = 1
         var keyUid = uid
+        var serverErrorBefore: Long? = null
         val requests = mutableListOf<BybitRequest>()
         val unified = mutableMapOf("BTC" to "0.6", "USDT" to "900")
         val fund = mutableMapOf("USDT" to "50", "ZZZ" to "0")
@@ -152,7 +153,9 @@ class BybitConnectorTest {
                         "list",
                     )
                 "/v5/asset/fundinghistory" ->
-                    if (q.getValue("createTimeFrom").toLong() * 1000 < now - 3 * 365 * Bybit.DAY_MILLIS) {
+                    if (serverErrorBefore?.let { q.getValue("createTimeFrom").toLong() * 1000 < it } == true) {
+                        """{"retCode":10016,"retMsg":"Internal system error.","result":{}}"""
+                    } else if (q.getValue("createTimeFrom").toLong() * 1000 < now - 3 * 365 * Bybit.DAY_MILLIS) {
                         """{"retCode":10001,"retMsg":"Can't query earlier than 3 years","result":{}}"""
                     } else {
                         paged(
@@ -429,6 +432,20 @@ class BybitConnectorTest {
                 setOf(candidate.first.value, candidate.second.value),
             )
             assertEquals(100, candidate.score)
+        }
+    }
+
+    @Test
+    fun aServerErrorOnAnOldWindowFailsTheRefreshInsteadOfEndingTheHistory() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val bybit = FakeBybit().apply { serverErrorBefore = now - 30 * Bybit.DAY_MILLIS }
+            val connector = BybitConnector { _, request -> bybit.get(request) }
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertEquals(false, app.exchanges.streams(account)[BybitDecoder.FUNDING]?.complete)
+            bybit.serverErrorBefore = null
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertEquals(true, app.exchanges.streams(account)[BybitDecoder.FUNDING]?.complete)
         }
     }
 }

@@ -148,6 +148,9 @@ class BybitException(
     override val invalidKey: Boolean get() = code in INVALID_KEY
     override val clockSkew: Boolean get() = code == CLOCK_SKEW
 
+    /** No retCode (-1), server timeout (10000) or internal error (10016). */
+    override val serverError: Boolean get() = code == -1 || code == 10000 || code == 10016
+
     companion object {
         const val RATE_LIMITED = 10006
         const val CLOCK_SKEW = 10002

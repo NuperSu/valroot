@@ -17,8 +17,11 @@ abstract class ExchangeApiException(
     abstract val invalidKey: Boolean
     abstract val clockSkew: Boolean
 
+    /** A failure on the exchange's side (an internal error, a timeout, an unreadable answer) that may pass on retry. */
+    abstract val serverError: Boolean
+
     /** Errors that stop a refresh; any other refusal of an old window means the exchange keeps no older records. */
-    val stopsRefresh: Boolean get() = rateLimited || invalidKey || clockSkew
+    val stopsRefresh: Boolean get() = rateLimited || invalidKey || clockSkew || serverError
 }
 
 /** Sends one signed read request for an account and returns the response body. */

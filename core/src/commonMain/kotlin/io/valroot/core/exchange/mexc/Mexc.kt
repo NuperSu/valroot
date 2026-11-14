@@ -122,6 +122,9 @@ class MexcException(
     /** Invalid key (10072), bad signature (700002), IP not allowed (700006), no permission (700007). */
     override val invalidKey: Boolean get() = code == 10072 || code == 700002 || code == 700006 || code == 700007
     override val clockSkew: Boolean get() = code == 700003
+
+    /** HTTP-style server errors (500–599 except the rate limit, 510). */
+    override val serverError: Boolean get() = code in 500..599 && !rateLimited
 }
 
 /**
