@@ -257,7 +257,10 @@ class BybitConnector(
                 .associate { "${it[0]}|${it[1]}" to it[2] }
 
         private fun windowsCursor(windows: Map<String, String>) =
-            windows.entries.toList().takeLast(OPEN_WINDOWS).joinToString("\n") { "${it.key}|${it.value}" }
+            windows.entries
+                .toList()
+                .takeLast(OPEN_WINDOWS)
+                .joinToString("\n") { "${it.key}|${it.value}" }
 
         /** Coins whose contracts are looked up per refresh; the rest follow on later refreshes. */
         const val MAX_COIN_LOOKUPS = 50
