@@ -2,13 +2,11 @@ package io.valroot.desktop
 
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
 import io.valroot.core.backup.LockPassword
 import io.valroot.ui.UnlockResult
 import kotlinx.coroutines.flow.update
 import javax.swing.SwingUtilities
-
-/** Switching windows is routine on desktop, so leaving locks after five minutes unless Settings says otherwise. */
-const val DEFAULT_LOCK_DELAY_MILLIS = 300_000L
 
 /**
  * The privacy lock: the password verifier, the locked state the UI shows, and the delay before a window that lost focus

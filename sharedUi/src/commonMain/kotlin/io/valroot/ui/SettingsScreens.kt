@@ -68,7 +68,7 @@ internal data class SettingsDevice(
     val defaultName: String = "This device",
     val biometric: BiometricUnlock = BiometricUnlock.UNSUPPORTED,
     val hasCoingeckoKey: Boolean = false,
-    val lockDelayMillis: Long = 0L,
+    val lockDelayMillis: Long = io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS,
     val hasAlchemyKey: Boolean = false,
     val hasOneInchKey: Boolean = false,
 )

@@ -23,7 +23,7 @@ internal class AndroidLock(
     val locked: MutableState<Boolean> = mutableStateOf(lockStore.hasLock)
 
     /** Kept in memory so leaving and returning to the app never waits on the database. */
-    @Volatile var delayMillis = 0L
+    @Volatile var delayMillis = io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
 
     val hasLock: Boolean get() = lockStore.hasLock
 

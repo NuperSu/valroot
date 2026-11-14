@@ -2,6 +2,7 @@ package io.valroot.desktop
 
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.bitcoin.BlockstreamTransport
 import io.valroot.core.market.KrakenPriceTransport

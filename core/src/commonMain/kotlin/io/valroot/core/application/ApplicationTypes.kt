@@ -230,6 +230,9 @@ const val MEMPOOL_PAGE = 50L
 /** Privacy lock delays offered in Settings: immediately, 1, 5 and 15 minutes, and 1 hour. */
 val LOCK_DELAYS = listOf(0L, 60_000L, 300_000L, 900_000L, 3_600_000L)
 
+/** Lock delay of a device that has not chosen one. */
+const val DEFAULT_LOCK_DELAY_MILLIS = 300_000L
+
 /** A 24-hour move at least this large, in percent, is a significant price change. */
 const val SIGNIFICANT_MOVE_PERCENT = 10.0
 

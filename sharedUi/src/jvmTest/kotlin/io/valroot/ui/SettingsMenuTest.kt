@@ -133,7 +133,7 @@ class SettingsMenuTest {
             onNodeWithTag("settings-back").performClick()
             onNodeWithTag("settings-security").performClick()
             onNodeWithTag("settings-biometric").performClick()
-            onNodeWithText("Immediately").assertExists()
+            onNodeWithText("After 5 minutes").assertExists()
             onNodeWithTag("settings-lock-delay").performClick()
             onNodeWithTag("settings-lock-delay-900000").performClick()
             onNodeWithTag("settings-back").performClick()

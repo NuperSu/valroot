@@ -232,7 +232,7 @@ interface PlatformActions {
     }
 
     /** How long the app may be left before it locks. Main thread; hosts keep the saved value in memory. */
-    val lockDelayMillis: Long get() = 0L
+    val lockDelayMillis: Long get() = io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
 
     /** Saves the lock delay for this device; one of [io.valroot.core.application.LOCK_DELAYS]. Main thread. */
     fun setLockDelay(millis: Long) {}
