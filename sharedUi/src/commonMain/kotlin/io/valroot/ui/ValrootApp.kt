@@ -609,6 +609,7 @@ internal fun Product(
                     snackbar = snackbar,
                     execute = { success, action -> execute(success, action) },
                     saveGeneral = ::saveGeneral,
+                    updateGeneral = { change -> saveGeneral(change(generalPreferences)) },
                     onAssetPreference = ::saveAssetPreference,
                     refreshMarkets = { maxAgeMillis, quiet -> refreshMarkets(maxAgeMillis, quiet) },
                     refreshPrices = { refreshPrices(it) },

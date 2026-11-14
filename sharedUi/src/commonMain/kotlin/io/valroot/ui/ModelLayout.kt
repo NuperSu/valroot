@@ -82,6 +82,8 @@ internal fun ModelLayout(
     snackbar: SnackbarHostState,
     execute: (String, () -> Unit) -> Unit,
     saveGeneral: (GeneralPreferences) -> Unit,
+    /** Applies a change to the current preferences, not to the value of this composition. */
+    updateGeneral: ((GeneralPreferences) -> GeneralPreferences) -> Unit,
     onAssetPreference: (AssetListPreference) -> Unit,
     refreshMarkets: (Long, Boolean) -> Unit,
     refreshPrices: (Boolean) -> Unit,
@@ -153,7 +155,7 @@ internal fun ModelLayout(
                 }
             },
             onMarketRefresh = { age -> refreshMarkets(age, age > 60_000L) },
-            onToggleAmounts = { saveGeneral(generalPreferences.copy(hideAmounts = !generalPreferences.hideAmounts)) },
+            onToggleAmounts = { updateGeneral { it.copy(hideAmounts = !it.hideAmounts) } },
             chartStyle =
                 if (generalPreferences.candleCharts) {
                     io.valroot.ui.model.ChartStyle.CANDLES
@@ -161,12 +163,7 @@ internal fun ModelLayout(
                     io.valroot.ui.model.ChartStyle.LINE
                 },
             onChartStyle = { style ->
-                saveGeneral(
-                    generalPreferences.copy(
-                        candleCharts =
-                            style == io.valroot.ui.model.ChartStyle.CANDLES,
-                    ),
-                )
+                updateGeneral { it.copy(candleCharts = style == io.valroot.ui.model.ChartStyle.CANDLES) }
             },
             onAdd = {
                 setModelEditingId(null)
