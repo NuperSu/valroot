@@ -37,15 +37,29 @@ class RefreshWorker(
         } catch (_: IllegalStateException) {
         }
         syncStatus.value = SyncStatus(SyncPhase.SYNCING, "Fetching public history…")
+        // The task publishes its own result, so a worker interrupted while waiting never leaves the status syncing.
+        val task =
+            syncExecutor.submit<SyncStatus> {
+                var status = SyncStatus(SyncPhase.ERROR, "Sync stopped before it finished. Saved data is unchanged; retry.")
+                try {
+                    status =
+                        performRefresh(applicationContext, ensureActive = {
+                            if (isStopped) throw BitcoinProviderException(BitcoinProviderFailure.CANCELLED)
+                        })
+                } finally {
+                    syncStatus.value = status
+                    dataRevision.update { it + 1 }
+                }
+                status
+            }
         val status =
-            syncExecutor
-                .submit<SyncStatus> {
-                    performRefresh(applicationContext, ensureActive = {
-                        if (isStopped) throw BitcoinProviderException(BitcoinProviderFailure.CANCELLED)
-                    })
-                }.get()
-        syncStatus.value = status
-        dataRevision.update { it + 1 }
+            try {
+                task.get()
+            } catch (_: InterruptedException) {
+                return Result.retry()
+            } catch (_: ExecutionException) {
+                return Result.retry()
+            }
         return if (status.phase == SyncPhase.ERROR) Result.retry() else Result.success()
     }
 
