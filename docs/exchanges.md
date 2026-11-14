@@ -33,7 +33,7 @@ Requests are spaced 150 ms apart across the process, and deposit records 650 ms 
 ## What a refresh reads
 
 1. The key check, then the three balance requests.
-2. Each history stream forward from where it stopped, with one day of overlap for records Bybit adds late; then further back until the stream's start: two years for the Unified log (Bybit's retention), five years for the Funding history (it can be quiet for months while deposits and withdrawals happen), and for deposits and withdrawals until a year passes without a record, at most five years. A window Bybit refuses as too old ends that stream's history; a server error (no `retCode`, 10000, 10016) fails the refresh instead, and the stream is read again next time.
+2. Each history stream forward from where it stopped, with one day of overlap for records Bybit adds late; then further back until the stream's start: two years for the Unified log (Bybit's retention), five years for the Funding history (it can be quiet for months while deposits and withdrawals happen), and for deposits and withdrawals until a year passes without a record, at most five years. A refused older window ends history only as described in [History ends](#history-ends); a server error (no `retCode`, 10000, 10016) fails the refresh instead, and the stream is read again next time.
 3. Convert history, newest first, until a page holds only known converts; until it has been read to its last page once, reading resumes from the page an interrupted refresh reached. A history window that stops between pages also resumes from its next page.
 4. Token contracts of symbols not matched to a coin yet.
 
@@ -52,6 +52,15 @@ The account's activities are derived again from every saved record on each refre
 - **Moves into and out of Bybit products** (Earn, Launchpool, trading bots, copy trading, MT5 and the old Spot account) are transfers. These products have no history of their own, and coins do not always return the way they went (Earn principal can be spent by the card or sold), so recording each move keeps the two wallets' balances exact over time. What the products hold now is the remainder.
 - **Card spending and ATM withdrawals** are payments. P2P sales and purchases, Dual Asset plans and their settlement are kept as other activity.
 - **Everything else** (derivatives settlement and funding, borrowing, unknown types) is kept as it is, as other activity, never dropped.
+
+### History ends
+
+Every exchange reads its history streams through one shared reader. When the exchange refuses an older window with an error that does not stop the refresh (rate limit, invalid key, clock or server error), the reader requests the newest window it has already read once more:
+
+- If that window still reads, only age is refused: the exchange keeps nothing older, and the stream is complete at the refused window. This is a retention end, checked again every 30 days in case the exchange now keeps more.
+- If it is refused too, nothing was read yet, or the answer carries no specific code (Binance `success: false`, MEXC non-numeric codes), the refusal is unexplained. The stream stays incomplete, the refresh adds a note that some older history could not be read, and the refused window is read again after a day, then a week, then every 30 days.
+
+A stream marked complete short of its limit without a recorded end is checked once in the same way. Ends are kept per account and stream in `exchange_stream_ends`, and "Re-read older history" clears them.
 
 ### Opening balances and remainder
 
@@ -109,7 +118,7 @@ Signed requests carry the query, then `timestamp` and `recvWindow=10000`, then `
 | `/sapi/v1/asset/dribblet` (dust) | Binance's last 100 | 0.15 s |
 | `/sapi/v1/capital/config/getall` | coin contracts, when coins are unmatched | 0.15 s |
 
-HTTP 429 or 418 stops requests for Binance's `Retry-After` (one minute to an hour). A `-1021` answer reads `/api/v3/time`, keeps the offset and tries once more. Binance's error answers reach the decoder as they are, so a window Binance refuses as too old ends that stream; server errors (-1000, -1001, -1006 to -1008) fail the refresh instead. At most 600 requests are made per account and refresh; a first refresh takes several minutes, mostly for withdrawal history.
+HTTP 429 or 418 stops requests for Binance's `Retry-After` (one minute to an hour). A `-1021` answer reads `/api/v3/time`, keeps the offset and tries once more. Binance's error answers reach the decoder as they are; a refused older window is handled as described in [History ends](#history-ends), and an answer without a numeric code (`success: false`) never counts as the end of history. Server errors (-1000, -1001, -1006 to -1008) fail the refresh instead. At most 600 requests are made per account and refresh; a first refresh takes several minutes, mostly for withdrawal history.
 
 ## Trades
 
@@ -157,7 +166,7 @@ Signed like Binance (query, `timestamp`, `recvWindow=10000`, then the hex HMAC-S
 | `/api/v3/myTrades?symbol=…&startTime=…&endTime=…` | the last month only, 100 per request |
 | `/api/v3/capital/deposit/hisrec`, `/withdraw/history` | 7 days per request (longer windows are refused, code 33333), 90 days back |
 | `/api/v3/capital/transfer/internal` | transfers with other MEXC users, 7 days, 90 days back |
-| `/api/v3/capital/transfer` (spot↔futures) | 7 days; refused beyond about two months, which ends that stream |
+| `/api/v3/capital/transfer` (spot↔futures) | 7 days; refused beyond about two months, which ends that stream (see [History ends](#history-ends)) |
 | `/api/v3/capital/convert` | every dust conversion into MX (paging parameters are refused) |
 | `/api/v3/capital/config/getall` | coin contracts, when coins are unmatched |
 

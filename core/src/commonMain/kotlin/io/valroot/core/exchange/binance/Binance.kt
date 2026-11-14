@@ -171,6 +171,9 @@ class BinanceException(
     override val invalidKey: Boolean get() = code in setOf(-2014, -2015, -1022, 401)
     override val clockSkew: Boolean get() = code == -1021
 
+    /** An error answer without a numeric code (or `success: false`), recorded as -1. */
+    override val unreadable: Boolean get() = code == -1
+
     /** Unknown error (-1000), disconnected (-1001), unexpected answer (-1006), timeout (-1007), server busy (-1008). */
     override val serverError: Boolean get() = code in -1008..-1006 || code == -1000 || code == -1001
 }

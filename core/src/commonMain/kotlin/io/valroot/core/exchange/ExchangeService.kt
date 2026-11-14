@@ -269,6 +269,18 @@ class ExchangeService internal constructor(
         state: io.valroot.core.exchange.ExchangeStreamState,
     ) = exchangeSync.saveStream(account, state)
 
+    fun streamEnds(account: AccountId): Map<String, io.valroot.core.exchange.StreamEnd> = exchangeSync.streamEnds(account)
+
+    fun saveStreamEnd(
+        account: AccountId,
+        end: io.valroot.core.exchange.StreamEnd,
+    ) = exchangeSync.saveStreamEnd(account, end)
+
+    fun clearStreamEnd(
+        account: AccountId,
+        stream: String,
+    ) = exchangeSync.clearStreamEnd(account, stream)
+
     fun rowKeys(
         account: AccountId,
         stream: String,

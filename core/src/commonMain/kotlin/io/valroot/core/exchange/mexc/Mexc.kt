@@ -123,6 +123,9 @@ class MexcException(
     override val invalidKey: Boolean get() = code == 10072 || code == 700002 || code == 700006 || code == 700007
     override val clockSkew: Boolean get() = code == 700003
 
+    /** An error answer without a numeric code (or `success: false`), recorded as -1. */
+    override val unreadable: Boolean get() = code == -1
+
     /** HTTP-style server errors (500–599 except the rate limit, 510). */
     override val serverError: Boolean get() = code in 500..599 && !rateLimited
 }

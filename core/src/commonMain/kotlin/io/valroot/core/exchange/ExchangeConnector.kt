@@ -20,7 +20,10 @@ abstract class ExchangeApiException(
     /** A failure on the exchange's side (an internal error, a timeout, an unreadable answer) that may pass on retry. */
     abstract val serverError: Boolean
 
-    /** Errors that stop a refresh; any other refusal of an old window means the exchange keeps no older records. */
+    /** An answer that carries no specific error code, so it cannot show why a window was refused. */
+    open val unreadable: Boolean get() = false
+
+    /** Errors that stop a refresh; other refusals of an old window are checked before history counts as ended. */
     val stopsRefresh: Boolean get() = rateLimited || invalidKey || clockSkew || serverError
 }
 
@@ -82,6 +85,13 @@ abstract class ExchangeConnector(
                     if (sync(app, account, uid, options)) {
                         notes += "Older ${kind.label} history is still being read; it continues with the next refresh"
                     }
+                    if (app.exchanges
+                            .streamEnds(account)
+                            .values
+                            .any { it.reason == StreamEndReason.REFUSED }
+                    ) {
+                        notes += "Some older ${kind.label} history could not be read; it is tried again later"
+                    }
                     JobState.COMPLETED
                 } catch (failure: Exception) {
                     app.exchanges.recordError(account, failureMessage(failure))
@@ -112,7 +122,12 @@ abstract class ExchangeConnector(
     /**
      * Reads one stream forward from where it stopped, with a day of overlap for records the exchange adds late, then
      * back towards [StreamWindows.limitMillis] while [hasBudget]. [read] reads and saves one window and returns its record count, or null
-     * when the budget ran out. A refused old window ends the history there. Returns false when reading stopped early.
+     * when the budget ran out. Returns false when reading stopped early.
+     *
+     * When the exchange refuses an older window, the newest window already read is requested again. If it still reads,
+     * only age is refused: the exchange keeps nothing older and the stream ends there ([StreamEndReason.RETENTION],
+     * checked again monthly). Otherwise, or when the answer has no specific code, history stays incomplete and the
+     * window is tried again later ([StreamEndReason.REFUSED]).
      */
     protected fun readStream(
         app: PortfolioApplication,
@@ -131,7 +146,14 @@ abstract class ExchangeConnector(
             app.exchanges.saveStream(account, state)
             from = to
         }
-        while (!state.complete) {
+        var end = app.exchanges.streamEnds(account)[stream.name]
+        val exhausted =
+            state.fromMillis <= stream.limitMillis || (stream.stopAfterEmpty != null && state.emptyWindows >= stream.stopAfterEmpty)
+        // A refused window is read again when due. A stream marked complete short of its limit without a recorded end
+        // was ended by a refusal that was never checked, so it is checked once.
+        var checking = if (end != null) now >= end.retryAtMillis else state.complete && !exhausted
+        if (end != null && !checking) return true
+        while (!state.complete || checking) {
             // Stop before each step back, so a spent budget never marks history complete without reading it.
             if (!hasBudget()) return false
             val start = maxOf(state.fromMillis - stream.windowMillis, stream.limitMillis)
@@ -139,12 +161,33 @@ abstract class ExchangeConnector(
                 try {
                     if (start < state.fromMillis) read(start, state.fromMillis) ?: return false else 0
                 } catch (refused: ExchangeApiException) {
-                    // The exchange refuses windows older than it keeps: the history ends here.
                     if (refused.stopsRefresh) throw refused
-                    state = state.copy(complete = true)
+                    val newerStillReads = if (refused.unreadable) false else newestWindowReads(state, stream, read) ?: return false
+                    val reason = if (newerStillReads) StreamEndReason.RETENTION else StreamEndReason.REFUSED
+                    val attempts = if (end?.reason == reason) end.attempts + 1 else 1
+                    val wait = if (reason == StreamEndReason.RETENTION) RECHECK_MILLIS else retryWait(attempts)
+                    app.exchanges.saveStreamEnd(
+                        account,
+                        StreamEnd(
+                            stream.name,
+                            reason,
+                            refused.code,
+                            refused.message.orEmpty(),
+                            start,
+                            state.fromMillis,
+                            now + wait,
+                            attempts,
+                        ),
+                    )
+                    state = state.copy(complete = reason == StreamEndReason.RETENTION)
                     app.exchanges.saveStream(account, state)
                     break
                 }
+            if (end != null) {
+                app.exchanges.clearStreamEnd(account, stream.name)
+                end = null
+            }
+            checking = false
             val empty = if (found == 0) state.emptyWindows + 1 else 0
             state =
                 state.copy(
@@ -157,8 +200,37 @@ abstract class ExchangeConnector(
         return true
     }
 
+    /**
+     * Reads the newest window already read once more: true when it still reads, false when it is refused too or nothing
+     * was read yet, null when the budget ran out.
+     */
+    private fun newestWindowReads(
+        state: ExchangeStreamState,
+        stream: StreamWindows,
+        read: (from: Long, to: Long) -> Int?,
+    ): Boolean? {
+        if (state.toMillis <= state.fromMillis) return false
+        return try {
+            read(maxOf(state.fromMillis, state.toMillis - stream.windowMillis), state.toMillis)?.let { true }
+        } catch (refused: ExchangeApiException) {
+            if (refused.stopsRefresh) throw refused
+            false
+        }
+    }
+
     companion object {
         const val DAY_MILLIS = 86_400_000L
+
+        /** How often a retention end is checked again, in case the exchange now keeps more. */
+        const val RECHECK_MILLIS = 30 * DAY_MILLIS
+
+        /** Wait before reading a refused window again: a day, then a week, then a month. */
+        fun retryWait(attempts: Int): Long =
+            when {
+                attempts <= 1 -> DAY_MILLIS
+                attempts == 2 -> 7 * DAY_MILLIS
+                else -> RECHECK_MILLIS
+            }
     }
 }
 
