@@ -120,6 +120,9 @@ class EvmConnectorTest {
             return """{"transfers":[${matching.drop(start).take(size).joinToString(",")}],"pageKey":$next}"""
         }
 
+        /** When set, network discovery (several networks per request) gets this answer: an error, or partial errors. */
+        var tokensAnswer: String? = null
+
         private fun tokensResponse(body: String): String {
             val networks =
                 Json
@@ -129,6 +132,7 @@ class EvmConnectorTest {
                     .jsonObject["networks"]!!
                     .jsonArray
                     .map { it.jsonPrimitive.content }
+            if (networks.size > 1) tokensAnswer?.let { return it }
             if (slug !in networks) return """{"data":{"tokens":[]}}"""
             val native = "0x" + BigInteger(nativeBalance).toString(16)
             return """{"data":{"tokens":[{"address":"$me","network":"$slug","tokenAddress":null,"tokenBalance":"$native"},""" +
@@ -457,6 +461,29 @@ class EvmConnectorTest {
                 EvmConnector(FakeAlchemy().post, oneInch).refresh(fresh, SourceRefreshOptions())
                 assertTrue(usdcAsset !in fresh.assets.hidden())
             }
+        }
+    }
+
+    @Test fun aFailedOrPartialNetworkCheckStillRefreshesAndIsRepeated() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            // The check fails outright: the refresh completes with a note and checks again next time.
+            provider.tokensAnswer = """{"error":{"message":"busy"}}"""
+            val failed = connector.refresh(app, SourceRefreshOptions())
+            assertTrue(failed.notes.any { "could not be checked" in it }, failed.notes.toString())
+            assertTrue(app.evm.discoveryDue(me))
+            // Some networks are not checked: what was found is added, the address keeps refreshing, and the check repeats.
+            provider.tokensAnswer = """{"data":{"tokens":[]},"error":{"partialErrors":[{"network":"eth-mainnet","state":"timeout"}]}}"""
+            val partial = connector.refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(JobState.COMPLETED), partial.jobs)
+            assertEquals(listOf(chain), app.evm.chainStates(me).map { it.chainId })
+            assertTrue(partial.notes.any { "Some networks could not be checked" in it }, partial.notes.toString())
+            assertTrue(app.evm.discoveryDue(me))
+            provider.tokensAnswer = null
+            connector.refresh(app, SourceRefreshOptions())
+            kotlin.test.assertFalse(app.evm.discoveryDue(me))
         }
     }
 

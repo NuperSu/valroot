@@ -63,9 +63,19 @@ class EvmConnector(
         val notes = mutableListOf<String>()
         targets.forEach { (account, address) ->
             // Chains the address has started to use are added on the first refresh and then weekly; chosen chains stay.
+            // A failed or partial check adds what it found and is repeated next refresh; the address's chains still refresh.
             if (options.recoverHistory || app.evm.discoveryDue(address)) {
-                app.evm.addChains(address, discover(address))
-                app.evm.recordDiscovery(address)
+                try {
+                    val (chains, complete) = discover(address)
+                    app.evm.addChains(address, chains)
+                    if (complete) {
+                        app.evm.recordDiscovery(address)
+                    } else {
+                        notes += "Some networks could not be checked for ${address.take(10)}…; they are checked again next refresh"
+                    }
+                } catch (failure: Exception) {
+                    notes += "Networks for ${address.take(10)}… could not be checked; they are checked again next refresh"
+                }
             }
             val states = app.evm.chainStates(address)
             if (states.isEmpty()) notes += "No activity found yet for ${address.take(10)}…"
@@ -85,20 +95,34 @@ class EvmConnector(
         return SourceRefreshOutcome(manifest.id, jobs, notes)
     }
 
-    /** Chains with a balance or any transfer, checked five networks per request. */
-    fun discover(address: String): Set<Long> =
-        Alchemy.NETWORKS
-            .map { it.chainId }
-            .chunked(Alchemy.MAX_NETWORKS)
-            .flatMap { group ->
-                val (balances, _) = Alchemy.parseTokenBalances(post(Alchemy.tokensUrl(), Alchemy.tokensBody(address, group)))
-                val transfers = Alchemy.parseTransfers(post(Alchemy.transfersUrl(), Alchemy.transfersBody(address, group, maxCount = 1)))
-                val slugs =
-                    balances.filter { it.second.value.sign > 0 }.map { it.first } +
-                        transfers.transactions.map { it.first } +
-                        transfers.tokens.map { it.first }
-                group.filter { chain -> Alchemy.network(chain)!!.slug in slugs }
-            }.toSet()
+    /**
+     * Chains with a balance or any transfer, checked five networks per request; false when Alchemy could not check some
+     * network, whose chain may then be missing.
+     */
+    fun discover(address: String): Pair<Set<Long>, Boolean> {
+        var complete = true
+        val chains =
+            Alchemy.NETWORKS
+                .map { it.chainId }
+                .chunked(Alchemy.MAX_NETWORKS)
+                .flatMap { group ->
+                    val (balances, balanceErrors) =
+                        Alchemy.parseTokenBalances(
+                            post(Alchemy.tokensUrl(), Alchemy.tokensBody(address, group)),
+                        )
+                    val transfers =
+                        Alchemy.parseTransfers(
+                            post(Alchemy.transfersUrl(), Alchemy.transfersBody(address, group, maxCount = 1)),
+                        )
+                    if (balanceErrors.isNotEmpty() || transfers.errors.isNotEmpty()) complete = false
+                    val slugs =
+                        balances.filter { it.second.value.sign > 0 }.map { it.first } +
+                            transfers.transactions.map { it.first } +
+                            transfers.tokens.map { it.first }
+                    group.filter { chain -> Alchemy.network(chain)!!.slug in slugs }
+                }.toSet()
+        return chains to complete
+    }
 
     private fun refreshChain(
         app: PortfolioApplication,
