@@ -16,7 +16,8 @@
 - **Local suites:** 411 core JVM, 149 shared UI and 30 desktop tests, zero failures; ktlint clean; R8 release APK (7.7 MB, libsecp256k1 for four ABIs) and the self-contained desktop distribution build.
 - **Android 15 emulator (x86_64):** `ReliabilityInstrumentation` 21 checks, 0 failures. The release APK ran first run, Main with live market data, the live Kraken order book, and an xpub import that derived 83 addresses and synced history.
 - **Desktop:** the packaged distribution started with its own runtime under Xvfb with an isolated data folder and stayed up; rendering fell back to software, as expected there.
-- **Not run:** hosted CI, a device TalkBack audit, the phone (still debug-signed; moving it to the release key needs a backup, uninstall and restore).
+- **Not run:** hosted CI, a device TalkBack audit.
+- **Pixel 8 Pro (Android 17, user 10), 2026-11-14:** the installed app is release-signed. `ReliabilityInstrumentation` 23 checks, 0 failures (debug and test APKs re-signed with the release key), including Keystore sealing of API secrets and a closed connection ending as a cancellation; the release build was reinstalled afterwards with app data kept. The periodic background sync was not exercised (no sources set up on the device).
 
 ## JDK 25 build — 2026-11-01
 
