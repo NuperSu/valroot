@@ -218,6 +218,12 @@ internal class DesktopHost(
         onResult: (OrderBookResult) -> Unit,
     ) = prices.fetchOrderBook(coinId, onResult)
 
+    override fun fetchCandles(
+        coinId: String,
+        range: io.valroot.core.market.CandleRange,
+        onResult: (io.valroot.ui.CandleResult) -> Unit,
+    ) = prices.fetchCandles(coinId, range, onResult)
+
     override fun checkNotifications(onResult: (Int) -> Unit) = notifications.checkNotifications(onResult)
 
     override fun notificationSettingsChanged() = notifications.notificationSettingsChanged()

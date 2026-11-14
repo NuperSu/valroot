@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
-import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -59,6 +58,8 @@ data class ChartData(
     val formatTime: (Long) -> String,
     /** Amounts are hidden: the tooltip and axis keep percentages and times only. */
     val hideValues: Boolean = false,
+    /** Market candles for the same range, as a venue reported them; without them the chart draws its line. */
+    val candles: List<Candle>? = null,
 ) {
     init {
         require(values.size == times.size)
@@ -67,7 +68,7 @@ data class ChartData(
     val known: List<Double> get() = values.filterNotNull()
 }
 
-/** One candle built from consecutive samples: first, highest, lowest and last known value in its time bucket. */
+/** One market candle: open, high, low and close prices traded from [start] to [end]. */
 data class Candle(
     val open: Double,
     val high: Double,
@@ -76,27 +77,6 @@ data class Candle(
     val start: Long,
     val end: Long,
 )
-
-/**
- * Groups samples into about [target] candles. Buckets without a known value are skipped, so a gap stays a gap; the
- * candles are only as detailed as the sampled series.
- */
-fun buildCandles(
-    data: ChartData,
-    target: Int = 24,
-): List<Candle?> {
-    if (data.values.size < 2) return emptyList()
-    val per = ceil(data.values.size / target.toDouble()).toInt().coerceAtLeast(1)
-    return data.values.indices.chunked(per).map { bucket ->
-        val known = bucket.filter { data.values[it] != null }
-        if (known.isEmpty()) {
-            null
-        } else {
-            val values = known.map { data.values[it]!! }
-            Candle(values.first(), values.max(), values.min(), values.last(), data.times[bucket.first()], data.times[bucket.last()])
-        }
-    }
-}
 
 /** "+3.21%" style change from [from] to [to]; "—" without a positive starting value. */
 internal fun chartPercent(
@@ -121,7 +101,8 @@ private const val HIDDEN = "*****"
 
 /**
  * A line or candle chart that shows the value under the pointer: hover with a mouse, or touch and drag. The tooltip
- * gives the value, its change since the first value in range, and the time.
+ * gives the value, its change since the first value in range, and the time. Candles are drawn only from [ChartData.candles];
+ * without them the chart draws its line.
  */
 @Composable
 fun ModelInteractiveChart(
@@ -134,13 +115,15 @@ fun ModelInteractiveChart(
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val known = data.known
-    val first = data.values.firstOrNull { it != null }
+    val candles = if (style == ChartStyle.CANDLES) data.candles.orEmpty() else emptyList()
+    val candleMode = candles.isNotEmpty()
+    // Changes are measured from the range's first price: the first candle's open, or the line's first value.
+    val first = if (candleMode) candles.first().open else data.values.firstOrNull { it != null }
+    val low = if (candleMode) candles.minOf { it.low } else known.minOrNull()
+    val high = if (candleMode) candles.maxOf { it.high } else known.maxOrNull()
     // Keyed on the numbers, not on the formatting lambdas, which callers may recreate on every recomposition.
-    val candles = remember(data.values, data.times, style) { if (style == ChartStyle.CANDLES) buildCandles(data) else emptyList() }
-    val low = if (style == ChartStyle.CANDLES) candles.filterNotNull().minOfOrNull { it.low } else known.minOrNull()
-    val high = if (style == ChartStyle.CANDLES) candles.filterNotNull().maxOfOrNull { it.high } else known.maxOrNull()
-    var selected by remember(data.values, data.times, style) { mutableStateOf<Int?>(null) }
-    val slots = if (style == ChartStyle.CANDLES) candles.size else data.values.size
+    var selected by remember(data.values, data.times, candleMode) { mutableStateOf<Int?>(null) }
+    val slots = if (candleMode) candles.size else data.values.size
 
     fun y(
         value: Double,
@@ -168,7 +151,7 @@ fun ModelInteractiveChart(
                                         if (slots >= 2) {
                                             val fraction = (change.position.x / size.width).coerceIn(0f, 1f)
                                             selected =
-                                                if (style == ChartStyle.CANDLES) {
+                                                if (candleMode) {
                                                     (fraction * slots).toInt().coerceIn(0, slots - 1)
                                                 } else {
                                                     (fraction * (slots - 1)).roundToInt()
@@ -192,11 +175,9 @@ fun ModelInteractiveChart(
                     x += 4.dp.toPx()
                 }
             }
-            if (style == ChartStyle.CANDLES) {
-                if (candles.isEmpty()) return@Canvas
+            if (candleMode) {
                 val slot = size.width / candles.size
                 candles.forEachIndexed { index, candle ->
-                    if (candle == null) return@forEachIndexed
                     val color = if (candle.close >= candle.open) tint else falling
                     val center = slot * index + slot / 2
                     drawLine(color, Offset(center, y(candle.high, size.height)), Offset(center, y(candle.low, size.height)), 1.2.dp.toPx())
@@ -260,7 +241,7 @@ fun ModelInteractiveChart(
         }
         selected?.let { index ->
             val lines =
-                if (style == ChartStyle.CANDLES) {
+                if (candleMode) {
                     candles.getOrNull(index)?.let { candle ->
                         listOf(
                             "O ${label(candle.open)}  C ${label(candle.close)}",
@@ -279,7 +260,7 @@ fun ModelInteractiveChart(
             val fraction =
                 if (slots <= 1) {
                     0f
-                } else if (style == ChartStyle.CANDLES) {
+                } else if (candleMode) {
                     (index + 0.5f) / slots
                 } else {
                     index / (slots - 1f)

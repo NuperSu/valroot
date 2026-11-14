@@ -76,7 +76,6 @@ data class ModelInsightsState(
     val range: String = "1M",
     val ranges: List<String> = emptyList(),
     val history: ChartData? = null,
-    val chartStyle: ChartStyle = ChartStyle.LINE,
     val performance: ModelReturnState = ModelReturnState(),
     val diversity: List<ModelSlice> = emptyList(),
     val diversityNote: String? = null,
@@ -99,10 +98,6 @@ data class ModelInsightsState(
 sealed interface ModelInsightsAction {
     data class Range(
         val label: String,
-    ) : ModelInsightsAction
-
-    data class Style(
-        val style: ChartStyle,
     ) : ModelInsightsAction
 
     data class OpenAsset(
@@ -134,12 +129,12 @@ fun ModelInsights(
                         Text("Balance", color = c.onSurfaceVariant, fontSize = 12.sp)
                         Text(state.balance, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     }
-                    ChartStyleToggle(state.chartStyle) { onAction(ModelInsightsAction.Style(it)) }
                 }
                 state.history?.let {
+                    // A portfolio's value is not traded, so it has no candles: always a line.
                     ModelInteractiveChart(
                         it,
-                        state.chartStyle,
+                        ChartStyle.LINE,
                         Modifier.fillMaxWidth().height(if (wide) 240.dp else 180.dp).testTag("insights-history"),
                     )
                 } ?: Text("History unavailable", color = c.onSurfaceVariant)
@@ -277,7 +272,7 @@ fun ModelInsights(
                     }
                 }
                 state.worth?.let {
-                    ModelInteractiveChart(it, state.chartStyle, Modifier.fillMaxWidth().height(160.dp), tint = c.tertiary)
+                    ModelInteractiveChart(it, ChartStyle.LINE, Modifier.fillMaxWidth().height(160.dp), tint = c.tertiary)
                 } ?: Text("No position in this period", color = c.onSurfaceVariant)
                 Text(
                     "The value of the position you held: it rises when you buy as well as when the price rises.",

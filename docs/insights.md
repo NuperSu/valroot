@@ -6,7 +6,7 @@ Code: `core/…/application/MoneyWeightedReturn.kt` (rate solver and result type
 
 ## Sections
 
-- **History:** the portfolio value series, shared with Portfolio. A time without a fresh price for every holding is a gap; the line or candles never bridge it with a guess.
+- **History:** the portfolio value series, shared with Portfolio. A time without a fresh price for every holding is a gap; the line never bridges it with a guess. Portfolio values are drawn as a line only (see market-data.md, Candles).
 - **Portfolio Performance:** the money-weighted return (internal rate of return) over the range.
   - **Flows:** contributions and withdrawals are transfer movements that enter or leave the scope's accounts, valued with a fresh saved price at their time. Transfers between accounts in the scope cancel out, within one activity or as the two sides of an accepted transfer link when both fall in the period.
   - **Not flows:** trades (internal to the portfolio), fees and rewards are part of the return.

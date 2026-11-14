@@ -202,4 +202,59 @@ class MarketService internal constructor(
         val payload = kraken(KrakenOrderBook.depthUrl(pair, depth))
         return KrakenOrderBook.parseDepth(payload, pair, now(), depth)
     }
+
+    /**
+     * Candles of [coinId] in the display currency for [range], as traded: CoinGecko's first; Kraken's when CoinGecko
+     * cannot give them (a range shorter than its shortest candle, no market data consent, or a failed request) and
+     * Kraken requests are allowed (the order book consent). Null when neither has candles; a failure is rethrown when
+     * no source answered.
+     */
+    fun candles(
+        coinId: String,
+        range: CandleRange,
+        coingecko: (url: String, apiKey: String?) -> String,
+        kraken: (url: String) -> String,
+        baseUrl: String = "https://api.coingecko.com/api/v3",
+    ): CandleSeries? {
+        val currency = app.assets.currency().value
+        val from = now() - range.spanMillis
+        var failure: Exception? = null
+        val days = CoingeckoCandles.days(range)
+        if (days != null && consent()) {
+            try {
+                marketFeeds.deviceSetting("coingecko_retry_after")?.toLongOrNull()?.takeIf { it > now() }?.let {
+                    throw CoingeckoProviderException(CoingeckoProviderFailure.RATE_LIMITED)
+                }
+                val interval = CoingeckoCandles.intervalMillis(days)
+                val candles =
+                    CoingeckoCandles
+                        .parse(coingecko(CoingeckoCandles.url(baseUrl, coinId, currency, days), coingeckoApiKey()), interval)
+                        .filter { it.closeMillis > from }
+                if (candles.isNotEmpty()) return CandleSeries(CoingeckoCandles.SOURCE, interval, candles)
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                throw cancelled
+            } catch (failed: Exception) {
+                failure = failed
+            }
+        }
+        if (orderBookConsent()) {
+            val pair =
+                try {
+                    krakenPair(coinId, coingecko, baseUrl)
+                } catch (failed: Exception) {
+                    if (failed is kotlin.coroutines.cancellation.CancellationException) throw failed
+                    failure = failure ?: failed
+                    null
+                }
+            if (pair != null) {
+                val minutes = KrakenCandles.intervalMinutes(range)
+                val candles = KrakenCandles.parse(kraken(KrakenCandles.url(pair, minutes, from)), minutes).filter { it.closeMillis > from }
+                if (candles.isNotEmpty()) {
+                    return CandleSeries("${KrakenCandles.SOURCE} ${pair.display}", minutes * 60_000L, candles)
+                }
+            }
+        }
+        failure?.let { throw it }
+        return null
+    }
 }

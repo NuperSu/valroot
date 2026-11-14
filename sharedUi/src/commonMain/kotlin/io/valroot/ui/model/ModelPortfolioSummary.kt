@@ -65,7 +65,6 @@ data class ModelPortfolioSummaryState(
     val amountsHidden: Boolean = false,
     /** Values and times for the interactive chart; without it the plain [chartPoints] line is drawn. */
     val chart: ChartData? = null,
-    val chartStyle: ChartStyle = ChartStyle.LINE,
     /** A new range is loading; the previous chart and change stay visible, dimmed. */
     val loading: Boolean = false,
 )
@@ -89,7 +88,6 @@ fun ModelPortfolioSummary(
     onExplain: (() -> Unit)? = null,
     onCurrency: (() -> Unit)? = null,
     onToggleAmounts: (() -> Unit)? = null,
-    onChartStyle: ((ChartStyle) -> Unit)? = null,
     currencyMenuContent: @Composable () -> Unit = {},
     colors: ModelSummaryColors =
         ModelSummaryColors(
@@ -187,9 +185,10 @@ fun ModelPortfolioSummary(
         }
         Spacer(Modifier.height(12.dp))
         if (state.showChart && state.chart != null) {
+            // A portfolio's value is not traded, so it has no candles: always a line.
             ModelInteractiveChart(
                 state.chart,
-                state.chartStyle,
+                ChartStyle.LINE,
                 Modifier.testTag("portfolio-chart").alpha(if (state.loading) .4f else 1f).fillMaxWidth().height(
                     if (wide) {
                         280.dp
@@ -264,9 +263,6 @@ fun ModelPortfolioSummary(
                 Text(state.chartTopLabel, color = colors.muted, fontSize = 10.sp, modifier = Modifier.align(Alignment.TopEnd))
                 Text(state.chartBottomLabel, color = colors.muted, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomEnd))
             }
-        }
-        if (onChartStyle != null && state.showChart) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ChartStyleToggle(state.chartStyle, onChartStyle) }
         }
         Row(
             Modifier.fillMaxWidth().then(

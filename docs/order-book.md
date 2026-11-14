@@ -12,7 +12,7 @@ The coin page shows Kraken's book for one pair in the display currency, labelled
 
 ## Requests and consent
 
-Loading needs a one-time consent: Kraken receives the pair and the device's IP address. Requests use Kraken's public Depth endpoint through the paced Kraken transport.
+Loading needs a one-time consent: Kraken receives the pair and the device's IP address. Requests use Kraken's public Depth endpoint through the paced Kraken transport. The same consent lets coin charts fall back to Kraken's candles when CoinGecko has none (see `market-data.md`, Candles).
 
 ## Updates, gaps and staleness
 

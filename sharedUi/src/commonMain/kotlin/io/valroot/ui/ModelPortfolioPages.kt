@@ -27,7 +27,6 @@ import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.application.PortfolioSnapshot
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.PortfolioId
-import io.valroot.ui.model.ChartStyle
 import io.valroot.ui.model.ModelAllocationBar
 import io.valroot.ui.model.ModelAllocationSlice
 import io.valroot.ui.model.ModelChangeTone
@@ -63,7 +62,6 @@ internal fun ColumnScope.ModelPortfolioPages(
     showPortfolioChart: Boolean,
     syncStatus: SyncStatus,
     favorites: Set<io.valroot.core.model.AssetId>,
-    chartStyle: ChartStyle,
     amountsHidden: Boolean,
     wide: Boolean,
     short: Boolean,
@@ -83,7 +81,6 @@ internal fun ColumnScope.ModelPortfolioPages(
     onAccountChanged: () -> Unit,
     onAccountTool: (AccountTool) -> Unit,
     onConnectBitcoin: () -> Unit,
-    onChartStyle: (ChartStyle) -> Unit,
     hiddenReviewState: MutableState<Boolean>,
     marketOverviewState: MutableState<MarketOverview?>,
     accountingState: MutableState<AccountingView?>,
@@ -230,7 +227,6 @@ internal fun ColumnScope.ModelPortfolioPages(
                             data.currency,
                             amountsHidden,
                         ) { portfolioChartData(chart, data.currency, amountsHidden) },
-                    chartStyle = chartStyle,
                     loading = chartLoading,
                 ),
                 wide,
@@ -238,7 +234,6 @@ internal fun ColumnScope.ModelPortfolioPages(
                 { label -> labels.entries.find { it.value == label }?.let { onPeriod(it.key) } },
                 onExplain = { explain = true },
                 onToggleAmounts = onToggleAmounts,
-                onChartStyle = onChartStyle,
                 onCurrency = { currencyMenu = true },
                 currencyMenuContent = {
                     DropdownMenu(currencyMenu, { currencyMenu = false }) {
@@ -402,7 +397,6 @@ internal fun ColumnScope.ModelPortfolioPages(
                     insightsData,
                     accounting,
                     amountsHidden,
-                    chartStyle,
                     worthAsset,
                     chartLoading,
                 ),
@@ -410,7 +404,6 @@ internal fun ColumnScope.ModelPortfolioPages(
             ) { action ->
                 when (action) {
                     is ModelInsightsAction.Range -> labels.entries.find { it.value == action.label }?.let { onPeriod(it.key) }
-                    is ModelInsightsAction.Style -> onChartStyle(action.style)
                     is ModelInsightsAction.WorthAsset -> worthAsset = action.id
                     is ModelInsightsAction.OpenAsset -> data.valuations.find { it.asset.value == action.id }?.let(onAsset)
                 }

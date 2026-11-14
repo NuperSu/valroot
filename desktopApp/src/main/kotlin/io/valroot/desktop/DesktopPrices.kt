@@ -98,6 +98,49 @@ internal class DesktopPrices(
         }
     }
 
+    fun fetchCandles(
+        coinId: String,
+        range: io.valroot.core.market.CandleRange,
+        onResult: (io.valroot.ui.CandleResult) -> Unit,
+    ) {
+        try {
+            state.priceExecutor.execute {
+                val result =
+                    synchronized(state.priceGate) {
+                        if (state.priceRestorePaused || state.closing.get()) {
+                            io.valroot.ui.CandleResult
+                                .Unavailable(MARKET_PAUSED_MESSAGE)
+                        } else {
+                            runCatching {
+                                JvmSqliteDatabase(state.file.toString()).use { connection ->
+                                    io.valroot.ui.loadCandles(
+                                        PortfolioApplication(connection, System::currentTimeMillis),
+                                        coinId,
+                                        range,
+                                        state.priceTransport::feed,
+                                        KrakenPriceTransport(
+                                            beforeRequest = { check(!state.priceRestorePaused && !state.closing.get()) },
+                                        )::get,
+                                    )
+                                }
+                            }.getOrElse {
+                                io.valroot.ui.CandleResult
+                                    .Unavailable("Could not load candles.")
+                            }
+                        }
+                    }
+                SwingUtilities.invokeLater { onResult(result) }
+            }
+        } catch (_: RejectedExecutionException) {
+            SwingUtilities.invokeLater {
+                onResult(
+                    io.valroot.ui.CandleResult
+                        .Unavailable("Could not schedule a candle request."),
+                )
+            }
+        }
+    }
+
     /**
      * Refreshes the CoinGecko chain catalog, then linked-coin prices (USD from DefiLlama, other currencies from
      * CoinGecko), logos and missing price history. Each step is isolated, so a failure leaves the caller's refresh

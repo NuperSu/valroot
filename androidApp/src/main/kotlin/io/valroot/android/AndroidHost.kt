@@ -173,6 +173,12 @@ internal class AndroidHost(
         onResult: (OrderBookResult) -> Unit,
     ) = prices.fetchOrderBook(coinId, onResult)
 
+    override fun fetchCandles(
+        coinId: String,
+        range: io.valroot.core.market.CandleRange,
+        onResult: (io.valroot.ui.CandleResult) -> Unit,
+    ) = prices.fetchCandles(coinId, range, onResult)
+
     override fun checkNotifications(onResult: (Int) -> Unit) = prices.checkNotifications(onResult)
 
     override fun notificationSettingsChanged() = prices.notificationSettingsChanged()

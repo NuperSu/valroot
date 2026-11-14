@@ -130,6 +130,8 @@ data class ModelCoinDetailState(
     /** Prices and times for the interactive chart; without it the plain [chartPoints] line is drawn. */
     val chart: ChartData? = null,
     val chartStyle: ChartStyle = ChartStyle.LINE,
+    /** Under the chart: where its candles come from, or why it shows a line instead. */
+    val chartNote: String? = null,
     /** The held coin on each chain, shown under the portfolio name when the coin is held on more than one chain. */
     val chainRows: List<ModelChainRow> = emptyList(),
 )
@@ -160,7 +162,8 @@ internal const val ALERT_CHECK_NOTE =
     "Checked against CoinGecko's top 250 list about every 15 minutes on Android and every 5 minutes on desktop while Valroot " +
         "is open. Your phone may delay checks to save battery."
 
-internal const val ORDER_BOOK_CONSENT_NOTE = "Order books come from Kraken. Kraken receives the trading pair and your IP address."
+internal const val ORDER_BOOK_CONSENT_NOTE =
+    "Order books, and chart candles CoinGecko does not have, come from Kraken. Kraken receives the trading pair and your IP address."
 
 @Composable
 private fun DetailMetric(
@@ -319,6 +322,9 @@ fun ColumnScope.ModelCoinDetail(
                 )
             } else {
                 DetailChart(state.chartPoints, state.chartTopLabel, state.chartBottomLabel, state.smoothChart)
+            }
+            state.chartNote?.let {
+                Text(it, color = c.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.testTag("coin-chart-note"))
             }
         }
         ModelCoinTab.TRANSACTIONS -> {

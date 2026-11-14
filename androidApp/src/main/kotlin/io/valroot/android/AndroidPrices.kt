@@ -30,6 +30,16 @@ internal class AndroidPrices(
         }
     }
 
+    fun fetchCandles(
+        coinId: String,
+        range: io.valroot.core.market.CandleRange,
+        onResult: (io.valroot.ui.CandleResult) -> Unit,
+    ) {
+        MarketFeedRefresher.candles(state.activity, coinId, range, closing = { state.closed }) { result ->
+            state.main.post { if (!state.closed) onResult(result) }
+        }
+    }
+
     /** Runs a notification check now and shows what it finds; [onResult] receives how many notifications were shown. */
     fun checkNotifications(onResult: (Int) -> Unit = {}) {
         MarketFeedRefresher.checkNotifications(state.activity, closing = { state.closed }) { count ->

@@ -13,7 +13,6 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.Rational
 import io.valroot.ui.model.ChartData
-import io.valroot.ui.model.ChartStyle
 import io.valroot.ui.model.ModelChangeTone
 import io.valroot.ui.model.ModelFeeRow
 import io.valroot.ui.model.ModelGainRow
@@ -88,7 +87,6 @@ internal fun insightsState(
     insights: InsightsData?,
     accounting: AccountingView?,
     hidden: Boolean,
-    chartStyle: ChartStyle,
     worthSelected: String?,
     loading: Boolean,
 ): ModelInsightsState {
@@ -241,7 +239,6 @@ internal fun insightsState(
         range = range,
         ranges = ranges,
         history = portfolioChartData(chart, currency, hidden),
-        chartStyle = chartStyle,
         performance = returnState(insights?.performance, hidden),
         diversity = diversity,
         diversityNote = if (summary.missing > 0) "${summary.missing} unpriced asset(s) are not in the total." else null,

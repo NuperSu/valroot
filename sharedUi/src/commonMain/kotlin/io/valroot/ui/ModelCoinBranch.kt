@@ -204,6 +204,18 @@ internal fun ColumnScope.ModelCoinBranch(
         coinId
             ?.let { id -> marketOverview?.markets?.items?.find { it.coinId == id } }
             ?.takeIf { marketOverview?.currency == data.currency }
+    // Candles are the market's own, loaded for the chosen range; without them the chart keeps its line.
+    val candleState =
+        rememberCoinCandles(
+            host,
+            coinId,
+            io.valroot.core.market.CandleRange
+                .of(coinRange),
+            data.currency,
+            active = chartStyle == ChartStyle.CANDLES && ModelCoinTab.valueOf(tab) == ModelCoinTab.GENERAL,
+        )
+    val candleChart = remember(candleState.series, data.currency) { candleState.series?.let { candleChartData(it, data.currency) } }
+    val candleMode = chartStyle == ChartStyle.CANDLES && coinId != null
     val alertBlock = coinLoad?.let { alertBlockReason(coinId, it.marketConsent, listedCoin != null) }
     val orderConsent = coinLoad?.orderConsent == true
     val orderBook =
@@ -342,10 +354,11 @@ internal fun ColumnScope.ModelCoinBranch(
                     else -> ""
                 },
             orderRows = orderBookRows(orderBookData),
-            enabledRanges = if (useListing) setOf("1W") else setOf("1H", "1D", "1W", "1M", "3M", "1Y"),
+            enabledRanges = if (useListing && !candleMode) setOf("1W") else setOf("1H", "1D", "1W", "1M", "3M", "1Y"),
             canAddTransaction = !asset.asset.value.startsWith("coingecko:"),
-            chart = coinChart,
+            chart = if (candleMode) candleChart ?: coinChart else coinChart,
             chartStyle = chartStyle,
+            chartNote = if (candleMode) candleNote(candleState) else null,
             transactionEmpty = if (timelineLoading) "Loading saved transactions…" else "No matching transactions",
             alertsUnavailable = alertBlock,
             alertNotice = alertNotice,

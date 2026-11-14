@@ -249,6 +249,15 @@ interface PlatformActions {
         onResult(OrderBookResult.Failed("Order books are not available here."))
     }
 
+    /** Loads candles of [coinId] for [range] in the display currency in the background; [onResult] runs on the main thread. */
+    fun fetchCandles(
+        coinId: String,
+        range: io.valroot.core.market.CandleRange,
+        onResult: (CandleResult) -> Unit,
+    ) {
+        onResult(CandleResult.Unavailable("Candles are not available here."))
+    }
+
     /** How long the app may be left before it locks. Main thread; hosts keep the saved value in memory. */
     val lockDelayMillis: Long get() = io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
 
@@ -299,6 +308,52 @@ fun marketRefreshMessage(result: io.valroot.core.application.MarketRefreshResult
         io.valroot.core.market.CoingeckoProviderFailure.ACCESS_DENIED -> "CoinGecko rejected the API key. Check it in Settings › API Keys."
         io.valroot.core.market.CoingeckoProviderFailure.OFFLINE -> "Could not reach CoinGecko. Showing saved market data."
         else -> "CoinGecko returned data Valroot could not read. Showing saved market data."
+    }
+
+/** The outcome of one candle request. */
+sealed interface CandleResult {
+    data class Loaded(
+        val series: io.valroot.core.market.CandleSeries,
+    ) : CandleResult
+
+    /** No source could give candles; the chart shows its line, with this reason. */
+    data class Unavailable(
+        val message: String,
+    ) : CandleResult
+}
+
+/**
+ * Loads [coinId]'s candles for [range] (CoinGecko first, then Kraken when allowed), with the wording hosts show.
+ * Blocking; hosts call it on a worker with their own database connection.
+ */
+fun loadCandles(
+    app: io.valroot.core.application.PortfolioApplication,
+    coinId: String,
+    range: io.valroot.core.market.CandleRange,
+    coingecko: (url: String, apiKey: String?) -> String,
+    kraken: (url: String) -> String,
+): CandleResult =
+    try {
+        app.market.candles(coinId, range, coingecko, kraken)?.let { CandleResult.Loaded(it) }
+            ?: CandleResult.Unavailable(
+                if (range == io.valroot.core.market.CandleRange.HOUR) {
+                    "CoinGecko's shortest candles are 30 minutes. Allow Kraken data on the Order book tab for hourly candles."
+                } else {
+                    "No candles for this coin yet. Allow market data, or Kraken data on the Order book tab."
+                },
+            )
+    } catch (failure: io.valroot.core.market.CoingeckoProviderException) {
+        CandleResult.Unavailable(
+            if (failure.failure == io.valroot.core.market.CoingeckoProviderFailure.RATE_LIMITED) {
+                "CoinGecko's request limit was reached. Try again in a minute."
+            } else {
+                "Could not load candles from CoinGecko."
+            },
+        )
+    } catch (_: io.valroot.core.market.KrakenRateLimitedException) {
+        CandleResult.Unavailable("Kraken's request limit was reached. Try again shortly.")
+    } catch (_: Exception) {
+        CandleResult.Unavailable("Could not load candles.")
     }
 
 /** The outcome of one order book request. */

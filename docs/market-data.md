@@ -34,6 +34,16 @@ Code: `core/…/market/MarketFeeds.kt` (parsing and cache), `MarketService.refre
   - they show the CoinGecko price, 24-hour and 7-day change, market cap and rank, and the 7-day hourly chart labelled 1W;
   - transactions can only be recorded for Bitcoin, so Add Transaction is disabled there.
 
+## Candles
+
+Coin charts can show candles: the open, high, low and close prices traded in each period, as the market reported them. Code: `core/…/market/MarketCandles.kt`, `MarketService.candles` (`app.market`), `loadCandles` / `fetchCandles` in `PlatformActions.kt`, `CoinCandles.kt`. Tests: `MarketCandlesTest`, `CoinCandlesTest`, `InteractiveChartTest`.
+
+- **CoinGecko first:** `/coins/{id}/ohlc` in the display currency, with market data consent. CoinGecko sets the candle length from the range: 30 minutes for 1D, 4 hours for 1W and 1M, 4 days for 3M and 1Y. Its prices are aggregated across exchanges, and its shortest candle is 30 minutes, so it has no 1H candles.
+- **Kraken as fallback:** when CoinGecko cannot answer (1H, no market data consent, rate limit, offline or no data) and Kraken requests are allowed (the order book consent), Kraken's public OHLC for the coin's Kraken pair in the display currency: 1-minute candles for 1H, 30 minutes for 1D, 4 hours for 1W, daily for 1M and 3M, weekly for 1Y. Kraken's candles are one venue's trades and include the candle still forming.
+- **No guesses:** without candles from either source the chart draws its line and says why. Candles are never derived from a sampled line.
+- **Loading:** candles load when the Candles style is chosen on a coin's General tab, once per coin, range and currency while the page is open; they are not saved.
+- **Portfolio and Insights charts** are always lines: a portfolio's value is not traded, so it has no candles, and adding up each coin's highs would overstate its high.
+
 ## Logos
 
 - **Source:** each coin's logo is the `image` URL from the market list, or `small` from trending, converted to CoinGecko's small size. Only `https://coin-images.coingecko.com` and `https://assets.coingecko.com` image URLs are accepted.

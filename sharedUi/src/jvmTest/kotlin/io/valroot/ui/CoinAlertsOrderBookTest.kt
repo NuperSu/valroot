@@ -215,7 +215,7 @@ class CoinAlertsOrderBookTest {
                     onNodeWithTag("detail-Order book").performScrollTo().performClick()
 
                     onNodeWithText(
-                        "Order books come from Kraken. Kraken receives the trading pair and your IP address.",
+                        "Order books, and chart candles CoinGecko does not have, come from Kraken. Kraken receives the trading pair and your IP address.",
                     ).assertIsDisplayed()
                     assertEquals(0, requests, "No order book is requested before consent")
                     onNodeWithTag("order-consent").performClick()

@@ -119,4 +119,35 @@ internal object MarketFeedRefresher {
             onResult(result)
         }
     }
+
+    fun candles(
+        context: Context,
+        coinId: String,
+        range: io.valroot.core.market.CandleRange,
+        closing: () -> Boolean,
+        onResult: (io.valroot.ui.CandleResult) -> Unit,
+    ) {
+        val path = context.applicationContext.getDatabasePath("portfolio.sqlite").path
+        executor.execute {
+            val result =
+                synchronized(AutomaticPriceGate.lock) {
+                    if (AutomaticPriceGate.paused || closing()) {
+                        io.valroot.ui.CandleResult.Unavailable("Market data is paused while data is restored.")
+                    } else {
+                        runCatching {
+                            AndroidSqliteDatabase(path).use { db ->
+                                io.valroot.ui.loadCandles(
+                                    PortfolioApplication(db, System::currentTimeMillis),
+                                    coinId,
+                                    range,
+                                    transport::feed,
+                                    KrakenPriceTransport(beforeRequest = { check(!AutomaticPriceGate.paused && !closing()) })::get,
+                                )
+                            }
+                        }.getOrElse { io.valroot.ui.CandleResult.Unavailable("Could not load candles.") }
+                    }
+                }
+            onResult(result)
+        }
+    }
 }
