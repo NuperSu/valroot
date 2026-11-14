@@ -125,7 +125,10 @@ class MexcConnector(
         return true
     }
 
-    /** Reads one symbol's trades in a window, halving it while a page comes back full; false when the budget ran out. */
+    /**
+     * Reads one symbol's trades in a window, halving it while a page comes back full; false when the budget ran out.
+     * Rows of finished halves are saved, but the symbol's cursor only moves once the whole window is read.
+     */
     private fun readTradeWindow(
         symbol: String,
         from: Long,
@@ -135,7 +138,9 @@ class MexcConnector(
     ): Boolean {
         if (budget.spent) return false
         val trades = Mexc.parseTrades(budget.send(Mexc.trades(symbol, from, to)))
-        if (trades.size >= Mexc.TRADE_PAGE && to - from > MIN_TRADE_WINDOW_MILLIS) {
+        if (trades.size >= Mexc.TRADE_PAGE) {
+            // A full page may hide more trades; failing keeps the cursor before them instead of skipping them.
+            check(to - from > MIN_TRADE_WINDOW_MILLIS) { "MEXC has more trades in one minute than it returns; retry later" }
             val middle = from + (to - from) / 2
             return readTradeWindow(symbol, from, middle, budget, save) && readTradeWindow(symbol, middle, to, budget, save)
         }
@@ -146,7 +151,7 @@ class MexcConnector(
     companion object {
         const val MAX_REQUESTS = 300
 
-        /** A window is not split below a minute; MEXC returns at most 100 trades in it. */
+        /** A window is not split below a minute; a minute that still fills a page fails the refresh. */
         const val MIN_TRADE_WINDOW_MILLIS = 60_000L
 
         const val TRADE_CURSOR = "mexc-trades:"

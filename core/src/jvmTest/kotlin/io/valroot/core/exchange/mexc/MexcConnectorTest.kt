@@ -198,4 +198,17 @@ class MexcConnectorTest {
             assertTrue(mexc.requests.none { it.path == "/api/v3/myTrades" })
         }
     }
+
+    @Test
+    fun aMinuteWithMoreThanAPageOfTradesFailsInsteadOfSkippingTrades() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val mexc = FakeMexc()
+            repeat(120) { i -> mexc.trades += mexc.trade("burst$i", "0.001", "50", "0.05", "USDT", true, now - 5 * day + i * 100L) }
+            val outcome = MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(JobState.FAILED), outcome.jobs)
+            assertTrue(app.exchanges.status(account).error.orEmpty().contains("one minute"))
+            assertTrue(app.exchanges.cursors(account).keys.none { it.startsWith(MexcConnector.TRADE_CURSOR) })
+        }
+    }
 }
