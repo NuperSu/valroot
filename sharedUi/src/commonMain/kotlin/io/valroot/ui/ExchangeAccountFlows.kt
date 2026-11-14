@@ -24,8 +24,10 @@ import androidx.compose.ui.unit.dp
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.application.PortfolioSnapshot
 import io.valroot.core.exchange.ExchangeAccountStatus
+import io.valroot.core.exchange.ExchangeCoverage
 import io.valroot.core.exchange.ExchangeKeyInfo
 import io.valroot.core.exchange.ExchangeKind
+import io.valroot.core.exchange.HistoryCoverage
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.OwnerId
 import io.valroot.core.model.PortfolioId
@@ -250,6 +252,7 @@ internal fun ExchangeAccountDetails(
     val scope = rememberCoroutineScope()
     var status by remember(account) { mutableStateOf(ExchangeAccountStatus(null, null, null, null)) }
     var hasKey by remember(account) { mutableStateOf(true) }
+    var coverage by remember(account) { mutableStateOf<ExchangeCoverage?>(null) }
     var unresolved by remember(account) { mutableStateOf<Map<String, List<Pair<String, String>>>>(emptyMap()) }
     var replacing by remember(account) { mutableStateOf(false) }
     var choosing by remember(account) { mutableStateOf<String?>(null) }
@@ -266,11 +269,13 @@ internal fun ExchangeAccountDetails(
                 }
         }
         withContext(host.dispatcher) {
-            Triple(app.exchanges.status(account), app.exchanges.hasKey(kind, account), app.exchanges.unresolvedCoins(kind.id))
-        }.let { (loaded, key, coins) ->
-            status = loaded
-            hasKey = key
-            unresolved = coins
+            Triple(app.exchanges.status(account), app.exchanges.hasKey(kind, account), app.exchanges.unresolvedCoins(kind.id)) to
+                app.exchanges.coverage(account)
+        }.let { (loaded, read) ->
+            status = loaded.first
+            hasKey = loaded.second
+            unresolved = loaded.third
+            coverage = read
         }
     }
     Column(Modifier.fillMaxWidth().testTag("${kind.id}-account-details"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -278,13 +283,20 @@ internal fun ExchangeAccountDetails(
         Text("Last sync: ${status.checkedAtMillis?.let { evmSyncTime(it) } ?: "not yet"}", style = MaterialTheme.typography.bodySmall)
         status.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("${kind.id}-error")) }
         if (!hasKey) Text("Enter this account's API key again to refresh it.", color = MaterialTheme.colorScheme.error)
-        status.historyFromMillis?.let {
-            Text(
-                "History from ${evmSyncTime(it)}. Earlier balances appear as one opening amount per coin.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag("${kind.id}-coverage"),
-            )
+        coverage?.let { read ->
+            read.historyFromMillis?.let { from ->
+                Text(
+                    historyCoverageText(kind, read, from),
+                    style = MaterialTheme.typography.bodySmall,
+                    color =
+                        if (read.coverage == HistoryCoverage.INCOMPLETE) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    modifier = Modifier.testTag("${kind.id}-coverage"),
+                )
+            }
         }
         status.keyExpiresAtMillis?.let {
             Text("API key expires ${evmSyncTime(it)}", style = MaterialTheme.typography.bodySmall)
@@ -459,5 +471,22 @@ private fun AddPairDialog(
         ) {
             Text("Add pair")
         }
+    }
+}
+
+/** Where an exchange account's history begins and whether anything older may still arrive. */
+internal fun historyCoverageText(
+    kind: ExchangeKind,
+    read: ExchangeCoverage,
+    from: Long,
+): String {
+    val start = "History from ${evmSyncTime(from)}"
+    val openings = "Earlier balances appear as one opening amount per coin."
+    return when (read.coverage) {
+        HistoryCoverage.COMPLETE -> "$start, as far back as ${kind.label} provides. $openings"
+        HistoryCoverage.READING -> "$start so far; older history is still being read. $openings"
+        HistoryCoverage.INCOMPLETE ->
+            "$start so far. Some older history could not be read" +
+                (read.nextRetryMillis?.let { "; it is tried again after ${evmSyncTime(it)}" } ?: "") + ". $openings"
     }
 }

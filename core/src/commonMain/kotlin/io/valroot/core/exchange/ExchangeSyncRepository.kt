@@ -40,6 +40,25 @@ data class StreamEnd(
     val attempts: Int,
 )
 
+/** How complete an exchange account's read history is. */
+enum class HistoryCoverage {
+    /** Every history stream reached its start: the account's limit, its first record, or the exchange's retention. */
+    COMPLETE,
+
+    /** Older history is still being read over the next refreshes. */
+    READING,
+
+    /** Some older history was refused for an unconfirmed reason and is tried again later. */
+    INCOMPLETE,
+}
+
+/** An account's history coverage: where its records begin, how complete they are and when a refused window is retried. */
+data class ExchangeCoverage(
+    val historyFromMillis: Long?,
+    val coverage: HistoryCoverage,
+    val nextRetryMillis: Long?,
+)
+
 /** One saved exchange record: Bybit's row as received, with when it happened and its raw-observation source. */
 data class ExchangeRow(
     val stream: String,

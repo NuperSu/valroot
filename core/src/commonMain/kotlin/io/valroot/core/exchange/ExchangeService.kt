@@ -346,6 +346,23 @@ class ExchangeService internal constructor(
 
     fun status(account: AccountId): io.valroot.core.exchange.ExchangeAccountStatus = exchangeSync.status(account)
 
+    /** Where the account's history begins and whether it is complete; READING until the first refresh reads it. */
+    fun coverage(account: AccountId): io.valroot.core.exchange.ExchangeCoverage {
+        val streams = exchangeSync.streams(account).values
+        val refused = exchangeSync.streamEnds(account).values.filter { it.reason == io.valroot.core.exchange.StreamEndReason.REFUSED }
+        val coverage =
+            when {
+                refused.isNotEmpty() -> io.valroot.core.exchange.HistoryCoverage.INCOMPLETE
+                streams.isEmpty() || streams.any { !it.complete } -> io.valroot.core.exchange.HistoryCoverage.READING
+                else -> io.valroot.core.exchange.HistoryCoverage.COMPLETE
+            }
+        return io.valroot.core.exchange.ExchangeCoverage(
+            exchangeSync.status(account).historyFromMillis,
+            coverage,
+            refused.minOfOrNull { it.retryAtMillis },
+        )
+    }
+
     fun recordError(
         account: AccountId,
         message: String,

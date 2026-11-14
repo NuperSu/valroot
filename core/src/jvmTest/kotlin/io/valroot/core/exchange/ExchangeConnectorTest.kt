@@ -182,4 +182,19 @@ class ExchangeConnectorTest {
             assertEquals(saved, app.exchanges.streams(account).getValue("deposits"))
         }
     }
+
+    @Test
+    fun coverageIsCompleteOnlyWhenEveryStreamEndedAndNothingWasRefused() =
+        withApp { app ->
+            assertEquals(HistoryCoverage.READING, app.exchanges.coverage(account).coverage)
+            app.exchanges.saveStream(account, ExchangeStreamState("deposits", 50 * day, 100 * day, false, 0))
+            app.readOnce(Exchange { it < 40 * day || it in 93 * day until 99 * day }, 100 * day)
+            val refused = app.exchanges.coverage(account)
+            assertEquals(HistoryCoverage.INCOMPLETE, refused.coverage)
+            assertEquals(101 * day, refused.nextRetryMillis)
+            app.readOnce(Exchange { false }, 101 * day)
+            assertEquals(HistoryCoverage.COMPLETE, app.exchanges.coverage(account).coverage)
+            app.exchanges.saveStream(account, ExchangeStreamState("withdrawals", 50 * day, 100 * day, false, 0))
+            assertEquals(HistoryCoverage.READING, app.exchanges.coverage(account).coverage)
+        }
 }
