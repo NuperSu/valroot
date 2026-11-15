@@ -60,6 +60,8 @@ data class ExchangeSnapshot(
     /** Earliest moment each wallet's balance log covers, for exchanges that keep one. */
     val coveredFrom: Map<String, Long> = emptyMap(),
     val keyExpiresAtMillis: Long? = null,
+    /** False for an account known only from export files: its current balances are unknown, so nothing is filled to them. */
+    val balancesKnown: Boolean = true,
 ) {
     /** Balances that are not zero. */
     val held: List<ExchangeBalance> get() = balances.filter { it.amount.coefficient.sign != 0 }

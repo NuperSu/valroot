@@ -90,7 +90,7 @@ object BinanceDecoder : ExchangeHistory {
         decimals: (AssetId) -> Int = { ExchangeAssets.DECIMALS },
     ): ExchangeDecoded {
         val ledger = ExchangeLedgerBuilder(ExchangeKind.BINANCE, account, uid, assets, decimals, VERSION)
-        rows.forEach { row ->
+        rows.filterNot(io.valroot.core.exchange.ImportedEvents::owns).forEach { row ->
             val o = BinanceParsers.row(row.payload)
             val source = setOf(SourceRecordId(row.source))
             when (row.stream) {
@@ -186,6 +186,9 @@ object BinanceDecoder : ExchangeHistory {
                 }
             }
         }
+        // Imported export records join before balances are filled, so openings follow the imported history.
+        io.valroot.core.exchange.ImportedEvents
+            .apply(ledger, rows)
         if (balances !=
             null
         ) {
@@ -216,5 +219,14 @@ object BinanceDecoder : ExchangeHistory {
         source: SourceRecordId,
         recordsFrom: Long?,
         decimals: (AssetId) -> Int,
-    ): ExchangeDecoded = decode(account, uid, rows, assets, snapshot.pairs, Balances(snapshot.atMillis, snapshot.totals, source), decimals)
+    ): ExchangeDecoded =
+        decode(
+            account,
+            uid,
+            rows,
+            assets,
+            snapshot.pairs,
+            if (snapshot.balancesKnown) Balances(snapshot.atMillis, snapshot.totals, source) else null,
+            decimals,
+        )
 }

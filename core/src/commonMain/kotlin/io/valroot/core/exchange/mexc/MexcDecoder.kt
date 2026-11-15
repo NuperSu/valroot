@@ -87,7 +87,7 @@ object MexcDecoder : ExchangeHistory {
         val ledger = ExchangeLedgerBuilder(ExchangeKind.MEXC, account, uid, assets, decimals, VERSION)
         val internal = rows.filter { it.stream == INTERNAL }.map { Mexc.internalTransfer(Mexc.row(it.payload)) }
         val own = ownIdentifiers(uid, internal)
-        rows.forEach { row ->
+        rows.filterNot(io.valroot.core.exchange.ImportedEvents::owns).forEach { row ->
             val o = Mexc.row(row.payload)
             val source = setOf(SourceRecordId(row.source))
             when (row.stream) {

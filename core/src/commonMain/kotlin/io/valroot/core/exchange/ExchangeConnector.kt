@@ -75,7 +75,11 @@ abstract class ExchangeConnector(
         val notes = mutableListOf<String>()
         app.exchanges.targets(kind).forEach { (account, uid) ->
             if (!app.exchanges.hasKey(kind, account)) {
-                notes += "A ${kind.label} account needs its API key again"
+                // An account known only from its export files never had a key; any other account needs it again.
+                val fileOnly =
+                    app.exchanges.streams(account).isEmpty() &&
+                        app.exchanges.rowKeys(account, io.valroot.core.exchange.ImportedEvents.STREAM).isNotEmpty()
+                if (!fileOnly) notes += "A ${kind.label} account needs its API key again"
                 return@forEach
             }
             options.onProgress(kind.label)

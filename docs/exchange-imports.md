@@ -1,6 +1,6 @@
 # Exchange export imports
 
-Status: in progress. Phase 1 (readers, report inventory, provenance, matching, import service) is being built; exchange adapters, futures-boundary transfers and the UI follow in that order.
+Status: in progress. Done: readers, report inventory, provenance, matching, the import service (`app.exchangeImports`: preview, commit, receipts, undo) and Binance's reports. Next: Bybit and MEXC adapters, then the shared UI and hosts.
 
 Exchange export files (Binance ZIP/CSV, Bybit ZIP/CSV, MEXC XLSX) extend the same exchange accounts as API history. They reach history an exchange's API no longer returns, and they can create an account without API credentials.
 
@@ -42,3 +42,18 @@ Transfers between spot/funding and futures move the actual coins in the supporte
 ## Undo
 
 A receipt lists the batch's files, reports and counts. Undo removes the batch's contributions and derives the history again; events another file or the API also supports stay, with their annotations and reviewed decisions.
+
+## Code
+
+- Readers: `core/src/jvmSharedMain/…/exchange/imports/` (`ExportFileReader`, `XlsxReader`, `ZipDirectory`, which reads the central directory because exchanges write data descriptors that streaming readers reject).
+- Tables, times, values and matching: `core/src/commonMain/…/exchange/imports/` (`ImportTables`, `ImportTime`, `ImportValues`, `ExportReports`, `ImportRecords`, `EventMatcher`).
+- Service and storage: `ExchangeImportService` (`app.exchangeImports`) and `ImportRepository` (tables `exchange_import_batches`, `exchange_import_sources`, `exchange_import_events`).
+- Settlement in decoding: `exchange/ImportedEvents.kt`, called by each decoder before balances are filled.
+- Exchange adapters: `exchange/binance/BinanceExports.kt`.
+- Tests: `ExportFileReaderTest`, `EventMatcherTest`, `BinanceImportTest`.
+
+## Binance
+
+- **Trades** (current and older `Date(UTC)` form) and **deposit and withdrawal histories** are detailed records; trades split their pair by the coins written with the amounts.
+- **Transaction history:** trade, convert, dust and auto-invest rows are grouped per second and compared, net of fees, with the trades of that second; deposits and withdrawals compare by net change; Spot↔Funding and Simple Earn moves are internal; rewards, card spending, P2P and third-party wallet transfers are records; Spot↔UM/CM futures transfers are boundary transfers; rows of the futures wallets are deferred; unknown operations stay unresolved.
+- **Orders** are supporting evidence.

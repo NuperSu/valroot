@@ -26,6 +26,9 @@ enum class RecordKind {
     FEE,
     CARD_PAYMENT,
     CARD_REFUND,
+
+    /** A payment out of the account other than a withdrawal, such as a P2P sale. */
+    PAYMENT,
     OTHER,
 
     /** An order summary: supporting evidence, never a trade. */

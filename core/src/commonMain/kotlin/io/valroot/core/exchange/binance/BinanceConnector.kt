@@ -338,6 +338,7 @@ object BinanceProvider : ExchangeProvider<BinanceRequest> {
     override val kind = ExchangeKind.BINANCE
     override val manifest = BINANCE_MANIFEST
     override val history: ExchangeHistory = BinanceDecoder
+    override val exports = BinanceExports
 
     override fun connector(transport: ExchangeTransport<BinanceRequest>) = BinanceConnector(get = transport::get)
 

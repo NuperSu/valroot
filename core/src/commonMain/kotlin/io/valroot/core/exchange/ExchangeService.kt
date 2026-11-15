@@ -96,6 +96,53 @@ class ExchangeService internal constructor(
         return result
     }
 
+    /**
+     * The assets [symbols] would have, without saving anything: currencies, coins matched before, symbols saved as
+     * unlisted, and the coin matching would choose now. Previews use it, so looking at an import changes nothing.
+     */
+    internal fun knownAssets(
+        exchange: String,
+        symbols: Set<String>,
+    ): Map<String, AssetId> {
+        val saved = exchangeCoins.coins(exchange)
+        val catalog = marketFeeds.catalog()?.second
+        val ranked =
+            marketFeeds
+                .markets(
+                    app.assets
+                        .currency()
+                        .value
+                        .lowercase(),
+                )?.items
+                .orEmpty()
+                .sortedBy { it.rank ?: Int.MAX_VALUE }
+                .map { it.coinId }
+        return symbols
+            .mapNotNull { symbol ->
+                val asset =
+                    when {
+                        symbol.uppercase() in EXCHANGE_CURRENCIES ->
+                            io.valroot.core.exchange.ExchangeAssets
+                                .currencyDefinition(symbol)
+                                .id
+                        saved[symbol]?.first == UNLISTED_COIN ->
+                            io.valroot.core.exchange.ExchangeAssets
+                                .unlisted(exchange, symbol)
+                        else ->
+                            (
+                                saved[symbol]?.first?.takeIf { it.isNotEmpty() }
+                                    ?: io.valroot.core.exchange.ExchangeAssets
+                                        .resolve(symbol, catalog, ranked)
+                            )?.let {
+                                io.valroot.core.exchange.ExchangeAssets
+                                    .definition(it)
+                                    .id
+                            }
+                    }
+                asset?.let { symbol to it }
+            }.toMap()
+    }
+
     /** Which of [symbols] have no coin yet for [exchange] and are not well known, so their contracts may decide. */
     fun unmatchedSymbols(
         exchange: String,
@@ -114,7 +161,12 @@ class ExchangeService internal constructor(
     fun rowSymbols(
         kind: io.valroot.core.exchange.ExchangeKind,
         account: AccountId,
-    ): Set<String> = ExchangeProviders.of(kind).history.coins(exchangeSync.rows(account), pairs(account))
+    ): Set<String> {
+        val rows = exchangeSync.rows(account)
+        return ExchangeProviders.of(kind).history.coins(rows.filterNot(io.valroot.core.exchange.ImportedEvents::owns), pairs(account)) +
+            io.valroot.core.exchange.ImportedEvents
+                .coins(rows)
+    }
 
     /** The symbols an exchange account's trades are read for (Binance, MEXC), with their base and quote coins. */
     fun pairs(account: AccountId): Map<String, Pair<String, String>> =
@@ -308,14 +360,18 @@ class ExchangeService internal constructor(
         }
     }
 
-    /** One exchange record as a raw provider record, namespaced by exchange and user ID. */
-    private fun ingestRecord(
+    /**
+     * One exchange record as a raw provider record, namespaced by exchange and user ID. [origin] says how Valroot got it:
+     * `api` from the exchange's API, `file` from an export the user imported.
+     */
+    internal fun ingestRecord(
         kind: io.valroot.core.exchange.ExchangeKind,
         account: AccountId,
         uid: String,
         externalId: String,
         payload: String,
         version: String,
+        origin: String = "api",
     ): io.valroot.core.model.SourceRecordId =
         store.ingestInTransaction(
             io.valroot.core.storage.RawObservation(
@@ -323,7 +379,7 @@ class ExchangeService internal constructor(
                 "${kind.id}:$uid",
                 externalId,
                 kind.network.value,
-                "${kind.id}-api",
+                "${kind.id}-$origin",
                 Instant.fromEpochMilliseconds(now()).toString(),
                 payload,
                 version,
@@ -430,10 +486,16 @@ class ExchangeService internal constructor(
         require(targets(kind).any { it.first == account && it.second == uid }) { "Unknown ${kind.label} account" }
         val history = ExchangeProviders.of(kind).history
         val rows = exchangeSync.rows(account)
-        val assets = assets(kind.id, history.coins(rows, snapshot.pairs) + snapshot.held.map { it.coin }, snapshot.contracts)
+        val apiRows = rows.filterNot(io.valroot.core.exchange.ImportedEvents::owns)
+        val coins =
+            history.coins(apiRows, snapshot.pairs) +
+                io.valroot.core.exchange.ImportedEvents
+                    .coins(rows) + snapshot.held.map { it.coin }
+        val assets = assets(kind.id, coins, snapshot.contracts)
         val decoded =
             db.transaction {
                 val source = ingestRecord(kind, account, uid, "balances", history.balanceRecord(snapshot), history.version)
+                exchangeSync.saveSnapshot(account, snapshot, source.value)
                 val recordsFrom = history.recordsFrom(exchangeSync.streams(account), snapshot)
                 val decoded =
                     history.decode(account, uid, rows, assets, snapshot, source, recordsFrom) { asset ->
@@ -443,6 +505,113 @@ class ExchangeService internal constructor(
                 decoded
             }
         invalidate()
+        return decoded
+    }
+
+    /**
+     * The assets an exchange account's history needs: the coins of its saved records and [extraCoins] (an import's).
+     * Registers new coins in its own transaction, so call it before the transaction that derives the history.
+     */
+    internal fun historyAssets(
+        kind: io.valroot.core.exchange.ExchangeKind,
+        account: AccountId,
+        extraCoins: Set<String> = emptySet(),
+    ): Map<String, AssetId> {
+        val history = ExchangeProviders.of(kind).history
+        val rows = exchangeSync.rows(account)
+        val snapshot = exchangeSync.snapshot(account)?.first
+        val apiRows = rows.filterNot(io.valroot.core.exchange.ImportedEvents::owns)
+        val coins =
+            history.coins(apiRows, snapshot?.pairs.orEmpty()) +
+                io.valroot.core.exchange.ImportedEvents
+                    .coins(rows) +
+                snapshot?.held.orEmpty().map { it.coin } + extraCoins
+        return assets(kind.id, coins, snapshot?.contracts.orEmpty())
+    }
+
+    /**
+     * Decodes an exchange account's saved records together with [extraRows] without saving anything; previews use it to
+     * show what an import would do. [account] is null for an account an import would create.
+     */
+    internal fun decodeWith(
+        kind: io.valroot.core.exchange.ExchangeKind,
+        account: AccountId?,
+        uid: String,
+        extraRows: List<io.valroot.core.exchange.ExchangeRow>,
+        assets: Map<String, AssetId>,
+    ): ExchangeDecoded {
+        val history = ExchangeProviders.of(kind).history
+        val saved = account?.let { exchangeSync.rows(it) }.orEmpty()
+        val replaced = extraRows.map { it.stream to it.key }.toSet()
+        val rows =
+            (
+                saved.filterNot {
+                    (it.stream to it.key) in replaced
+                } + extraRows
+            ).sortedWith(compareBy({ it.atMillis }, { it.stream }, { it.key }))
+        val (snapshot, source) =
+            account?.let { exchangeSync.snapshot(it) }
+                ?: (ExchangeSnapshot(now(), emptyList(), balancesKnown = false) to "${kind.id}:$uid:no-balances")
+        val recordsFrom = account?.let { history.recordsFrom(exchangeSync.streams(it), snapshot) }
+        return history.decode(
+            account ?: AccountId("${kind.id}:$uid"),
+            uid,
+            rows,
+            assets,
+            snapshot,
+            io.valroot.core.model
+                .SourceRecordId(source),
+            recordsFrom,
+        ) { asset -> market.metadataAt(asset, Long.MAX_VALUE)?.decimals ?: ExchangeAssets.DECIMALS }
+    }
+
+    /** The saved records of an exchange account. */
+    internal fun savedRows(account: AccountId): List<io.valroot.core.exchange.ExchangeRow> = exchangeSync.rows(account)
+
+    /** Saves one record in the caller's transaction. */
+    internal fun saveRowInTransaction(
+        account: AccountId,
+        row: io.valroot.core.exchange.ExchangeRow,
+    ) = exchangeSync.saveRow(account, row)
+
+    /** Removes one record in the caller's transaction. */
+    internal fun deleteRowInTransaction(
+        account: AccountId,
+        stream: String,
+        key: String,
+    ) = exchangeSync.deleteRow(account, stream, key)
+
+    /**
+     * Derives an exchange account's activities again from its saved records and its latest balances snapshot, in the
+     * caller's transaction, with [assets] from [historyAssets]; used after imports change the records. An account known
+     * only from export files has no snapshot, so its balances are not filled.
+     */
+    internal fun rederiveInTransaction(
+        kind: io.valroot.core.exchange.ExchangeKind,
+        account: AccountId,
+        uid: String,
+        assets: Map<String, AssetId>,
+    ): ExchangeDecoded {
+        val history = ExchangeProviders.of(kind).history
+        val rows = exchangeSync.rows(account)
+        val (snapshot, source) =
+            exchangeSync.snapshot(account)
+                ?: (ExchangeSnapshot(now(), emptyList(), balancesKnown = false) to "${kind.id}:$uid:no-balances")
+        val recordsFrom = history.recordsFrom(exchangeSync.streams(account), snapshot)
+        val decoded =
+            history.decode(
+                account,
+                uid,
+                rows,
+                assets,
+                snapshot,
+                io.valroot.core.model
+                    .SourceRecordId(source),
+                recordsFrom,
+            ) { asset ->
+                market.metadataAt(asset, Long.MAX_VALUE)?.decimals ?: ExchangeAssets.DECIMALS
+            }
+        saveDecode(kind, account, uid, decoded, recordsFrom, snapshot.keyExpiresAtMillis)
         return decoded
     }
 

@@ -32,6 +32,9 @@ internal class ExchangeLedgerBuilder(
     val failures = mutableListOf<String>()
     val totals = mutableMapOf<String, ExactDecimal>()
 
+    /** What became of each imported record, by key (see [ImportedEvents]). */
+    val imports = mutableMapOf<String, ImportOutcome>()
+
     /** Every recorded change: coin, time, ordering key and amount. */
     val changes = mutableListOf<Change>()
 
@@ -42,7 +45,28 @@ internal class ExchangeLedgerBuilder(
         val amount: ExactDecimal,
     )
 
-    fun result() = ExchangeDecoded(activities.sortedBy { it.orderingKey }, transfers, unresolved, failures)
+    fun result() = ExchangeDecoded(activities.sortedBy { it.orderingKey }, transfers, unresolved, failures, imports)
+
+    /** The asset of an exchange [coin] symbol, or null while the coin has none. */
+    fun assetOf(coin: String): AssetId? = assets[coin]
+
+    /** [amount] of [coin] in its asset's atomic units, or null when the coin has no asset or the amount is finer. */
+    fun atomicOf(
+        coin: String,
+        amount: ExactDecimal,
+    ): io.valroot.core.model.ExactInteger? {
+        val asset = assets[coin] ?: return null
+        return runCatching { AtomicAmount.fromDecimal(asset, amount, decimalsOf(asset)).atomicUnits }.getOrNull()
+    }
+
+    /** Adds [source] to the activity [id] already built, as further evidence for the same event. */
+    fun addSource(
+        id: ActivityId,
+        source: SourceRecordId,
+    ) {
+        val index = activities.indexOfFirst { it.id == id }
+        if (index >= 0) activities[index] = activities[index].let { it.copy(sources = it.sources + source) }
+    }
 
     /** Builds one activity from [block]'s movements; returns null when it moved nothing or could not be built. */
     fun build(

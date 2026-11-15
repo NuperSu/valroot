@@ -103,6 +103,9 @@ class ExchangeSyncRepository(
             "CREATE TABLE IF NOT EXISTS exchange_cursors (account TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(account, key))",
         )
         db.execute(
+            "CREATE TABLE IF NOT EXISTS exchange_snapshots (account TEXT PRIMARY KEY, payload TEXT NOT NULL, source TEXT NOT NULL)",
+        )
+        db.execute(
             "CREATE TABLE IF NOT EXISTS exchange_transfers (activity_id TEXT PRIMARY KEY, account TEXT NOT NULL, chain TEXT NOT NULL, " +
                 "tx_id TEXT NOT NULL)",
         )
@@ -245,12 +248,102 @@ class ExchangeSyncRepository(
         value: String,
     ) = db.execute("INSERT OR REPLACE INTO exchange_cursors VALUES (?, ?, ?)", listOf(account.value, key, value))
 
+    fun deleteRow(
+        account: AccountId,
+        stream: String,
+        key: String,
+    ) = db.execute("DELETE FROM exchange_rows WHERE account=? AND stream=? AND key=?", listOf(account.value, stream, key))
+
+    /** The balances snapshot of the account's latest refresh, with its raw record, so its history can be derived again. */
+    fun snapshot(account: AccountId): Pair<ExchangeSnapshot, String>? =
+        db
+            .query("SELECT payload, source FROM exchange_snapshots WHERE account=?", listOf(account.value))
+            .singleOrNull()
+            ?.let { SnapshotCodec.decode(it[0]!!) to it[1]!! }
+
+    fun saveSnapshot(
+        account: AccountId,
+        snapshot: ExchangeSnapshot,
+        source: String,
+    ) = db.execute(
+        "INSERT OR REPLACE INTO exchange_snapshots VALUES (?, ?, ?)",
+        listOf(account.value, SnapshotCodec.encode(snapshot), source),
+    )
+
     /** Forgets an account's history, so the next refresh reads it again from the exchange. */
     fun forget(account: AccountId) {
         db.execute("DELETE FROM exchange_sync WHERE account=?", listOf(account.value))
         db.execute("DELETE FROM exchange_stream_ends WHERE account=?", listOf(account.value))
-        db.execute("DELETE FROM exchange_rows WHERE account=?", listOf(account.value))
+        // Imported export records and the user's decisions are not the exchange's to give again; they stay.
+        db.execute(
+            "DELETE FROM exchange_rows WHERE account=? AND stream NOT IN (?, ?)",
+            listOf(account.value, ImportedEvents.STREAM, ImportedEvents.DECISIONS),
+        )
         db.execute("DELETE FROM exchange_transfers WHERE account=?", listOf(account.value))
         db.execute("DELETE FROM exchange_cursors WHERE account=? AND key NOT LIKE 'userpair:%'", listOf(account.value))
+    }
+}
+
+/** An [ExchangeSnapshot] as saved JSON; token contracts are not kept (the coins they named are matched by then). */
+internal object SnapshotCodec {
+    fun encode(snapshot: ExchangeSnapshot): String =
+        kotlinx.serialization.json
+            .JsonObject(
+                mapOf(
+                    "at" to kotlinx.serialization.json.JsonPrimitive(snapshot.atMillis),
+                    "balances" to
+                        kotlinx.serialization.json.JsonArray(
+                            snapshot.balances.map { balance ->
+                                kotlinx.serialization.json.JsonArray(
+                                    listOf(
+                                        balance.wallet,
+                                        balance.coin,
+                                        balance.amount.toString(),
+                                    ).map { kotlinx.serialization.json.JsonPrimitive(it) },
+                                )
+                            },
+                        ),
+                    "pairs" to
+                        kotlinx.serialization.json.JsonObject(
+                            snapshot.pairs.mapValues { (_, pair) ->
+                                kotlinx.serialization.json.JsonArray(
+                                    listOf(pair.first, pair.second).map { kotlinx.serialization.json.JsonPrimitive(it) },
+                                )
+                            },
+                        ),
+                    "coveredFrom" to
+                        kotlinx.serialization.json.JsonObject(
+                            snapshot.coveredFrom.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) },
+                        ),
+                    "keyExpires" to kotlinx.serialization.json.JsonPrimitive(snapshot.keyExpiresAtMillis),
+                ),
+            ).toString()
+
+    fun decode(text: String): ExchangeSnapshot {
+        val o =
+            kotlinx.serialization.json.Json
+                .parseToJsonElement(text) as kotlinx.serialization.json.JsonObject
+
+        fun primitive(element: kotlinx.serialization.json.JsonElement?) = (element as? kotlinx.serialization.json.JsonPrimitive)?.content
+        return ExchangeSnapshot(
+            atMillis = primitive(o["at"])!!.toLong(),
+            balances =
+                (o["balances"] as kotlinx.serialization.json.JsonArray).map { item ->
+                    val cells = (item as kotlinx.serialization.json.JsonArray).map { primitive(it)!! }
+                    ExchangeBalance(
+                        cells[0],
+                        cells[1],
+                        io.valroot.core.model.ExactDecimal
+                            .parse(cells[2]),
+                    )
+                },
+            pairs =
+                (o["pairs"] as kotlinx.serialization.json.JsonObject).mapValues { (_, value) ->
+                    val coins = (value as kotlinx.serialization.json.JsonArray).map { primitive(it)!! }
+                    coins[0] to coins[1]
+                },
+            coveredFrom = (o["coveredFrom"] as kotlinx.serialization.json.JsonObject).mapValues { primitive(it.value)!!.toLong() },
+            keyExpiresAtMillis = primitive(o["keyExpires"])?.takeIf { it != "null" }?.toLong(),
+        )
     }
 }
