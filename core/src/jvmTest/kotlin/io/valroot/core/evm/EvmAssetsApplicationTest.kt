@@ -256,6 +256,43 @@ class EvmAssetsApplicationTest {
         }
     }
 
+    @Test fun anAssetJoiningACoinAfterItsHistoryWasFetchedGetsItsHistory() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val now = 1_800_000_000_000L
+            val day = 86_400_000L
+            app.assets.setShown(ethBase, false)
+            val requests = mutableListOf<String>()
+            val transport: (String, String?) -> String = { url, _ ->
+                requests += url.substringAfter("/coins/").substringBefore("/market_chart")
+                val price = if (url.contains("/ethereum/")) "3000" else "1"
+                """{"prices":[[${now - 200 * day},$price],[${now - 100 * day},$price]]}"""
+            }
+
+            fun pastPrice(asset: AssetId) =
+                app.analytics
+                    .priceSeries(asset, AssetId("USD"), listOf(now - 100 * day))
+                    .single()
+                    .price
+                    ?.price
+                    ?.value
+                    ?.toString()
+            app.linkedCoins.backfillHistory(transport)
+            assertEquals(listOf("ethereum", "usd-coin", "ethereum", "usd-coin"), requests)
+            assertEquals("3000", pastPrice(ethMain))
+            assertEquals(null, pastPrice(ethBase))
+            // Shown again, Base's ETH joins the coin whose history was fetched: it is fetched again, once, for both.
+            app.assets.setShown(ethBase, true)
+            requests.clear()
+            app.linkedCoins.backfillHistory(transport)
+            assertEquals(listOf("ethereum", "ethereum"), requests)
+            assertEquals("3000", pastPrice(ethBase))
+            requests.clear()
+            app.linkedCoins.backfillHistory(transport)
+            assertTrue(requests.isEmpty())
+        }
+    }
+
     @Test fun aCoinSoldSinceStillGetsItsHistory() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)

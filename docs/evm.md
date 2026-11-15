@@ -85,14 +85,15 @@ Hidden assets stay in the ledger and in accounting but are left out of values an
 
 ## Prices
 
-- **Sources:** US dollar prices of linked coins come only from DefiLlama's keyless coin API (`coins.llama.fi`), addressed by CoinGecko coin ID. Other display and secondary currencies come from CoinGecko, which DefiLlama does not quote. One price is recorded for every asset linked to the coin. NFTs and unlinked tokens have no value.
-- **Current prices:** DefiLlama's `/prices/current` (50 coins per request) for USD; CoinGecko's `/simple/price` for other currencies.
-- **USD history (DefiLlama `/chart`):** each linked coin the ledger has moved, including coins sold since, gets daily prices from a day before its first movement to now, then hourly prices for the last 90 days.
+- **Sources:** linked coins (and wallet Bitcoin) are priced by CoinGecko first and DefiLlama's keyless coin API (`coins.llama.fi`, addressed by CoinGecko coin ID) as the fallback, in US dollars; see [market data](market-data.md#price-sources). One price is recorded for every asset linked to the coin. NFTs and unlinked tokens have no value.
+- **Current prices:** CoinGecko's `/simple/price` and DefiLlama's `/prices/current`, 50 coins per request each.
+- **CoinGecko history (`/coins/{id}/market_chart`):** once per coin, a year of daily prices and then 90 days of hourly prices, 6 seconds apart; desktop runs make up to 24 requests. The keyless API offers one year.
+- **DefiLlama history (`/chart`):** each linked coin the ledger has moved, including coins sold since, gets daily prices from a day before its first movement to now, then hourly prices for the last 90 days. It values what CoinGecko's year does not reach.
   - A request returns at most 500 points, so a coin needs one daily request per 500 days. Held coins come first.
   - The covered range per coin and period is saved; each range is fetched once, and a range ending more than a day ago is extended to now.
   - Requests are one second apart. On desktop a background run makes up to 600 and waits out a rate limit twice; on Android each refresh makes up to 40.
   - A coin DefiLlama does not know, or days before its first price, stay without a value.
-- **Other currencies' history (CoinGecko `/coins/{id}/market_chart`):** once per coin and currency, a year of daily prices and then 90 days of hourly prices, 6 seconds apart; desktop runs make up to 24 requests. The keyless API offers one year, so older values in these currencies stay unknown.
+- **New assets of a covered coin:** history is fetched per coin but saved per asset, so the coverage records which assets it included. An asset that joins a coin later (another chain, a token shown again, wallet Bitcoin next to exchange Bitcoin) makes both histories fetch again once for all the coin's assets.
 - **Logos:** Linked coins' logos come from one `/coins/markets` request by coin ID, kept for a week. Each linked asset shows its coin's logo.
 
 ## Portfolio chart

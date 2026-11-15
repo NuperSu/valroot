@@ -28,6 +28,36 @@ class LinkedCoinService internal constructor(
     /** Assets priced through their CoinGecko coin: the saved links, and wallet Bitcoin as the coin `bitcoin`. */
     private fun pricedLinks(): Map<AssetId, String> = assetLinks.links() + (io.valroot.core.bitcoin.BITCOIN_ASSET to "bitcoin")
 
+    /**
+     * History is downloaded once per coin but saved for each asset linked to it, so a coin's coverage markers name the
+     * assets they covered. When an asset joins a coin after its history was fetched (a new chain, wallet Bitcoin next to
+     * exchange Bitcoin), the coin's markers are dropped and its history is fetched again, once, for all its assets.
+     */
+    private fun resetCoverageForNewAssets(links: Map<AssetId, String>) {
+        links.entries.groupBy({ it.value }, { it.key.value }).forEach { (coin, assets) ->
+            val key = "linked_history_assets:$coin"
+            val covered =
+                marketFeeds
+                    .deviceSetting(key)
+                    ?.split(',')
+                    ?.filter { it.isNotEmpty() }
+                    ?.toSet()
+            if (covered != null && covered.containsAll(assets)) return@forEach
+            db.transaction {
+                for (quote in linkedCurrencies()) {
+                    for (days in LINKED_HISTORY_DAYS) marketFeeds.putDeviceSetting("linked_history:$coin:${quote.value}:$days", null)
+                }
+                for (period in DefiLlamaPrices.Period.entries) {
+                    marketFeeds.putDeviceSetting(
+                        "linked_usd_history:$coin:${period.query}",
+                        null,
+                    )
+                }
+                marketFeeds.putDeviceSetting(key, (covered.orEmpty() + assets).sorted().joinToString(","))
+            }
+        }
+    }
+
     /** The display and secondary currencies, which CoinGecko quotes first; DefiLlama's US dollar prices are the fallback. */
     private fun linkedCurrencies(): List<AssetId> =
         listOfNotNull(app.assets.currency(), app.settings.general().secondaryCurrency).distinct()
@@ -168,6 +198,7 @@ class LinkedCoinService internal constructor(
         }
         val hidden = app.assets.hiddenAmong(firstMoved.keys)
         val links = pricedLinks().filterKeys { it in firstMoved && it !in hidden }
+        resetCoverageForNewAssets(links)
         val held = app.assets.held()
         val coins =
             links.values
@@ -252,6 +283,7 @@ class LinkedCoinService internal constructor(
                 .toSet()
         val hidden = app.assets.hiddenAmong(moved)
         val links = pricedLinks().filterKeys { it in moved && it !in hidden }
+        resetCoverageForNewAssets(links)
         val currencies = linkedCurrencies()
         // Coins held now come first: they carry today's value, and the free API allows only a few requests a minute.
         val held = app.assets.held()
