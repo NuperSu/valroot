@@ -399,6 +399,7 @@ internal fun ColumnScope.ProductSettings(
             SettingsActionRow("Restore From Backup", tag = "settings-restore") { actions.onDialog("restore") }
             SettingsActionRow("Full Transaction History", tag = "settings-history") { onAdvanced(Page.ACTIVITY) }
             SettingsActionRow("Export Data (CSV)", tag = "settings-export") { actions.onExportCsv() }
+            SettingsActionRow("Import exchange exports", tag = "settings-exchange-import") { actions.onDialog("exchange-import") }
             SettingsActionRow("CSV Import History", tag = "settings-csv-history") { section = "csv" }
             if (data?.sampleData == true) {
                 var confirm by remember { mutableStateOf(false) }

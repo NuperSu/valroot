@@ -91,7 +91,7 @@ An accepted link moves lots from the outgoing asset to the incoming one with the
 
 - Derivatives positions are not modeled; their realized results, funding and fees change balances as other activity.
 - Earn rewards that stay inside Earn have no history and appear in the remainder.
-- Bybit CSV exports are planned. A later Bybit CSV importer is meant to produce the same activity IDs for records the API also returned, so it fills only the older gap.
+- Bybit ZIP/CSV exports are imported through the shared workflow; see [exchange imports](exchange-imports.md) for supported reports and evidence roles.
 
 # Binance
 
@@ -149,7 +149,7 @@ Binance keeps no balance log. Each coin's running balance goes through the activ
 ## Not covered
 
 - Futures, margin and options are not read; their effect on balances is an adjustment.
-- Binance's statement export (Transaction History CSV) has no API; a later importer can fill what the API no longer returns.
+- Binance exports can extend the history available from the API; see [exchange imports](exchange-imports.md) for supported report formats.
 - Retention of deposits, withdrawals, converts and rewards is not documented; the live check shows how far back they reach.
 
 # MEXC
@@ -188,10 +188,10 @@ Balance check: as for Binance, each coin's running balance fills gaps 1 ms befor
 ## Not covered
 
 - Futures balances and results.
-- History older than MEXC's retention, except as openings. MEXC's web export (three years) can fill it through a later CSV importer.
+- API history older than MEXC's retention appears as opening amounts when no export supplies those records. See [exchange imports](exchange-imports.md) for supported XLSX reports.
 
 ## Importing exchange exports
 
-Exchanges' own export files reach history their APIs no longer return. They are imported into the same accounts; see [exchange imports](exchange-imports.md) for readers, report detection, matching, receipts and undo. Imported records are kept in the account's rows (stream `file`, decisions in `file-decision`) and settle against the API records on every decode (`ImportedEvents`), so importing before or after a refresh gives the same history. "Re-read older history" keeps them.
+Binance and Bybit ZIP/CSV exports and MEXC XLSX exports can extend history their APIs no longer return or create an exchange account without API credentials. They are imported into the same accounts; see [exchange imports](exchange-imports.md) for supported reports, evidence roles, matching, receipts and undo. Imported records are kept in the account's rows (stream `file`, decisions in `file-decision`) and settle against API records on every decode (`ImportedEvents`), so importing before or after a refresh gives the same history. "Re-read older history" keeps them.
 
-Binance's exports are read (`BinanceExports`); Bybit's and MEXC's follow.
+The shared workflow is `sharedUi/…/ExchangeImportWorkflow.kt`. Android file selection is in `androidApp/…/AndroidImports.kt`; desktop file selection is in `desktopApp/…/DesktopImports.kt`. Exchange report adapters are `BinanceExports`, `BybitExports`, and `MexcExports`.

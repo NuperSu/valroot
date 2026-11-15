@@ -105,6 +105,11 @@ interface PlatformActions {
 
     val hasLock: Boolean
 
+    /** Reads selected exchange ZIP, CSV and XLSX files on the host worker. Null results mean cancellation. */
+    fun openExchangeExports(onResult: (List<io.valroot.core.exchange.imports.ImportTable>?, String?) -> Unit) {
+        onResult(null, "Exchange export selection is unavailable on this platform")
+    }
+
     /** Saves a small generated file, such as a CSV export, to a location the user chooses. */
     fun saveFile(
         name: String,

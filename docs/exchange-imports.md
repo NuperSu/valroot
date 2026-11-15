@@ -1,6 +1,6 @@
 # Exchange export imports
 
-Status: in progress. Done: readers, report inventory, provenance, matching, the import service (`app.exchangeImports`: preview, commit, receipts, undo) and Binance's reports. Next: Bybit and MEXC adapters, then the shared UI and hosts.
+Status: implementation present; validation pending. The import service (`app.exchangeImports`) previews reports, matches them to API and earlier imports, commits them with receipts, and can undo a batch. Binance, Bybit, and MEXC report adapters and the shared import workflow are implemented.
 
 Exchange export files (Binance ZIP/CSV, Bybit ZIP/CSV, MEXC XLSX) extend the same exchange accounts as API history. They reach history an exchange's API no longer returns, and they can create an account without API credentials.
 
@@ -14,7 +14,7 @@ Exchange export files (Binance ZIP/CSV, Bybit ZIP/CSV, MEXC XLSX) extend the sam
 
 ## Limits
 
-64 MiB per selected file, 256 MiB expanded input in total, 512 archive entries and 200,000 data rows per batch. Archive paths with `..` or absolute paths, encrypted entries and nested ZIP archives are rejected; XLSX members inside an export ZIP are read. Legacy `.xls` workbooks are rejected with a request to save as XLSX or CSV.
+64 MiB per selected file, 256 MiB expanded input in total, 512 archive entries and 200,000 data rows, 256 columns per row and 1,000,000 cells per batch. Archive paths with `..` or absolute paths, encrypted entries and nested ZIP archives are rejected; XLSX members inside an export ZIP are read. Legacy `.xls` workbooks are rejected with a request to save as XLSX or CSV.
 
 ## Time zones
 
@@ -37,7 +37,7 @@ Per column first (`Time(UTC)`, `Date(UTC+8)`, `Creation Time(UTC+04:00)`), then 
 
 ## Futures boundary
 
-Transfers between spot/funding and futures move the actual coins in the supported wallets; they are shown as transferred-in, transferred-out and net flow per exchange. Futures balances are not part of portfolio totals, no futures profit is inferred, and coins coming back from futures have an unknown basis unless a reviewed relationship says otherwise.
+Completed transfers between supported spot/funding wallets and futures are shown as transferred-in, transferred-out and net flow per exchange. Futures balances, derivatives, funding and P&L are deferred and do not enter portfolio totals or accounting. Coins returning from futures have unknown basis unless a reviewed relationship says otherwise.
 
 ## Undo
 
@@ -49,11 +49,24 @@ A receipt lists the batch's files, reports and counts. Undo removes the batch's 
 - Tables, times, values and matching: `core/src/commonMain/…/exchange/imports/` (`ImportTables`, `ImportTime`, `ImportValues`, `ExportReports`, `ImportRecords`, `EventMatcher`).
 - Service and storage: `ExchangeImportService` (`app.exchangeImports`) and `ImportRepository` (tables `exchange_import_batches`, `exchange_import_sources`, `exchange_import_events`).
 - Settlement in decoding: `exchange/ImportedEvents.kt`, called by each decoder before balances are filled.
-- Exchange adapters: `exchange/binance/BinanceExports.kt`.
-- Tests: `ExportFileReaderTest`, `EventMatcherTest`, `BinanceImportTest`.
+- Exchange adapters: `exchange/binance/BinanceExports.kt`, `exchange/bybit/BybitExports.kt`, `exchange/bybit/BybitImportedLogs.kt`, and `exchange/mexc/MexcExports.kt`.
+- Shared UI: `sharedUi/src/commonMain/…/ExchangeImportWorkflow.kt`; file selection: `androidApp/…/AndroidImports.kt` and `desktopApp/…/DesktopImports.kt`.
+- Import tests: `ExportFileReaderTest`, `EventMatcherTest`, `BinanceImportTest`, `BybitImportTest`, and `MexcImportTest`.
 
 ## Binance
 
 - **Trades** (current and older `Date(UTC)` form) and **deposit and withdrawal histories** are detailed records; trades split their pair by the coins written with the amounts.
 - **Transaction history:** trade, convert, dust and auto-invest rows are grouped per second and compared, net of fees, with the trades of that second; deposits and withdrawals compare by net change; Spot↔Funding and Simple Earn moves are internal; rewards, card spending, P2P and third-party wallet transfers are records; Spot↔UM/CM futures transfers are boundary transfers; rows of the futures wallets are deferred; unknown operations stay unresolved.
 - **Orders** are supporting evidence.
+
+## Bybit
+
+- **Primary records:** Unified and Funding balance logs, including legacy Spot wallet logs, carry each wallet's balance after the change. They settle against matching API records and supply movements when API history is absent.
+- **Supporting records:** transfer history supplies network and transaction details for matching deposits and withdrawals; spot-trade and card exports do not create movements by themselves. Card spending and refunds come from primary wallet logs.
+- Derivatives exports are deferred. Unsupported operations remain unresolved and are left out until classified.
+
+## MEXC
+
+- **Primary records:** spot fills, conversions, deposits, withdrawals, account transfers, other-funding history, and balance statements. Unrecognized statement operations remain unresolved and are left out until classified.
+- **Supporting records:** order summaries are never trades. Asset snapshots are retained as checkpoints, not deposits; automatic checkpoint difference reporting is pending.
+- Futures statements and derivatives reports are deferred; spot-to-futures transfers are shown only as transfers across the supported-wallet boundary.

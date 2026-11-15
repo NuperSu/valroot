@@ -101,6 +101,9 @@ internal class DesktopHost(
         onResult: (String) -> Unit,
     ) = backups.saveFile(name, bytes, onResult)
 
+    override fun openExchangeExports(onResult: (List<io.valroot.core.exchange.imports.ImportTable>?, String?) -> Unit) =
+        DesktopImports(state).open(onResult)
+
     override fun openTextFile(
         maxChars: Int,
         onResult: (name: String, text: String?) -> Unit,

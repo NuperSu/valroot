@@ -43,6 +43,7 @@ internal fun LazyListScope.classicAccountsItems(
     syncStatus: SyncStatus,
     execute: (String, () -> Unit) -> Unit,
 ) {
+    item { OutlinedButton(onClick = { setDialog("exchange-import") }) { Text("Import history") } }
     item { HealthCard(data, { setDialog("sync") }, { setDialog("utxo") }) }
     item { OutlinedButton(onClick = { setDialog("sync") }) { Text("Refresh wallet history") } }
     item { SectionTitle("Watch-only accounts", "+ Add") { setDialog("add") } }

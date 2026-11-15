@@ -66,6 +66,8 @@ internal fun AccountsWorkspace(
     compact: Boolean = false,
     onSync: () -> Unit = {},
 ) {
+    var importing by rememberSaveable { mutableStateOf(false) }
+    if (importing) ExchangeImportDialog(app, host, data, { importing = false }) { onChanged() }
     val scope = rememberCoroutineScope()
     var accounts by remember(app, portfolio, data.currency) { mutableStateOf<List<AccountOverview>?>(null) }
     var retry by remember { mutableStateOf(0) }
@@ -156,6 +158,7 @@ internal fun AccountsWorkspace(
                 Text(it)
                 TextButton(onClick = { retry++ }) { Text("Retry account details") }
             }
+            TextButton(onClick = { importing = true }, modifier = Modifier.testTag("accounts-import-history")) { Text("Import history") }
             TextButton(onClick = onHistory, modifier = Modifier.testTag("accounts-refresh-history")) { Text("Refresh wallet history") }
             TextButton(onClick = { onAdvanced(Page.ACCOUNTS) }) { Text("Account and sync tools") }
         }

@@ -23,6 +23,19 @@ class BackupFiles {
 
     fun chooseImport(): Path? = choose(FileDialog.LOAD, "Import CSV file")
 
+    /** Selects exchange exports together so overlapping reports can be reviewed as one batch. */
+    fun chooseExchangeExports(): List<Path> {
+        val dialog = FileDialog(null as Frame?, "Import exchange exports", FileDialog.LOAD)
+        return try {
+            dialog.isMultipleMode = true
+            dialog.setFilenameFilter { _, name -> name.substringAfterLast('.').lowercase() in setOf("csv", "xlsx", "zip", "xls") }
+            dialog.isVisible = true
+            dialog.files.map { it.toPath() }
+        } finally {
+            dialog.dispose()
+        }
+    }
+
     private fun choose(
         mode: Int,
         title: String,

@@ -165,6 +165,7 @@ internal fun LazyListScope.classicSettingsItems(
             )
             WrapActions(
                 listOf(
+                    "Import exchange exports" to { setDialog("exchange-import") },
                     "Encrypted backup" to { setDialog("backup") },
                     "Restore backup" to { setDialog("restore") },
                     "All active activity CSV" to

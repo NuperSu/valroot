@@ -55,6 +55,10 @@ internal fun WorkflowDialog(
     sourceSaved: (String, Boolean) -> Unit,
     initialAsset: AssetId? = null,
 ) {
+    if (type == "exchange-import") {
+        ExchangeImportDialog(app, host, data, close) { notify(it) }
+        return
+    }
     val nameState = rememberSaveable { mutableStateOf("") }
     val addressState = rememberSaveable { mutableStateOf(if (type == "sync") data.sourceEndpoint else "") }
     val amountState = rememberSaveable { mutableStateOf("") }

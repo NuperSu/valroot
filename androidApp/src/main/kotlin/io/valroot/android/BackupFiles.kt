@@ -22,6 +22,7 @@ class BackupFiles(
     private var busy = false
     private var closed = false
     private var createResult: ((Uri?) -> Unit)? = null
+    private var multipleResult: ((List<Uri>) -> Unit)? = null
     private var openResult: ((Uri?) -> Unit)? = null
 
     private val create =
@@ -33,6 +34,29 @@ class BackupFiles(
             finish(openResult.also { openResult = null }, uri)
         }
 
+    private val openMultiple =
+        activity.registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            busy = false
+            val callback = multipleResult
+            multipleResult = null
+            if (!closed) callback?.invoke(uris)
+        }
+
+    /** Selects export documents as a single import batch. Main thread only. */
+    fun chooseExchangeExports(result: (List<Uri>) -> Unit) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        check(!closed && !busy)
+        busy = true
+        multipleResult = result
+        try {
+            openMultiple.launch(arrayOf("*/*"))
+        } catch (_: Exception) {
+            busy = false
+            multipleResult = null
+            result(emptyList())
+        }
+    }
+
     init {
         activity.lifecycle.addObserver(
             object : DefaultLifecycleObserver {
@@ -41,6 +65,7 @@ class BackupFiles(
                     busy = false
                     createResult = null
                     openResult = null
+                    multipleResult = null
                     executor.shutdownNow()
                     owner.lifecycle.removeObserver(this)
                 }
