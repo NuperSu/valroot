@@ -54,6 +54,7 @@ private data class BinanceStream(
  * next time. Then the account's activities are derived again from all saved records ([BinanceDecoder]).
  */
 class BinanceConnector(
+    private val maxRequests: Int = MAX_REQUESTS,
     private val get: (account: AccountId, request: BinanceRequest) -> String,
 ) : ExchangeConnector(ExchangeKind.BINANCE) {
     override val manifest = BINANCE_MANIFEST
@@ -64,7 +65,7 @@ class BinanceConnector(
         uid: String,
         options: SourceRefreshOptions,
     ): Boolean {
-        val budget = RequestBudget<BinanceRequest>(MAX_REQUESTS) { get(account, it) }
+        val budget = RequestBudget<BinanceRequest>(maxRequests) { get(account, it) }
         require(BinanceParsers.parseReadOnly(budget.send(Binance.restrictions()))) {
             "This API key can trade, transfer or withdraw; Valroot accepts only keys that can read"
         }
@@ -92,10 +93,13 @@ class BinanceConnector(
                         budget.send(Binance.dust()),
                     ).map { ExchangeRow(BinanceDecoder.DUST, it.id, it.atMillis, it.raw, "") },
             )
+        } else {
+            unfinished = true
         }
 
         options.onProgress("Binance · trades")
-        val pairs = if (!budget.spent) readTrades(app, account, balances, now, budget, ::save) else app.exchanges.pairs(account)
+        // Trades left unread keep the history unfinished; the saved pairs still name the coins of trades read earlier.
+        val pairs = if (!budget.spent) readTrades(app, account, balances, now, budget, ::save) else null
         if (pairs == null) unfinished = true
 
         // Symbols not matched to a coin yet: Binance's token contracts let CoinGecko's contract map name the coin.
@@ -335,7 +339,7 @@ object BinanceProvider : ExchangeProvider<BinanceRequest> {
     override val manifest = BINANCE_MANIFEST
     override val history: ExchangeHistory = BinanceDecoder
 
-    override fun connector(transport: ExchangeTransport<BinanceRequest>) = BinanceConnector(transport::get)
+    override fun connector(transport: ExchangeTransport<BinanceRequest>) = BinanceConnector(get = transport::get)
 
     override fun checkKey(send: (BinanceRequest) -> String): ExchangeKeyInfo {
         val readOnly = BinanceParsers.parseReadOnly(send(Binance.restrictions()))

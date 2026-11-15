@@ -190,6 +190,29 @@ class BinanceConnectorTest {
         }
 
     @Test
+    fun aBudgetSpentBeforeTradesKeepsHistoryUnfinished() {
+        // The requests a full refresh makes before dust and trades: the history streams and the balances.
+        val streams =
+            JvmSqliteDatabase(":memory:").use { db ->
+                val binance = FakeBinance()
+                BinanceConnector { _, request -> binance.get(request) }.refresh(setUp(db), SourceRefreshOptions())
+                binance.requests.indexOfFirst { it.path == "/sapi/v1/asset/dribblet" }
+            }
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val binance = FakeBinance()
+            val outcome =
+                BinanceConnector(streams) { _, request -> binance.get(request) }.refresh(app, SourceRefreshOptions())
+            assertTrue(binance.requests.none { it.path == "/api/v3/myTrades" })
+            assertTrue(outcome.notes.any { "still being read" in it }, outcome.notes.toString())
+            assertEquals(
+                io.valroot.core.exchange.HistoryCoverage.READING,
+                app.exchanges.coverage(account).coverage,
+            )
+        }
+    }
+
+    @Test
     fun recordsTradesTransfersAndRewardsAndFillWhatTheyMiss() {
         JvmSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
