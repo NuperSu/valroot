@@ -34,6 +34,7 @@ internal class ExchangeLedgerBuilder(
 
     /** What became of each imported record, by key (see [ImportedEvents]). */
     val imports = mutableMapOf<String, ImportOutcome>()
+    val importedKinds = mutableMapOf<ActivityId, io.valroot.core.exchange.imports.MatchKind>()
 
     /** Every recorded change: coin, time, ordering key and amount. */
     val changes = mutableListOf<Change>()

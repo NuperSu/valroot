@@ -47,6 +47,8 @@ data class ImportLimits(
     val maxExpandedBytes: Long = 256L * 1024 * 1024,
     val maxArchiveEntries: Int = 512,
     val maxRows: Int = 200_000,
+    val maxColumns: Int = 256,
+    val maxCells: Long = 1_000_000,
 )
 
 /** What a batch has read so far against its [limits]; shared by every file of the batch. */
@@ -72,6 +74,14 @@ class ImportBudget(
         archiveEntries++
         val limit = limits.maxArchiveEntries
         if (archiveEntries > limit) throw ImportFileException("The archives hold more than $limit files; import fewer at once")
+    }
+
+    private var cells: Long = 0
+
+    fun cells(count: Int) {
+        if (count > limits.maxColumns) throw ImportFileException("A report has too many columns")
+        cells += count
+        if (cells > limits.maxCells) throw ImportFileException("The selected reports have too many cells; import fewer files")
     }
 
     fun row() {
@@ -108,10 +118,12 @@ object ExportCsv {
         var i = 0
 
         fun endRow() {
+            if (cells.size >= budget.limits.maxColumns) throw ImportFileException("A report has too many columns")
             cells += ImportCell(cell.toString())
             cell.clear()
             if (cells.any { it.text.isNotBlank() }) {
                 budget.row()
+                budget.cells(cells.size)
                 rows += ImportRow(rowStart, cells)
             }
             cells = mutableListOf()
@@ -134,6 +146,7 @@ object ExportCsv {
                 when (c) {
                     '"' -> if (cell.isEmpty()) inQuotes = true else cell.append(c)
                     delimiter -> {
+                        if (cells.size >= budget.limits.maxColumns) throw ImportFileException("A report has too many columns")
                         cells += ImportCell(cell.toString())
                         cell.clear()
                     }

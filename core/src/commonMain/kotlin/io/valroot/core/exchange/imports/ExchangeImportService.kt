@@ -82,7 +82,7 @@ data class FuturesFlow(
     val toFutures: ExactDecimal,
     val fromFutures: ExactDecimal,
 ) {
-    /** Coins that went to futures and have not come back (negative when more came back). */
+    /** Net coins transferred into futures; this is a flow, not a futures balance or profit. */
     val net: ExactDecimal get() = toFutures - fromFutures
 }
 
@@ -120,6 +120,10 @@ class ExchangeImportService internal constructor(
 ) : AppService(ctx) {
     private val repository = ImportRepository(db)
 
+    /** Balance-log and transfer evidence also participates in a wallet-aware decoder without adding a second movement. */
+    private fun decodeRecord(record: ImportedRecord): Boolean =
+        record.moves || record.details["bybitWalletLog"] != null || record.details["bybitTransferEvidence"] != null
+
     fun preview(
         tables: List<ImportTable>,
         choices: ImportChoices = ImportChoices(),
@@ -134,7 +138,7 @@ class ExchangeImportService internal constructor(
                     PreviewTable(table.label, null, table.rows.size, null, null, needsOffset = false, error = "Not a supported export")
                 return@forEach
             }
-            val offsets = detected.offsets(choices.offset)
+            val offsets = if (detected.report.role == EvidenceRole.DEFERRED) emptyMap() else detected.offsets(choices.offset)
             if (offsets.values.any { it == null }) {
                 previewTables +=
                     PreviewTable(table.label, detected.report, detected.rows.size, null, null, needsOffset = true, error = null)
@@ -238,7 +242,7 @@ class ExchangeImportService internal constructor(
             val account = assignment.account
             val saved = account?.let { app.exchanges.savedRows(it) }.orEmpty()
             val savedKeys = saved.filter { it.stream == ImportedEvents.STREAM }.map { it.key }.toSet()
-            val moving = list.filter { (_, record) -> record.moves && record.status == RecordStatus.COMPLETED }
+            val moving = list.filter { (_, record) -> decodeRecord(record) }
             val fresh = moving.filter { it.first !in savedKeys }
             val outcomes =
                 if (fresh.isEmpty()) {
@@ -375,10 +379,26 @@ class ExchangeImportService internal constructor(
     fun futuresFlows(account: AccountId): List<FuturesFlow> {
         val kind =
             ExchangeKind.entries.firstOrNull { kind -> app.exchanges.targets(kind).any { it.first == account } } ?: return emptyList()
-        return app.exchanges
-            .savedRows(account)
+        val rows = app.exchanges.savedRows(account)
+        val uid =
+            app.exchanges
+                .targets(kind)
+                .single { it.first == account }
+                .second
+        val assets = app.exchanges.historyAssets(kind, account)
+        val outcomes = app.exchanges.decodeWith(kind, account, uid, emptyList(), assets).imports
+        val seen = mutableSetOf<String>()
+        return rows
             .filter { it.stream == ImportedEvents.STREAM }
-            .map { ImportedEvents.parse(it.payload) }
+            .filter { row ->
+                val activity =
+                    when (val outcome = outcomes[row.key]) {
+                        is ImportOutcome.New -> outcome.activity.value
+                        is ImportOutcome.Same -> outcome.activity.value
+                        else -> null
+                    }
+                activity != null && seen.add(activity)
+            }.map { ImportedEvents.parse(it.payload) }
             .filter { it.moves && (it.kind == RecordKind.FUTURES_IN || it.kind == RecordKind.FUTURES_OUT) }
             .flatMap { record -> record.legs.map { Triple(it.coin, record.kind, it.amount) } }
             .groupBy { it.first }
@@ -461,7 +481,7 @@ class ExchangeImportService internal constructor(
                             .filter { it.stream == ImportedEvents.STREAM }
                             .map { it.key }
                             .toSet()
-                    byAssignment[assignment.key].orEmpty().filter { it.record.moves }.forEach { planned ->
+                    byAssignment[assignment.key].orEmpty().filter { decodeRecord(it.record) }.forEach { planned ->
                         if (planned.key !in saved) {
                             val source =
                                 app.exchanges.ingestRecord(

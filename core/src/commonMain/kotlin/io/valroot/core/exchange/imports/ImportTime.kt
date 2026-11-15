@@ -76,7 +76,14 @@ object ImportTime {
             return epoch + (days * DAY_MILLIS).roundToLong() - shift
         }
         return try {
-            CsvImport.date(cell.text) { CsvImport.utcMillis(it) - shift }
+            val raw = cell.text.trim()
+            val date =
+                if (raw.matches(Regex("[0-9]{8}"))) {
+                    "${raw.take(4)}-${raw.substring(4, 6)}-${raw.takeLast(2)}"
+                } else {
+                    raw
+                }
+            CsvImport.date(date) { CsvImport.utcMillis(it) - shift }
         } catch (failure: IllegalArgumentException) {
             throw ImportFileException(failure.message ?: "\"${cell.text}\" is not a date")
         }

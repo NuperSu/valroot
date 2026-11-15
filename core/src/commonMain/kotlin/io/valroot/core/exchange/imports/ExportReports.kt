@@ -82,7 +82,9 @@ object ExportReports {
     ): DetectedTable? {
         table.rows.take(PREAMBLE_ROWS + 1).forEachIndexed { index, row ->
             val cells = row.cells.map { it.text.trim().removePrefix("\uFEFF") }.dropLastWhile { it.isEmpty() }
-            val report = candidates.firstOrNull { it.header == cells } ?: return@forEachIndexed
+            val accountColumn = cells.indexOf("Account ID")
+            val header = if (accountColumn >= 0 && accountColumn == cells.size - 2) cells.take(accountColumn) else cells
+            val report = candidates.firstOrNull { it.header == header } ?: return@forEachIndexed
             val metadata =
                 table.rows
                     .take(index)
@@ -92,7 +94,8 @@ object ExportReports {
                             key.trim().lowercase() to
                                 value.trim()
                         }
-                    }.toMap()
+                    }.toMap() +
+                    if (accountColumn >= 0 && accountColumn == cells.size - 2) mapOf("uid" to cells.last()) else emptyMap()
             return DetectedTable(table, report, metadata, row.number, table.rows.drop(index + 1))
         }
         return null

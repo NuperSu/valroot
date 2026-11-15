@@ -323,7 +323,7 @@ object BinanceExports : ExchangeExportAdapter {
         offsets: Map<String, ImportOffset>,
     ): List<ImportedRecord> {
         val records = mutableListOf<ImportedRecord>()
-        val groups = linkedMapOf<Pair<Long, RecordKind>, MutableList<Pair<ImportRow, RecordLeg>>>()
+        val groups = linkedMapOf<Triple<String?, Long, RecordKind>, MutableList<Pair<ImportRow, RecordLeg>>>()
         val uidColumn = table.column("User ID")
         table.rows.forEach { row ->
             val where = label(table, row)
@@ -368,14 +368,14 @@ object BinanceExports : ExchangeExportAdapter {
                 }
             if (kind == RecordKind.TRADE || kind == RecordKind.CONVERT) {
                 val role = if (operation in FEE_OPERATIONS) MovementRole.FEE else MovementRole.TRADE_LEG
-                groups.getOrPut(at to kind) { mutableListOf() } += row to RecordLeg(coin, change, role)
+                groups.getOrPut(Triple(uid, at, kind)) { mutableListOf() } += row to RecordLeg(coin, change, role)
                 return@forEach
             }
             val role = if (kind == RecordKind.REWARD) MovementRole.REWARD else MovementRole.TRANSFER
             records += record(table, row, kind, RecordStatus.COMPLETED, at, listOf(RecordLeg(coin, change, role)), uid, wallet, details)
         }
         groups.forEach { (key, parts) ->
-            val (at, kind) = key
+            val (_, at, kind) = key
             val legs =
                 parts
                     .groupBy { it.second.coin to it.second.role }

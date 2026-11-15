@@ -226,6 +226,7 @@ internal object XlsxReader {
                 }
                 "c" -> {
                     column = attributes.getValue("r")?.let(::columnOf) ?: (column + 1)
+                    if (column >= budget.limits.maxColumns) throw ImportFileException("A report has too many columns")
                     type = attributes.getValue("t")
                     style = attributes.getValue("s")?.toIntOrNull()
                     formula = false
@@ -251,6 +252,7 @@ internal object XlsxReader {
                     if (cells.values.any { it.text.isNotBlank() }) {
                         budget.row()
                         val width = cells.lastKey() + 1
+                        budget.cells(width)
                         rows += ImportRow(rowNumber, List(width) { cells[it] ?: ImportCell("") })
                     }
             }

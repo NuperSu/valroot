@@ -159,6 +159,8 @@ object ImportedEvents {
         principal: Map<String, ExactDecimal>,
     ): MatchKind =
         when {
+            ":futures:" in activity.id.value && principal.values.all { it.coefficient.sign < 0 } -> MatchKind.FUTURES_IN
+            ":futures:" in activity.id.value && principal.values.all { it.coefficient.sign > 0 } -> MatchKind.FUTURES_OUT
             activity.kind == ActivityKind.TRADE -> MatchKind.TRADE
             activity.kind == ActivityKind.REWARD -> MatchKind.REWARD
             principal.isEmpty() -> MatchKind.FEE
@@ -233,7 +235,7 @@ object ImportedEvents {
                 val ids = setOfNotNull(ledger.transfers[activity.id]?.txId?.let { "txid:${it.lowercase()}" })
                 EventShape(
                     activity.id.value,
-                    matchKind(activity, totals(activity, net = false)),
+                    ledger.importedKinds[activity.id] ?: matchKind(activity, totals(activity, net = false)),
                     activity.occurredAtEpochMillis,
                     totals(activity, net),
                     ids,
@@ -336,6 +338,7 @@ object ImportedEvents {
                 }
                 activityKind(record.kind)
             }
+        if (id != null) ledger.importedKinds[id] = matchKind(record)
         ledger.imports[row.key] = id?.let { ImportOutcome.New(it) } ?: ImportOutcome.CoinPending
     }
 
