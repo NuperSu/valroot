@@ -37,7 +37,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *   go below zero ([ExchangeLedgerBuilder.settleByRunningBalance]).
  */
 object MexcDecoder : ExchangeHistory {
-    const val VERSION = "mexc-1"
+    const val VERSION = "mexc-2"
     const val TRADES = "trades"
     const val DEPOSITS = "deposits"
     const val WITHDRAWALS = "withdrawals"
@@ -60,6 +60,7 @@ object MexcDecoder : ExchangeHistory {
         pairs: Map<String, Pair<String, String>>,
     ): Set<String> =
         rows
+            .filterNot(io.valroot.core.exchange.ImportedEvents::owns)
             .flatMap { row ->
                 val o = Mexc.row(row.payload)
                 val nested = (o["convertDetails"] as? JsonArray).orEmpty().map { it as JsonObject }
@@ -70,7 +71,9 @@ object MexcDecoder : ExchangeHistory {
                     listOfNotNull(symbol?.first, symbol?.second) +
                     if (row.stream == DUST) listOf(DUST_TARGET) else emptyList()
             }.filter { it.isNotBlank() }
-            .toSet()
+            .toSet() +
+            io.valroot.core.exchange.ImportedEvents
+                .coins(rows)
 
     /** Dust becomes MX. */
     const val DUST_TARGET = "MX"
@@ -152,6 +155,8 @@ object MexcDecoder : ExchangeHistory {
                 }
             }
         }
+        io.valroot.core.exchange.ImportedEvents
+            .apply(ledger, rows)
         if (balances != null) {
             ledger.settleByRunningBalance(
                 balances.totals,
@@ -201,5 +206,13 @@ object MexcDecoder : ExchangeHistory {
         recordsFrom: Long?,
         decimals: (AssetId) -> Int,
     ): ExchangeDecoded =
-        decode(account, uid, rows, assets, snapshot.pairs, Balances(snapshot.atMillis, snapshot.totals, source, recordsFrom), decimals)
+        decode(
+            account,
+            uid,
+            rows,
+            assets,
+            snapshot.pairs,
+            if (snapshot.balancesKnown) Balances(snapshot.atMillis, snapshot.totals, source, recordsFrom) else null,
+            decimals,
+        )
 }

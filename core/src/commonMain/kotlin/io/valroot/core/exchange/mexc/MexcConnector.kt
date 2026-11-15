@@ -210,6 +210,7 @@ object MexcProvider : ExchangeProvider<MexcRequest> {
     override val kind = ExchangeKind.MEXC
     override val manifest = MEXC_MANIFEST
     override val history: ExchangeHistory = MexcDecoder
+    override val exports = MexcExports
 
     override fun connector(transport: ExchangeTransport<MexcRequest>) = MexcConnector(transport::get)
 
