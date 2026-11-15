@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
 
 /** A Bybit account replayed by a fake API: every response is filtered by the request's window and paged. */
 class BybitConnectorTest {
-    private val now = 1_800_000_000_000L
+    private var now = 1_800_000_000_000L
     private val hour = 3_600_000L
     private val start = now - 3 * Bybit.DAY_MILLIS
     private val account = AccountId("bybit")
@@ -524,6 +524,35 @@ class BybitConnectorTest {
             assertEquals(listOf("2"), window.map { it.query.toMap()["cursor"] })
             assertEquals(7, app.exchanges.rowKeys(account, BybitDecoder.LOG).size)
             assertEquals("", app.exchanges.cursors(account)[BybitConnector.WINDOW_CURSOR + BybitDecoder.LOG])
+        }
+    }
+
+    @Test fun anInterruptedNewestWindowResumesAfterTimeMovesOn() {
+        JvmSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val bybit = FakeBybit()
+            val connector = BybitConnector { _, request -> bybit.get(request) }
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            val readTo = now
+            // Five records in the last day: the next newest window has three pages.
+            repeat(5) { i -> bybit.log += bybit.logRow("new$i", "TRANSFER_IN", "", "ETH", "0", "0", "0", "", now - (5 - i) * hour) }
+            now += hour
+            val firstEnd = now
+            bybit.failOnce = { it.path == "/v5/account/transaction-log" && it.query.toMap()["cursor"] == "2" }
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            // Later, the newest window would end at a new time; the unfinished one resumes from its next page.
+            now += 2 * hour
+            bybit.requests.clear()
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            val log =
+                bybit.requests
+                    .filter { it.path == "/v5/account/transaction-log" }
+                    .map { listOf(it.query.toMap()["startTime"], it.query.toMap()["endTime"], it.query.toMap()["cursor"]) }
+            val windowStart = "${readTo - Bybit.DAY_MILLIS}"
+            assertEquals(listOf(windowStart, "$firstEnd", "2"), log.first())
+            assertTrue(log.none { it[0] == windowStart && it[2] == null }, log.toString())
+            assertTrue(log.any { it == listOf("$firstEnd", "$now", null) }, log.toString())
+            assertEquals(4 + 5, app.exchanges.rowKeys(account, BybitDecoder.LOG).size)
         }
     }
 }

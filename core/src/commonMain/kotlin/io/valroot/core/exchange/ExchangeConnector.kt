@@ -142,7 +142,10 @@ abstract class ExchangeConnector(
         hasBudget: () -> Boolean,
         read: (from: Long, to: Long) -> Int?,
     ): Boolean {
-        var state = app.exchanges.streams(account)[stream.name] ?: ExchangeStreamState(stream.name, now, now, false, 0)
+        // A new stream's start is saved before reading, so its windows keep their bounds when a refresh stops part way.
+        var state =
+            app.exchanges.streams(account)[stream.name]
+                ?: ExchangeStreamState(stream.name, now, now, false, 0).also { app.exchanges.saveStream(account, it) }
         var from = maxOf(state.fromMillis, state.toMillis - DAY_MILLIS)
         while (from < now) {
             val to = minOf(from + stream.windowMillis, now)

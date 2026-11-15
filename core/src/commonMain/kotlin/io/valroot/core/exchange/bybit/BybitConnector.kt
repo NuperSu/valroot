@@ -149,8 +149,22 @@ class BybitConnector(
     ): Int? {
         val pageKey = WINDOW_CURSOR + stream
         val window = "$from|$to"
-        val others = openWindows(app.exchanges.cursors(account)[pageKey]).filterKeys { it != window }
-        var cursor: String? = openWindows(app.exchanges.cursors(account)[pageKey])[window]
+        val open = openWindows(app.exchanges.cursors(account)[pageKey])
+        // The newest window ends at the refresh time, so an unfinished one has an earlier end now: finish it from its next
+        // page, then read the rest up to [to] as a window of its own.
+        val earlier =
+            open.keys
+                .filter { it.startsWith("$from|") && it != window }
+                .mapNotNull { it.substringAfter('|').toLongOrNull() }
+                .filter { it in (from + 1) until to }
+                .maxOrNull()
+        if (earlier != null) {
+            val first = readWindow(app, account, uid, stream, from, earlier, budget) ?: return null
+            val rest = readWindow(app, account, uid, stream, earlier, to, budget) ?: return null
+            return first + rest
+        }
+        val others = open.filterKeys { it != window }
+        var cursor: String? = open[window]
         // A resumed window had records on its earlier pages.
         var count = if (cursor != null) 1 else 0
         do {
