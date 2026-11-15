@@ -293,6 +293,7 @@ object BybitProvider : ExchangeProvider<BybitRequest> {
     override val kind = ExchangeKind.BYBIT
     override val manifest = BYBIT_MANIFEST
     override val history: ExchangeHistory = BybitDecoder
+    override val exports = BybitExports
 
     override fun connector(transport: ExchangeTransport<BybitRequest>) = BybitConnector(transport::get)
 

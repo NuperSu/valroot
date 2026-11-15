@@ -9,6 +9,7 @@ import io.valroot.core.exchange.ExchangeRow
 import io.valroot.core.exchange.ExchangeSnapshot
 import io.valroot.core.exchange.ExchangeStreamState
 import io.valroot.core.exchange.ExchangeTransfer
+import io.valroot.core.exchange.ImportedEvents
 import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.ledger.MovementRole
 import io.valroot.core.model.AccountId
@@ -47,7 +48,7 @@ data class BybitBalances(
  *   adjustment per coin, just after the latest record.
  */
 object BybitDecoder : ExchangeHistory {
-    const val VERSION = "bybit-1"
+    const val VERSION = "bybit-2"
     const val LOG = "log"
     const val FUNDING = "funding"
     const val DEPOSITS = "deposits"
@@ -151,15 +152,30 @@ object BybitDecoder : ExchangeHistory {
     ): ExchangeDecoded {
         val context = ExchangeLedgerBuilder(ExchangeKind.BYBIT, account, uid, assets, decimals, VERSION)
         val byStream = rows.groupBy { it.stream }
-        val logs = byStream[LOG].orEmpty().map { Bybit.logEntry(Bybit.row(it.payload)) to SourceRecordId(it.source) }
-        val funding = byStream[FUNDING].orEmpty().map { Bybit.fundingEntry(Bybit.row(it.payload)) to SourceRecordId(it.source) }
-        val deposits = byStream[DEPOSITS].orEmpty().map { Bybit.deposit(Bybit.row(it.payload)) to SourceRecordId(it.source) }
-        val withdrawals = byStream[WITHDRAWALS].orEmpty().map { Bybit.withdrawal(Bybit.row(it.payload)) to SourceRecordId(it.source) }
+        val imported = BybitImportedLogs(rows)
+        val apiLogs = byStream[LOG].orEmpty().map { Bybit.logEntry(Bybit.row(it.payload)) to SourceRecordId(it.source) }
+        val logs = imported.unified(apiLogs)
+        val funding =
+            imported.funding(
+                byStream[FUNDING].orEmpty().map {
+                    Bybit.fundingEntry(Bybit.row(it.payload)) to
+                        SourceRecordId(it.source)
+                },
+            )
+        val deposits =
+            byStream[DEPOSITS].orEmpty().map { Bybit.deposit(Bybit.row(it.payload)) to SourceRecordId(it.source) } + imported.deposits()
+        val withdrawals =
+            byStream[WITHDRAWALS].orEmpty().map { Bybit.withdrawal(Bybit.row(it.payload)) to SourceRecordId(it.source) } +
+                imported.withdrawals()
         val converts = byStream[CONVERTS].orEmpty().map { Bybit.convert(Bybit.row(it.payload)) to SourceRecordId(it.source) }
 
-        val paired = pairWalletTransfers(logs.map { it.first }, funding.map { it.first })
+        val spotFunding = imported.spot(context, funding)
+        val paired = pairWalletTransfers(logs.map { it.first }, funding.map { it.first }) + spotFunding.map { "funding:$it" }
         decodeLog(context, logs, paired)
         decodeFunding(context, funding, deposits, withdrawals, converts, paired)
+        imported.outcomes(context)
+        ImportedEvents.apply(context, imported.genericRows(rows))
+        imported.openings(context, logs, funding, includeCurrentWallets = balances == null)
         if (balances != null) settle(context, logs, funding, balances, coveredFrom, rows.maxOfOrNull { it.atMillis })
         return context.result()
     }
@@ -388,10 +404,11 @@ object BybitDecoder : ExchangeHistory {
     ): Set<String> =
         rows
             .flatMap { row ->
+                if (ImportedEvents.owns(row)) return@flatMap emptyList<String>()
                 val o = Bybit.row(row.payload)
                 listOf("currency", "coin", "fromCoin", "toCoin").mapNotNull { (o[it] as? JsonPrimitive)?.content }
             }.filter { it.isNotBlank() }
-            .toSet()
+            .toSet() + ImportedEvents.coins(rows)
 
     override fun balanceRecord(snapshot: ExchangeSnapshot): String =
         "bybit-balances-1\n" +
@@ -424,6 +441,6 @@ object BybitDecoder : ExchangeHistory {
                 elsewhere.groupBy { it.coin }.mapValues { (_, list) -> list.map { it.amount }.reduce { a, b -> a + b } },
                 source,
             )
-        return decode(account, uid, rows, assets, balances, snapshot.coveredFrom, decimals)
+        return decode(account, uid, rows, assets, balances.takeIf { snapshot.balancesKnown }, snapshot.coveredFrom, decimals)
     }
 }
