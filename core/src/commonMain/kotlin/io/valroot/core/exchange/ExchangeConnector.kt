@@ -129,8 +129,8 @@ abstract class ExchangeConnector(
      * when the budget ran out. Returns false when reading stopped early.
      *
      * When the exchange refuses an older window, the newest window already read is requested again, then the window
-     * before the refused one and the stream's oldest window. If the newest still reads and both older ones are refused,
-     * only age is refused: the exchange keeps nothing older and the stream ends there ([StreamEndReason.RETENTION],
+     * before the refused one and the stream's oldest window. If the newest still reads and the older ones are refused,
+     * only age is refused (a refused oldest window has nothing older to compare, so it never counts as age): the exchange keeps nothing older and the stream ends there ([StreamEndReason.RETENTION],
      * checked again monthly). Otherwise, or when the answer has no specific code, history stays incomplete and the
      * window is tried again later ([StreamEndReason.REFUSED]).
      */
@@ -232,7 +232,8 @@ abstract class ExchangeConnector(
     /**
      * Requests the window before the refused one starting at [refusedFrom] and the oldest window of the stream: true when
      * every one is refused too, as when the exchange keeps nothing older; false when one reads, so the refusal concerned
-     * that window only; null when the budget ran out. Records found are saved.
+     * that window only, or when the refused window is already the oldest, so nothing can show it is age; null when the
+     * budget ran out. Records found are saved.
      */
     private fun olderWindowsRefused(
         refusedFrom: Long,
@@ -244,6 +245,7 @@ abstract class ExchangeConnector(
                 maxOf(refusedFrom - stream.windowMillis, stream.limitMillis) to refusedFrom,
                 stream.limitMillis to minOf(stream.limitMillis + stream.windowMillis, refusedFrom),
             ).filter { (from, to) -> from < to }.distinct()
+        if (probes.isEmpty()) return false
         for ((from, to) in probes) {
             try {
                 read(from, to) ?: return null

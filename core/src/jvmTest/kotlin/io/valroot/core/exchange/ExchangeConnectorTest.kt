@@ -85,6 +85,24 @@ class ExchangeConnectorTest {
         }
 
     @Test
+    fun aRefusedOldestWindowIsNeverTakenAsRetention() =
+        withApp { app ->
+            app.exchanges.saveStream(account, ExchangeStreamState("deposits", 50 * day, 100 * day, false, 0))
+            // The refused window starts at the stream's limit, so there is nothing older to probe.
+            val exchange = Exchange { it < 50 * day }
+            assertTrue(Reader().read(app, account, StreamWindows("deposits", 7 * day, 43 * day), 100 * day, { true }, exchange::window))
+            assertFalse(
+                app.exchanges
+                    .streams(account)
+                    .getValue("deposits")
+                    .complete,
+            )
+            val end = app.exchanges.streamEnds(account).getValue("deposits")
+            assertEquals(StreamEndReason.REFUSED, end.reason)
+            assertEquals(listOf(99 * day, 43 * day, 93 * day), exchange.asked)
+        }
+
+    @Test
     fun aRefusedWindowWithReadableOlderHistoryKeepsHistoryOpen() =
         withApp { app ->
             app.exchanges.saveStream(account, ExchangeStreamState("deposits", 50 * day, 100 * day, false, 0))
