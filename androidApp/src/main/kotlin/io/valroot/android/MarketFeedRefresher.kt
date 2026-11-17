@@ -7,8 +7,8 @@ import android.content.Context
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.OrderBookResult
-import io.valroot.ui.loadOrderBook
-import io.valroot.ui.marketRefreshMessage
+import io.valroot.ui.host.MarketGate
+import io.valroot.ui.host.MarketWork
 import kotlinx.coroutines.flow.update
 import java.util.concurrent.Executors
 
@@ -23,23 +23,9 @@ internal object MarketFeedRefresher {
         maxAgeMillis: Long,
         onResult: (String) -> Unit,
     ) {
-        val path = context.applicationContext.getDatabasePath("portfolio.sqlite").path
+        val market = market(context) { false }
         executor.execute {
-            val message =
-                synchronized(AutomaticPriceGate.lock) {
-                    if (AutomaticPriceGate.paused) {
-                        "Market refresh is paused while data is restored."
-                    } else {
-                        runCatching {
-                            BundledSqliteDatabase(path).use { db ->
-                                val app = PortfolioApplication(db, System::currentTimeMillis)
-                                val result = marketRefreshMessage(app.market.refreshFeeds(transport::feed, maxAgeMillis))
-                                refreshEvmCatalogAndPrices(app)
-                                result
-                            }
-                        }.getOrElse { "Could not refresh market data." }
-                    }
-                }
+            val message = market.refreshMarkets(maxAgeMillis, ::refreshEvmCatalogAndPrices)
             RefreshWorker.dataRevision.update { it + 1 }
             onResult(message)
         }
@@ -96,26 +82,9 @@ internal object MarketFeedRefresher {
         closing: () -> Boolean,
         onResult: (OrderBookResult) -> Unit,
     ) {
-        val path = context.applicationContext.getDatabasePath("portfolio.sqlite").path
+        val market = market(context, closing)
         executor.execute {
-            val result =
-                synchronized(AutomaticPriceGate.lock) {
-                    if (AutomaticPriceGate.paused || closing()) {
-                        OrderBookResult.Failed("Market data is paused while data is restored.")
-                    } else {
-                        runCatching {
-                            BundledSqliteDatabase(path).use { db ->
-                                loadOrderBook(
-                                    PortfolioApplication(db, System::currentTimeMillis),
-                                    coinId,
-                                    transport::feed,
-                                    // Checked before each request, so a restore or close stops the book request early.
-                                    KrakenPriceTransport(beforeRequest = { check(!AutomaticPriceGate.paused && !closing()) })::get,
-                                )
-                            }
-                        }.getOrElse { OrderBookResult.Failed("Could not load Kraken's order book.") }
-                    }
-                }
+            val result = market.orderBook(coinId)
             onResult(result)
         }
     }
@@ -127,27 +96,29 @@ internal object MarketFeedRefresher {
         closing: () -> Boolean,
         onResult: (io.valroot.ui.CandleResult) -> Unit,
     ) {
-        val path = context.applicationContext.getDatabasePath("portfolio.sqlite").path
+        val market = market(context, closing)
         executor.execute {
-            val result =
-                synchronized(AutomaticPriceGate.lock) {
-                    if (AutomaticPriceGate.paused || closing()) {
-                        io.valroot.ui.CandleResult.Unavailable("Market data is paused while data is restored.")
-                    } else {
-                        runCatching {
-                            BundledSqliteDatabase(path).use { db ->
-                                io.valroot.ui.loadCandles(
-                                    PortfolioApplication(db, System::currentTimeMillis),
-                                    coinId,
-                                    range,
-                                    transport::feed,
-                                    KrakenPriceTransport(beforeRequest = { check(!AutomaticPriceGate.paused && !closing()) })::get,
-                                )
-                            }
-                        }.getOrElse { io.valroot.ui.CandleResult.Unavailable("Could not load candles.") }
-                    }
-                }
+            val result = market.candles(coinId, range)
             onResult(result)
         }
+    }
+
+    /** Shared market work on a fresh connection to the app's database, stopped by a restore or by [closing]. */
+    private fun market(
+        context: Context,
+        closing: () -> Boolean,
+    ): MarketWork {
+        val path = context.applicationContext.getDatabasePath("portfolio.sqlite").path
+        return MarketWork(
+            object : MarketGate {
+                override val stopped: Boolean get() = AutomaticPriceGate.paused || closing()
+
+                override fun <T> underGate(block: () -> T): T = synchronized(AutomaticPriceGate.lock) { block() }
+
+                override fun <T> withApplication(block: (PortfolioApplication) -> T): T =
+                    BundledSqliteDatabase(path).use { block(PortfolioApplication(it, System::currentTimeMillis)) }
+            },
+            transport::feed,
+        ) { beforeRequest -> KrakenPriceTransport(beforeRequest = beforeRequest)::get }
     }
 }

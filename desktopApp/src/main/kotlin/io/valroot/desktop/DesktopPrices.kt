@@ -4,8 +4,8 @@ import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.KrakenPriceTransport
 import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.OrderBookResult
-import io.valroot.ui.loadOrderBook
-import io.valroot.ui.marketRefreshMessage
+import io.valroot.ui.host.MarketGate
+import io.valroot.ui.host.MarketWork
 import kotlinx.coroutines.flow.update
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -20,8 +20,6 @@ private const val LINKED_HISTORY_RATE_LIMIT_WAIT_MILLIS = 61_000L
 private const val LINKED_USD_HISTORY_REQUESTS_PER_RUN = 600
 private const val LINKED_USD_HISTORY_INTERVAL_MILLIS = 1_000L
 
-private const val MARKET_PAUSED_MESSAGE = "Market data is paused while data is restored."
-
 /**
  * Market feeds, the chain catalog, order books, and linked-coin prices and history. Work runs on the price worker, or on the
  * history worker for backfills, and holds the price gate while it touches the database file.
@@ -30,6 +28,19 @@ internal class DesktopPrices(
     private val state: DesktopState,
 ) {
     private val historyBackfillQueued = AtomicBoolean(false)
+
+    private val market =
+        MarketWork(
+            object : MarketGate {
+                override val stopped: Boolean get() = state.priceRestorePaused || state.closing.get()
+
+                override fun <T> underGate(block: () -> T): T = synchronized(state.priceGate) { block() }
+
+                override fun <T> withApplication(block: (PortfolioApplication) -> T): T =
+                    BundledSqliteDatabase(state.file.toString()).use { block(PortfolioApplication(it, System::currentTimeMillis)) }
+            },
+            state.priceTransport::feed,
+        ) { beforeRequest -> KrakenPriceTransport(beforeRequest = beforeRequest)::get }
 
     fun refreshMarkets(
         maxAgeMillis: Long,
@@ -41,22 +52,7 @@ internal class DesktopPrices(
         }
         try {
             state.priceExecutor.execute {
-                val message =
-                    synchronized(state.priceGate) {
-                        if (state.priceRestorePaused || state.closing.get()) {
-                            "Market refresh is paused while data is restored."
-                        } else {
-                            runCatching {
-                                BundledSqliteDatabase(state.file.toString()).use { connection ->
-                                    val application = PortfolioApplication(connection, System::currentTimeMillis)
-                                    val message =
-                                        marketRefreshMessage(application.market.refreshFeeds(state.priceTransport::feed, maxAgeMillis))
-                                    refreshEvmCatalogAndPrices(application)
-                                    message
-                                }
-                            }.getOrElse { "Could not refresh market data." }
-                        }
-                    }
+                val message = market.refreshMarkets(maxAgeMillis, ::refreshEvmCatalogAndPrices)
                 state.dataRevision.update { it + 1 }
                 SwingUtilities.invokeLater { onResult(message) }
             }
@@ -71,26 +67,7 @@ internal class DesktopPrices(
     ) {
         try {
             state.priceExecutor.execute {
-                val result =
-                    synchronized(state.priceGate) {
-                        if (state.priceRestorePaused || state.closing.get()) {
-                            OrderBookResult.Failed(MARKET_PAUSED_MESSAGE)
-                        } else {
-                            runCatching {
-                                BundledSqliteDatabase(state.file.toString()).use { connection ->
-                                    loadOrderBook(
-                                        PortfolioApplication(connection, System::currentTimeMillis),
-                                        coinId,
-                                        state.priceTransport::feed,
-                                        // Checked before each request, so a restore or close stops the book request early.
-                                        KrakenPriceTransport(
-                                            beforeRequest = { check(!state.priceRestorePaused && !state.closing.get()) },
-                                        )::get,
-                                    )
-                                }
-                            }.getOrElse { OrderBookResult.Failed("Could not load Kraken's order book.") }
-                        }
-                    }
+                val result = market.orderBook(coinId)
                 SwingUtilities.invokeLater { onResult(result) }
             }
         } catch (_: RejectedExecutionException) {
@@ -105,30 +82,7 @@ internal class DesktopPrices(
     ) {
         try {
             state.priceExecutor.execute {
-                val result =
-                    synchronized(state.priceGate) {
-                        if (state.priceRestorePaused || state.closing.get()) {
-                            io.valroot.ui.CandleResult
-                                .Unavailable(MARKET_PAUSED_MESSAGE)
-                        } else {
-                            runCatching {
-                                BundledSqliteDatabase(state.file.toString()).use { connection ->
-                                    io.valroot.ui.loadCandles(
-                                        PortfolioApplication(connection, System::currentTimeMillis),
-                                        coinId,
-                                        range,
-                                        state.priceTransport::feed,
-                                        KrakenPriceTransport(
-                                            beforeRequest = { check(!state.priceRestorePaused && !state.closing.get()) },
-                                        )::get,
-                                    )
-                                }
-                            }.getOrElse {
-                                io.valroot.ui.CandleResult
-                                    .Unavailable("Could not load candles.")
-                            }
-                        }
-                    }
+                val result = market.candles(coinId, range)
                 SwingUtilities.invokeLater { onResult(result) }
             }
         } catch (_: RejectedExecutionException) {
