@@ -34,6 +34,16 @@ class AnalyticsService internal constructor(
         )
     }
 
+    /**
+     * Whether a sample at [at] is the present one, judged by the current-price rule (a quote at most two hours old) like
+     * the snapshot. Earlier samples, even minutes ago, use the historical rule (a quote at most a day old): a past point
+     * carries an asset's last saved price forward instead of dropping the asset when prices were saved hours apart.
+     */
+    private fun isCurrent(
+        at: Long,
+        knownAt: Long,
+    ) = at >= knownAt - CURRENT_SAMPLE_SLACK_MILLIS
+
     /** Evaluation instant shared by financial projections and their presentation. */
     fun evaluationTimeMillis(): Long = now()
 
@@ -44,7 +54,7 @@ class AnalyticsService internal constructor(
         times: List<Long>,
     ): List<MarketPricePoint> {
         val knownAt = now()
-        val results = market.lookupSeries(asset, quote, times, knownAt, { at -> app.prices.policy(current = at >= knownAt - 86_400_000L) })
+        val results = market.lookupSeries(asset, quote, times, knownAt, { at -> app.prices.policy(current = isCurrent(at, knownAt)) })
         return times.zip(results) { at, result -> MarketPricePoint(at, result.status, result.observation) }
     }
 
@@ -68,10 +78,7 @@ class AnalyticsService internal constructor(
                 instants
                     .zip(
                         market.lookupSeries(asset, quote, instants, knownAt, { at ->
-                            app.prices.policy(
-                                current =
-                                    at >= knownAt - 86_400_000L,
-                            )
+                            app.prices.policy(current = isCurrent(at, knownAt))
                         }),
                     ).toMap()
             }
@@ -84,7 +91,7 @@ class AnalyticsService internal constructor(
                     balance,
                     quote,
                     knownAt,
-                    app.prices.policy(current = at >= knownAt - 86_400_000L),
+                    app.prices.policy(current = isCurrent(at, knownAt)),
                     priceAt = { asset -> prices[asset]?.get(at) },
                     metadataAt = { asset -> metadata[asset]?.firstOrNull { it.effectiveAtMillis <= at } },
                 ),
@@ -206,7 +213,7 @@ class AnalyticsService internal constructor(
         ) {
             return amount.decimal(decimals)
         }
-        val result = market.lookup(amount.assetId, quote, atMillis, knownAt, app.prices.policy(current = atMillis >= knownAt - 86_400_000L))
+        val result = market.lookup(amount.assetId, quote, atMillis, knownAt, app.prices.policy(current = isCurrent(atMillis, knownAt)))
         return if (result.status == PriceStatus.FRESH) result.value(amount, decimals) else null
     }
 
@@ -394,5 +401,10 @@ class AnalyticsService internal constructor(
                 accepted?.let { endpoints[it.providerSourceId] },
             )
         }
+    }
+
+    private companion object {
+        /** A chart takes "now" just before it queries, so its last sample counts as the present one within this slack. */
+        const val CURRENT_SAMPLE_SLACK_MILLIS = 60_000L
     }
 }

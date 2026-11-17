@@ -86,6 +86,32 @@ class HistoricalPriceWorkflowTest {
         }
     }
 
+    /**
+     * A chart sample earlier today keeps an asset whose last price was saved hours before it; dropping the asset made the
+     * day's line fall and jump back between price refreshes. Only the present sample needs a two-hour-old quote.
+     */
+    @Test fun earlierSamplesTodayCarryTheLastPriceWhileThePresentOneNeedsARecentQuote() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val saved = 1_710_000_000_000L
+            var clock = saved
+            val app = PortfolioApplication(db) { clock }
+            app.demo.seed()
+            clock = saved + 10 * 3_600_000L
+            val earlier = saved + 3 * 3_600_000L
+            val points = app.analytics.historySeries(listOf(earlier, clock))
+            assertEquals(PriceStatus.FRESH, points[0].valuations.single().priceStatus)
+            assertEquals(PriceStatus.STALE, points[1].valuations.single().priceStatus)
+            assertEquals(
+                PriceStatus.STALE,
+                app
+                    .snapshot()
+                    .valuations
+                    .single()
+                    .priceStatus,
+            )
+        }
+    }
+
     @Test fun currentValuationRequiresRecentQuoteWhileHistoricalDailyPricesRemainUsable() {
         BundledSqliteDatabase(":memory:").use { db ->
             var clock = 1_710_000_000_000L
