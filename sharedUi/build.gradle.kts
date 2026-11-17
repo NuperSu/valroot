@@ -7,6 +7,8 @@ plugins {
 kotlin {
     jvmToolchain(25)
     jvm()
+    iosArm64()
+    iosSimulatorArm64()
     android {
         namespace = "io.valroot.ui"
         compileSdk = 37
@@ -33,5 +35,8 @@ kotlin {
         implementation(libs.compose.runtime)
         implementation(libs.compose.foundation)
         implementation(libs.compose.material3)
+        // Local dates and times in the device's time zone on every platform.
+        implementation(libs.kotlinx.datetime)
+        implementation(libs.atomicfu)
     }
 }

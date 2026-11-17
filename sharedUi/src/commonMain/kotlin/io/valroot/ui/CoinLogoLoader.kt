@@ -11,6 +11,8 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 
 /** Decodes PNG, JPEG or WebP bytes; null when they are not an image. */
 internal expect fun decodeLogo(bytes: ByteArray): ImageBitmap?
@@ -32,13 +34,14 @@ internal class CoinLogoLoader(
 ) {
     private val memory = mutableMapOf<String, ImageBitmap>()
     private val failed = mutableSetOf<String>()
+    private val lock = kotlinx.atomicfu.locks.SynchronizedObject()
     private val downloads = Semaphore(4)
 
-    fun cached(url: String): ImageBitmap? = synchronized(memory) { memory[url] }
+    fun cached(url: String): ImageBitmap? = kotlinx.atomicfu.locks.synchronized(lock) { memory[url] }
 
     suspend fun load(url: String): ImageBitmap? {
         cached(url)?.let { return it }
-        if (synchronized(memory) { url in failed } || CoingeckoMarkets.logoUrl(url) != url) return null
+        if (kotlinx.atomicfu.locks.synchronized(lock) { url in failed } || CoingeckoMarkets.logoUrl(url) != url) return null
         return try {
             val saved = withContext(database) { app.market.cachedLogo(url) }
             val bytes =
@@ -47,12 +50,12 @@ internal class CoinLogoLoader(
                 }
             val image = bytes?.let(::decodeLogo)
             if (image != null && saved == null) runCatching { withContext(database) { app.market.saveLogo(url, bytes) } }
-            synchronized(memory) { if (image == null) failed += url else memory[url] = image }
+            kotlinx.atomicfu.locks.synchronized(lock) { if (image == null) failed += url else memory[url] = image }
             image
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            synchronized(memory) { failed += url }
+            kotlinx.atomicfu.locks.synchronized(lock) { failed += url }
             null
         }
     }
@@ -67,10 +70,23 @@ internal expect fun chartTime(
 ): String
 
 /** Epoch milliseconds for a date and time in the device's time zone; a time skipped by a clock change moves forward. */
-internal expect fun localToEpochMillis(stamp: io.valroot.core.application.LocalStamp): Long
+internal fun localToEpochMillis(stamp: io.valroot.core.application.LocalStamp): Long =
+    kotlinx.datetime
+        .LocalDateTime(stamp.year, stamp.month, stamp.day, stamp.hour, stamp.minute, stamp.second)
+        .toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
+        .toEpochMilliseconds()
 
 /** The device's time zone name, for example "Europe/Berlin". */
-internal expect fun localZoneName(): String
+internal fun localZoneName(): String =
+    kotlinx.datetime.TimeZone
+        .currentSystemDefault()
+        .id
 
 /** Local time of day with seconds, for example "14:03:27". */
-internal expect fun clockTime(millis: Long): String
+internal fun clockTime(millis: Long): String {
+    val time =
+        kotlin.time.Instant
+            .fromEpochMilliseconds(millis)
+            .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+    return listOf(time.hour, time.minute, time.second).joinToString(":") { it.toString().padStart(2, '0') }
+}

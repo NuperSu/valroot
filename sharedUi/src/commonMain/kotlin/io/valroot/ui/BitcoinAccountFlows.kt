@@ -48,6 +48,7 @@ import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -448,5 +449,5 @@ internal suspend fun endpointProblem(
     consent: Boolean,
 ): String? {
     if (!consent || endpoint == previous || endpoint == io.valroot.core.application.DEFAULT_ENDPOINT) return null
-    return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.checkBitcoinEndpoint(endpoint) }
+    return withContext(kotlinx.coroutines.Dispatchers.IO) { host.checkBitcoinEndpoint(endpoint) }
 }

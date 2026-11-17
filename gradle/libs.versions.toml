@@ -10,6 +10,7 @@ serialization = "1.9.0"
 androidx-sqlite = "2.7.1"
 atomicfu = "0.33.0"
 cryptography = "0.6.0"
+kotlinx-datetime = "0.8.0"
 secp256k1-kmp = "0.24.0"
 bitcoin-kmp = "0.32.0"
 sha3 = "0.8.0"
@@ -18,6 +19,7 @@ sha3 = "0.8.0"
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "androidx-sqlite" }
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptography" }
 cryptography-provider-optimal = { module = "dev.whyoleg.cryptography:cryptography-provider-optimal", version.ref = "cryptography" }
 secp256k1-kmp-jni-jvm = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-jvm", version.ref = "secp256k1-kmp" }
