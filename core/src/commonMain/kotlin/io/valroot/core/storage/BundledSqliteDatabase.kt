@@ -32,7 +32,7 @@ class BundledSqliteDatabase(
         try {
             connection.execSQL("PRAGMA busy_timeout = $LOCK_WAIT_MILLIS")
             if (path != ":memory:") {
-                connection.prepare("PRAGMA journal_mode = WAL").use { it.step() }
+                useWriteAheadLog()
                 connection.execSQL("PRAGMA synchronous = NORMAL")
             }
         } catch (failure: Throwable) {
@@ -99,6 +99,28 @@ class BundledSqliteDatabase(
             }
         }
 
+    /**
+     * Switches a file still in rollback-journal mode (one written by an earlier version) to write-ahead logging. The
+     * switch needs the file to itself, and SQLite refuses it at once, without the busy wait, while another connection is
+     * writing; so a refusal is retried for up to [LOCK_WAIT_MILLIS]. A file already in WAL mode needs no switch.
+     */
+    private fun useWriteAheadLog() {
+        var waited = 0L
+        while (true) {
+            try {
+                val mode = connection.prepare("PRAGMA journal_mode").use { if (it.step()) it.getText(0) else "" }
+                if (mode.equals("wal", ignoreCase = true)) return
+                connection.prepare("PRAGMA journal_mode = WAL").use { it.step() }
+                return
+            } catch (failure: androidx.sqlite.SQLiteException) {
+                val locked = failure.message.orEmpty().let { "locked" in it || "busy" in it.lowercase() || "code: 5" in it }
+                if (!locked || waited >= LOCK_WAIT_MILLIS) throw failure
+                sleepMillis(RETRY_MILLIS)
+                waited += RETRY_MILLIS
+            }
+        }
+    }
+
     private fun open(): SQLiteConnection = if (closed) throw DatabaseClosed() else connection
 
     private fun SQLiteStatement.bind(arguments: List<String?>) =
@@ -107,5 +129,6 @@ class BundledSqliteDatabase(
     companion object {
         /** How long a statement waits for another connection's lock before failing. */
         const val LOCK_WAIT_MILLIS = 30_000L
+        private const val RETRY_MILLIS = 100L
     }
 }

@@ -219,3 +219,6 @@ data class RawObservation(
     val checksum: String,
     val context: String,
 )
+
+/** Blocks the calling thread for [millis] milliseconds. */
+internal expect fun sleepMillis(millis: Long)
