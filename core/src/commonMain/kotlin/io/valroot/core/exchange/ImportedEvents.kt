@@ -18,6 +18,7 @@ import io.valroot.core.model.ActivityId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
+import io.valroot.core.sortedByKeys
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -188,7 +189,7 @@ object ImportedEvents {
         // One report at a time, so a report's records also settle against those of reports settled before it.
         detailed
             .groupBy { it.second.report }
-            .toSortedMap()
+            .sortedByKeys()
             .values
             .forEach { settle(ledger, it, decisions, net = false) }
         val (trades, others) = statement.partition { it.second.kind == RecordKind.TRADE || it.second.kind == RecordKind.CONVERT }
@@ -277,7 +278,7 @@ object ImportedEvents {
         ledger: ExchangeLedgerBuilder,
         records: List<Pair<ExchangeRow, Stored>>,
     ) {
-        records.groupBy { it.second.atMillis }.toSortedMap().forEach { (second, group) ->
+        records.groupBy { it.second.atMillis }.sortedByKeys().forEach { (second, group) ->
             val trades =
                 ledger.activities.filter {
                     it.kind == ActivityKind.TRADE && it.occurredAtEpochMillis in second until second + 1_000

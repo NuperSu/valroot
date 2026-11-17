@@ -65,7 +65,7 @@ object EventMatcher {
         val outcomes = mutableMapOf<String, MatchOutcome>()
         val used = mutableSetOf<String>()
         val byId = mutableMapOf<String, EventShape>()
-        existing.forEach { event -> event.ids.forEach { byId.putIfAbsent(it, event) } }
+        existing.forEach { event -> event.ids.forEach { if (it !in byId) byId[it] = event } }
         val remaining =
             records.filter { record ->
                 val event = record.ids.firstNotNullOfOrNull { byId[it] }?.takeIf { it.kind == record.kind && it.id !in used }

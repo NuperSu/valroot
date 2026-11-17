@@ -16,6 +16,8 @@ tasks.register<JavaExec>("bitcoinHeapStress") {
 kotlin {
     jvmToolchain(25)
     jvm()
+    iosArm64()
+    iosSimulatorArm64()
     android {
         namespace = "io.valroot.core"
         compileSdk = 37

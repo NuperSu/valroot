@@ -2,6 +2,7 @@ package io.valroot.core.bitcoin
 
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
+import io.valroot.core.sortedByKeys
 import io.valroot.core.storage.SqliteDatabase
 import io.valroot.core.storage.sha256
 import kotlin.time.ExperimentalTime
@@ -308,7 +309,7 @@ class BitcoinGraphDeltaRepository(
     companion object {
         fun scopeKey(owners: Map<String, AccountId>): String =
             sha256(
-                owners.toSortedMap().entries.joinToString(
+                owners.sortedByKeys().entries.joinToString(
                     "",
                 ) { (address, account) -> "${address.length}:$address${account.value.length}:${account.value}" },
             )

@@ -1,5 +1,7 @@
 package io.valroot.core.model
 
+import kotlin.jvm.JvmInline
+
 @JvmInline
 value class PortfolioId(
     val value: String,

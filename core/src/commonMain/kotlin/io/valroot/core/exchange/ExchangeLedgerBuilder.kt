@@ -12,6 +12,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.SourceRecordId
+import io.valroot.core.sortedByKeys
 
 /**
  * Collects the activities of one exchange decode. Each activity's ID is `<exchange>:<uid>:<key>`; a record that moves
@@ -143,7 +144,7 @@ internal class ExchangeLedgerBuilder(
             byCoin[coin]
                 .orEmpty()
                 .groupBy { it.order }
-                .toSortedMap()
+                .sortedByKeys()
                 .values
                 .forEach { group ->
                     running += group.fold(ZERO) { sum, change -> sum + change.amount }

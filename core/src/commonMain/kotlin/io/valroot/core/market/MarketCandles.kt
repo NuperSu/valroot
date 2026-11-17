@@ -145,26 +145,25 @@ internal object CoingeckoCandleCache {
     const val MAX_AGE_MILLIS = 3 * 60_000L
     private const val MAX_ENTRIES = 64
     private val entries = LinkedHashMap<String, Pair<Long, List<MarketCandle>>>()
+    private val lock = kotlinx.atomicfu.locks.SynchronizedObject()
 
-    @Synchronized
     fun get(
         key: String,
         now: Long,
-    ): List<MarketCandle>? = entries[key]?.takeIf { now - it.first in 0 until MAX_AGE_MILLIS }?.second
+    ): List<MarketCandle>? =
+        kotlinx.atomicfu.locks.synchronized(lock) { entries[key]?.takeIf { now - it.first in 0 until MAX_AGE_MILLIS }?.second }
 
-    @Synchronized
     fun put(
         key: String,
         now: Long,
         candles: List<MarketCandle>,
-    ) {
+    ) = kotlinx.atomicfu.locks.synchronized(lock) {
         entries.remove(key)
         entries[key] = now to candles
         while (entries.size > MAX_ENTRIES) entries.remove(entries.keys.first())
     }
 
-    @Synchronized
-    fun clear() = entries.clear()
+    fun clear() = kotlinx.atomicfu.locks.synchronized(lock) { entries.clear() }
 }
 
 /**

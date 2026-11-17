@@ -3,6 +3,7 @@ package io.valroot.core.bitcoin
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.isHash64
+import io.valroot.core.sortedByKeys
 import io.valroot.core.storage.SqliteDatabase
 import io.valroot.core.storage.sha256
 import kotlin.time.ExperimentalTime
@@ -132,7 +133,7 @@ class BitcoinGraphRepository(
                 },
             ),
         )
-        graph.ownedAddresses.toSortedMap().forEach { (address, account) ->
+        graph.ownedAddresses.sortedByKeys().forEach { (address, account) ->
             insert("bitcoin_graph_scope", listOf(id.toString(), address, account.value))
         }
         graph.transactions.values.forEach { tx ->
@@ -572,7 +573,7 @@ class BitcoinGraphRepository(
 
     private fun scopeKey(owners: Map<String, AccountId>): String =
         sha256(
-            owners.toSortedMap().entries.joinToString(
+            owners.sortedByKeys().entries.joinToString(
                 "",
             ) { (address, account) -> "${address.length}:$address${account.value.length}:${account.value}" },
         )

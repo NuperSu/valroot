@@ -17,6 +17,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
+import io.valroot.core.sortedByKeys
 
 /** Which account an import's records go to: by the exchange's user ID, or by the user's choice when the files do not say. */
 data class ImportAssignment(
@@ -356,7 +357,7 @@ class ExchangeImportService internal constructor(
             record.namespace.orEmpty(),
             record.nativeId.orEmpty(),
             record.details
-                .toSortedMap()
+                .sortedByKeys()
                 .entries
                 .joinToString(";") { "${it.key}=${it.value}" },
         ).joinToString("|")

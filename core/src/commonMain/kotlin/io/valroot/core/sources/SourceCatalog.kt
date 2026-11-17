@@ -8,6 +8,7 @@ import io.valroot.core.model.ProviderId
 import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TrackingTarget
+import kotlin.jvm.JvmInline
 
 @JvmInline
 value class ConnectorId(

@@ -168,7 +168,7 @@ class CoingeckoPriceClient(
     private fun dayUtcDate(dayUtcMillis: Long): String {
         val days = dayUtcMillis / MILLIS_PER_DAY
         val (year, month, day) = civilFromDays(days)
-        return "%02d-%02d-%04d".format(day, month, year)
+        return "${day.toString().padStart(2, '0')}-${month.toString().padStart(2, '0')}-${year.toString().padStart(4, '0')}"
     }
 
     private companion object {

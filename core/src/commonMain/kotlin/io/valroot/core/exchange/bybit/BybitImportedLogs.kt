@@ -15,6 +15,7 @@ import io.valroot.core.ledger.MovementRole
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
+import io.valroot.core.sortedByKeys
 import kotlin.math.abs
 
 /** Reconstructs wallet logs before Bybit's wallet opening calculation, matching API rows by balance and change. */
@@ -55,7 +56,7 @@ internal class BybitImportedLogs(
         build: (ExchangeRow, ImportedEvents.Stored) -> T,
     ): List<Pair<T, SourceRecordId>> {
         val all = api.toMutableList()
-        logRecords.filter { it.second.wallet == wallet }.groupBy { it.second.report }.toSortedMap().values.forEach { report ->
+        logRecords.filter { it.second.wallet == wallet }.groupBy { it.second.report }.sortedByKeys().values.forEach { report ->
             val candidates = all.associateBy { it.second.value }
             val existing = all.map { (entry, source) -> apiShape(entry, source.value) }
             val shapes =

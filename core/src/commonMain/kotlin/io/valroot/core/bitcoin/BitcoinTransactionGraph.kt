@@ -3,6 +3,7 @@ package io.valroot.core.bitcoin
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.isCanonicalUnsigned
+import io.valroot.core.sortedByKeys
 import io.valroot.core.storage.sha256
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -272,7 +273,7 @@ class BitcoinUtxoGraph internal constructor(
                 require(previous == null || previous.first == sha256(payload)) { "Transaction has conflicting observations" }
                 byId[tx.id] = sha256(payload) to tx
             }
-            val transactions = byId.mapValues { it.value.second }.toSortedMap()
+            val transactions = byId.mapValues { it.value.second }.sortedByKeys()
             val spenders = mutableMapOf<BitcoinOutpoint, MutableList<String>>()
             transactions.values.forEach { tx ->
                 tx.inputs.forEach { input -> input.spends?.let { spenders.getOrPut(it) { mutableListOf() }.add(tx.id) } }
@@ -306,7 +307,7 @@ class BitcoinUtxoGraph internal constructor(
             val conflicts =
                 spenders
                     .filter { it.value.size > 1 }
-                    .toSortedMap()
+                    .sortedByKeys()
                     .map { (outpoint, ids) ->
                         val confirmed = ids.filter { transactions.getValue(it).confirmed }
                         require(confirmed.size <= 1) { "Provider reported conflicting confirmed transactions" }
