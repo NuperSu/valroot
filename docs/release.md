@@ -22,7 +22,7 @@ Valroot 1.0.0 is a local-first, watch-only portfolio tracker for Android (8.0 an
 
 ## Accounting
 
-- FIFO per owner, account and asset, in the portfolio currency. Transfers between your own accounts, including accepted transfer links, keep each lot's cost and age.
+- FIFO per owner, account and asset, in the portfolio currency. Transfers between your own accounts, through reviewed links or links found from a shared on-chain transaction, keep each lot's cost and age; other arrivals and departures count at their market value at the time.
 - A transaction without a classification, or priced in another currency, leaves its cost basis and gains unknown rather than guessed. Rewards may optionally count with zero cost.
 - Returns are money-weighted ([insights](insights.md)). No tax-jurisdiction rules, reports or filing are provided.
 
