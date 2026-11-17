@@ -3,10 +3,10 @@ package io.valroot.android
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.readBoundedText
-import io.valroot.core.storage.walIsEmpty
+import io.valroot.ui.host.BackupWorkflow
+import io.valroot.ui.host.JvmDatabaseFiles
+import io.valroot.ui.host.RestoreHost
 import kotlinx.coroutines.flow.update
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 /**
  * File import and export: CSV text in, and encrypted backups out and back in. A restore builds the new database in a
@@ -62,24 +62,7 @@ internal class AndroidBackups(
                 if (uri == null) {
                     onResult("Backup was not saved")
                 } else {
-                    state.backupWork.value = "Saving backup…"
-                    state.executor.execute {
-                        val secret = password.toCharArray()
-                        val success =
-                            try {
-                                runCatching {
-                                    state.files.write(uri) { out ->
-                                        requireNotNull(state.app.value).backup.export(secret) { b, o, l -> out.write(b, o, l) }
-                                    }
-                                }.isSuccess
-                            } finally {
-                                secret.fill('\u0000')
-                            }
-                        state.main.post {
-                            state.backupWork.value = null
-                            onResult(if (success) "Backup saved" else "Could not save backup")
-                        }
-                    }
+                    workflow.save(password, { export -> state.files.write(uri) { out -> export { b, o, l -> out.write(b, o, l) } } }, onResult)
                 }
             }
         }
@@ -128,124 +111,82 @@ internal class AndroidBackups(
         state.openedBackup.value = null
     }
 
+    /**
+     * Restores on the sync thread, so it never overlaps a scan. Every use of the live connection runs on the database
+     * executor through [RestoreHost.onData], in turn with the screens' queries and the activity's close, so none of them
+     * meets a connection being closed or replaced.
+     */
     private fun restoreBackup(
         uri: android.net.Uri,
         password: String,
         onResult: (String) -> Unit,
-    ) {
-        // Restore replaces the database file, so it shares the sync thread and cannot overlap a running scan. Every use
-        // of the live connection runs on the database executor through [onDb], in turn with the screens' queries and
-        // the activity's close, so none of them meets a connection being closed or replaced.
-        state.backupWork.value = "Restoring backup…"
-        RefreshWorker.syncExecutor.execute {
-            var staging: java.nio.file.Path? = null
-            var result = "Could not restore backup"
-            var swapped = false
-            var reopened = false
-            var pricePaused = false
-            var replacementReady = false
-            try {
-                staging = Files.createTempFile(state.file.parent, "restore-", ".sqlite")
-                BundledSqliteDatabase(
-                    staging.toString(),
-                ).use { stagingDb ->
-                    onDb {
-                        state.files.read(uri) { input ->
-                            requireNotNull(state.app.value).backup.restoreToStaging(
-                                stagingDb,
-                                { b, o, l -> input.read(b, o, l) },
-                                password.toCharArray(),
-                            )
-                        }
-                    }
+    ) = workflow.restore(
+        password,
+        { task ->
+            RefreshWorker.syncExecutor.execute(task)
+            true
+        },
+        { read -> state.files.read(uri) { input -> read { b, o, l -> input.read(b, o, l) } } },
+        onResult,
+    )
+
+    private val restoreHost =
+        object : RestoreHost {
+            override val files = JvmDatabaseFiles(state.file)
+
+            /** Runs [task] on the database executor and waits; fails once the activity has closed, since its close follows. */
+            override fun <T> onData(task: () -> T): T =
+                try {
+                    state.executor
+                        .submit(
+                            java.util.concurrent.Callable {
+                                check(!state.closed) { "Valroot closed during the restore" }
+                                task()
+                            },
+                        ).get()
+                } catch (failure: java.util.concurrent.ExecutionException) {
+                    throw failure.cause as? Exception ?: failure
                 }
-                java.nio.channels.FileChannel
-                    .open(staging, java.nio.file.StandardOpenOption.WRITE)
-                    .use { it.force(true) }
+
+            override fun current(): PortfolioApplication = requireNotNull(state.app.value)
+
+            override fun pauseBackgroundWork(app: PortfolioApplication) {
                 AutomaticPriceGate.paused = true
-                pricePaused = true
-                onDb {
-                    requireNotNull(state.app.value).prices.invalidateAutomaticRequests()
-                    PriceHistoryWorker.invalidate()
-                    // This short transaction waits for earlier price commits and invalidates their consent generation.
-                    requireNotNull(state.app.value).let { it.prices.setSourceConsent(it.prices.sourceConsent()) }
-                }
-                onDb {
-                    synchronized(AutomaticPriceGate.lock) {
-                        state.db.close()
-                        try {
-                            // Another connection still holding a write-ahead log would replay it into the restored file.
-                            check(walIsEmpty(state.file)) { "Valroot is still writing; retry the restore" }
-                            Files.move(staging, state.file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-                            swapped = true
-                        } finally {
-                            state.db = BundledSqliteDatabase(state.file.toString())
-                            reopened = true
-                        }
-                        publish(PortfolioApplication(state.db, System::currentTimeMillis))
-                        replacementReady = true
-                    }
-                }
-                result = "Backup restored"
-            } catch (failure: Exception) {
-                // Validation messages (wrong password, damaged or unsupported backup) explain a rejected file.
-                if (!swapped && failure is IllegalArgumentException) result = failure.message ?: result
-                if (swapped) result = "Backup restored; reopen the app to load it"
-                if (reopened && !replacementReady) {
-                    runCatching { onDb { publish(PortfolioApplication(state.db, System::currentTimeMillis)) } }
-                }
-            } finally {
-                if (pricePaused) {
-                    AutomaticPriceGate.paused = false
-                    if (swapped && replacementReady) {
-                        val scheduled =
-                            runCatching {
-                                onDb {
-                                    state.app.value?.let { app ->
-                                        sync.reconcileRefreshPreferences(app)
-                                        // The restored settings decide whether periodic notification checks run.
-                                        runCatching { NotificationWorker.schedule(state.activity, app.notifications.active()) }
-                                    }
-                                }
-                            }
-                        if (scheduled.isFailure) result = "Backup restored; automatic price scheduling could not be updated"
-                    }
-                }
-                staging?.let { runCatching { Files.deleteIfExists(it) } }
+                PriceHistoryWorker.invalidate()
+                // This short transaction waits for earlier price commits and invalidates their consent generation.
+                app.prices.setSourceConsent(app.prices.sourceConsent())
             }
-            val message = result
-            state.main.post {
-                state.backupWork.value = null
-                if (!state.closed) onResult(message)
+
+            override fun resumeBackgroundWork() {
+                AutomaticPriceGate.paused = false
+            }
+
+            override fun <T> underWriteGate(block: () -> T): T = synchronized(AutomaticPriceGate.lock) { block() }
+
+            override fun closeLive() = state.db.close()
+
+            override fun reopenLive() {
+                state.db = BundledSqliteDatabase(state.file.toString())
+            }
+
+            /** Hands a new application to the screens on the main thread and waits until they hold it. */
+            override fun publishFresh() {
+                val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
+                val updated = java.util.concurrent.CountDownLatch(1)
+                state.main.post {
+                    state.app.value = replacement
+                    state.dataRevision.update { it + 1 }
+                    updated.countDown()
+                }
+                updated.await()
+            }
+
+            override fun afterRestore(app: PortfolioApplication) {
+                sync.reconcileRefreshPreferences(app)
+                // The restored settings decide whether periodic notification checks run.
+                runCatching { NotificationWorker.schedule(state.activity, app.notifications.active()) }
             }
         }
-    }
 
-    /**
-     * Runs [block] on the database executor and waits for it. It fails once the activity has closed, since the close
-     * that follows on the same executor releases the connection.
-     */
-    private fun <T> onDb(block: () -> T): T =
-        try {
-            state.executor
-                .submit(
-                    java.util.concurrent.Callable {
-                        check(!state.closed) { "Valroot closed during the restore" }
-                        block()
-                    },
-                ).get()
-        } catch (failure: java.util.concurrent.ExecutionException) {
-            throw failure.cause as? Exception ?: failure
-        }
-
-    /** Hands [replacement] to the screens on the main thread and waits until they hold it. */
-    private fun publish(replacement: PortfolioApplication) {
-        val updated = java.util.concurrent.CountDownLatch(1)
-        state.main.post {
-            state.app.value = replacement
-            state.dataRevision.update { it + 1 }
-            updated.countDown()
-        }
-        updated.await()
-    }
+    private val workflow = BackupWorkflow(restoreHost, state.threads, state.backupWork)
 }

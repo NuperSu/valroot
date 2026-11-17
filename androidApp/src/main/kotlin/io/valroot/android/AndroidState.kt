@@ -34,7 +34,8 @@ internal class AndroidState(
             override fun secret(block: () -> Unit) = secretExecutor.execute(block)
 
             override fun main(block: () -> Unit) {
-                this@AndroidState.main.post(block)
+                // A closed activity's screens are gone; their callbacks are dropped.
+                this@AndroidState.main.post { if (!closed) block() }
             }
         }
     val file = activity.getDatabasePath("portfolio.sqlite").toPath()
