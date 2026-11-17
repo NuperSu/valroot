@@ -47,12 +47,8 @@ internal class SecureLockStore(
     override val hasLock: Boolean get() = Files.exists(marker)
 
     override fun read(): String {
-        val value = Files.readString(marker)
-        return if (value == MARKER) {
-            command.run(listOf("lookup") + attributes, null).also { check(it.isNotEmpty()) }
-        } else {
-            value
-        }
+        check(Files.readString(marker) == MARKER) { "Unknown privacy lock marker" }
+        return command.run(listOf("lookup") + attributes, null).also { check(it.isNotEmpty()) }
     }
 
     override fun write(verifier: String) {
@@ -67,12 +63,8 @@ internal class SecureLockStore(
         }
     }
 
-    override fun migrate(verifier: String) {
-        if (Files.readString(marker) != MARKER) write(verifier)
-    }
-
     override fun remove() {
-        if (Files.readString(marker) == MARKER) command.run(listOf("clear") + attributes, null)
+        command.run(listOf("clear") + attributes, null)
         Files.delete(marker)
     }
 

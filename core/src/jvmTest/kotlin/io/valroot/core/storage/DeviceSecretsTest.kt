@@ -37,14 +37,12 @@ class DeviceSecretsTest {
     }
 
     @Test
-    fun aPlaintextSecretIsSealedWhenReadAndAnUnreadableOneCountsAsMissing() {
+    fun anUnsealedOrUnreadableSecretCountsAsMissing() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val stored = MarketFeedRepository(db)
             stored.putDeviceSetting("coingecko_api_key", "CG-plain-0123456789")
-            assertEquals("CG-plain-0123456789", app.market.coingeckoApiKey())
-            assertTrue(stored.deviceSetting("coingecko_api_key")!!.startsWith(SEALED_SECRET))
-            assertEquals("CG-plain-0123456789", app.market.coingeckoApiKey())
+            assertNull(app.market.coingeckoApiKey())
             // Sealed with another device's key: asked for again rather than failing.
             stored.putDeviceSetting("bybit_key:a", SEALED_SECRET + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
             stored.putDeviceSetting("bybit_secret:a", DeviceSecrets.seal("SECRETSECRETSECRET"))

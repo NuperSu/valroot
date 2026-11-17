@@ -55,7 +55,6 @@ internal class DesktopHost(
         )
     private val backups = DesktopBackups(state, { reconcileRefreshPreferences() }, { notifications.reconcileChecks() })
     private var refreshTask: ScheduledFuture<*>? = null
-    private val refreshPreference = directory.resolve("background-refresh")
 
     override val dispatcher: CoroutineDispatcher = state.executor.asCoroutineDispatcher()
     override val dataRevision = state.dataRevision
@@ -184,7 +183,7 @@ internal class DesktopHost(
 
     override fun refreshPreferences(): RefreshPreferences =
         RefreshPreferences(
-            app.value.settings.automaticRefresh() ?: (Files.exists(refreshPreference) || app.value.prices.automaticConsent()),
+            app.value.settings.automaticRefresh() ?: app.value.prices.automaticConsent(),
             app.value.settings.wifiOnlyRefresh(),
         )
 

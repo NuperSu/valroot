@@ -108,41 +108,6 @@ class StorageTest {
     }
 
     @Test
-    fun migrationRollsBackOnConflictingSchemaAndCanRetry() {
-        val path = Files.createTempFile("valroot-migration", ".sqlite")
-        try {
-            BundledSqliteDatabase(path.toString()).use { db ->
-                Store(db)
-                listOf("portfolio_owners", "portfolio_accounts", "ownership_tags", "targets", "accounts", "portfolios", "owners").forEach {
-                    db.execute("DROP TABLE $it")
-                }
-                db.execute("DROP TABLE ledger_fee_candidates")
-                db.execute("DROP TABLE ledger_unallocated_fees")
-                db.execute("DROP TABLE ledger_sources")
-                db.execute("DROP TABLE ledger_movements")
-                db.execute("DROP TABLE ledger_activities")
-                io.valroot.core.bitcoin.bitcoinGraphDeltaTables
-                    .reversed()
-                    .forEach { db.execute("DROP TABLE $it") }
-                io.valroot.core.bitcoin.bitcoinGraphTables
-                    .reversed()
-                    .forEach { db.execute("DROP TABLE $it") }
-                db.execute("PRAGMA user_version = 1")
-                db.execute("CREATE TABLE ledger_movements (conflict TEXT)")
-                assertFails { Store(db) }
-                assertEquals("1", db.query("PRAGMA user_version").single().single())
-                assertEquals(emptyList(), db.query("SELECT name FROM sqlite_master WHERE name='ledger_activities'"))
-                db.execute("DROP TABLE ledger_movements")
-                Store(db)
-                assertEquals("6", db.query("PRAGMA user_version").single().single())
-            }
-            BundledSqliteDatabase(path.toString()).use { db -> Store(db) }
-        } finally {
-            Files.deleteIfExists(path)
-        }
-    }
-
-    @Test
     fun snapshotReopensWithCommittedData() {
         val original = Files.createTempFile("valroot-source", ".sqlite")
         val backup = original.resolveSibling(original.fileName.toString() + ".backup")

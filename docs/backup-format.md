@@ -8,7 +8,7 @@ Code: `core/…/backup/Backup.kt` (body), `ByteStreams.kt` (field encoding), and
 
 ```
 header (34 bytes, authenticated with every chunk)
-  5  magic        "VLRBK" ("PLNBK" in backups made under the name Polion, still accepted)
+  5  magic        "VLRBK"
   1  version      3
   1  kdf          1 = PBKDF2-HMAC-SHA256
   4  iterations   big-endian, written as 600 000; accepted 100 000 – 10 000 000
@@ -34,7 +34,7 @@ frames, repeated
 A sequence of fields. Each field is a 4-byte big-endian length followed by that many UTF-8 bytes; a length of -1 is a null value.
 
 ```
-"VALROOT-BACKUP" "3" <schema user_version> <table count>     ("POLION-BACKUP" in older backups, still accepted)
+"VALROOT-BACKUP" "3" <schema user_version> <table count>
 per durable table, in name order:
   <table> <column count> <column>...
   per row, in rowid order:  "R" <value>...
@@ -45,7 +45,7 @@ per durable table, in name order:
 - **Tables:** durable tables are every application table except the Bitcoin scan scratch tables, the market feed cache (`market_feed_cache`), device-only settings such as API keys (`device_settings`) and `android_metadata`. Tables with "secret" or "credential" in the name are refused, and binary columns are refused.
 - **Export:** export runs inside one read transaction, so the snapshot is consistent, and pages rows by rowid.
 - **Restore checks:** restore writes into a new staging database created by the current application. It rejects:
-  - a newer schema version;
+  - a schema version other than the app's;
   - a different table set or column list;
   - out-of-order tables;
   - a mismatched subsystem `_schema` row;

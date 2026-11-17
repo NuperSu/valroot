@@ -34,6 +34,9 @@ fun sha256Hex(bytes: ByteArray): String =
  */
 class DatabaseClosed : kotlin.coroutines.cancellation.CancellationException("The database was closed")
 
+/** The database's `user_version`. */
+const val SCHEMA_VERSION = 6
+
 class Store(
     private val db: SqliteDatabase,
 ) : AutoCloseable {
@@ -46,7 +49,8 @@ class Store(
                     .single()
                     .single()!!
                     .toInt()
-            require(version in 0..6) { "Unsupported database schema version $version" }
+            require(version == 0 || version == SCHEMA_VERSION) { "Unsupported database schema version $version" }
+            // A new database gets every table at once; an existing one is already at [SCHEMA_VERSION].
             if (version == 0) {
                 db.execute(
                     "CREATE TABLE raw_records (id TEXT PRIMARY KEY, namespace TEXT NOT NULL, external_id TEXT NOT NULL, network TEXT NOT NULL, UNIQUE(namespace, external_id, network))",
@@ -57,9 +61,6 @@ class Store(
                 db.execute(
                     "CREATE TABLE raw_observations (record_id TEXT NOT NULL, checksum TEXT NOT NULL, source_id TEXT NOT NULL, retrieved_at TEXT NOT NULL, context TEXT NOT NULL, PRIMARY KEY(record_id, checksum, source_id, retrieved_at), FOREIGN KEY(record_id, checksum) REFERENCES raw_revisions(record_id, checksum))",
                 )
-                db.execute("PRAGMA user_version = 1")
-            }
-            if (version < 2) {
                 db.execute(
                     "CREATE TABLE ledger_activities (id TEXT NOT NULL, revision INTEGER NOT NULL, occurred TEXT NOT NULL, ordering_key TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, decoder TEXT, manual INTEGER NOT NULL, PRIMARY KEY(id, revision))",
                 )
@@ -69,9 +70,6 @@ class Store(
                 db.execute(
                     "CREATE TABLE ledger_sources (activity_id TEXT NOT NULL, revision INTEGER NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY(activity_id, revision, source_id), FOREIGN KEY(activity_id, revision) REFERENCES ledger_activities(id, revision))",
                 )
-                db.execute("PRAGMA user_version = 2")
-            }
-            if (version < 3) {
                 db.execute("CREATE TABLE owners (id TEXT PRIMARY KEY, label TEXT NOT NULL)")
                 db.execute(
                     "CREATE TABLE accounts (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), label TEXT NOT NULL, kind TEXT NOT NULL, parent_id TEXT REFERENCES accounts(id) DEFERRABLE INITIALLY DEFERRED)",
@@ -89,30 +87,18 @@ class Store(
                 db.execute(
                     "CREATE TABLE ownership_tags (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY(entity_type, entity_id, tag))",
                 )
-                db.execute("PRAGMA user_version = 3")
-            }
-            if (version < 4) {
                 db.execute(
                     "CREATE TABLE ledger_unallocated_fees (activity_id TEXT NOT NULL, revision INTEGER NOT NULL, position INTEGER NOT NULL, asset_id TEXT NOT NULL, units TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(activity_id, revision, position), FOREIGN KEY(activity_id, revision) REFERENCES ledger_activities(id, revision))",
                 )
                 db.execute(
                     "CREATE TABLE ledger_fee_candidates (activity_id TEXT NOT NULL, revision INTEGER NOT NULL, fee_position INTEGER NOT NULL, account_id TEXT NOT NULL, PRIMARY KEY(activity_id, revision, fee_position, account_id), FOREIGN KEY(activity_id, revision, fee_position) REFERENCES ledger_unallocated_fees(activity_id, revision, position))",
                 )
-                db.execute("PRAGMA user_version = 4")
-            }
-            if (version < 5) {
                 io.valroot.core.bitcoin
                     .createBitcoinGraphTables(db)
-                db.execute("PRAGMA user_version = 5")
-            }
-            if (version < 6) {
                 io.valroot.core.bitcoin
                     .createBitcoinGraphDeltaTables(db)
-                db.execute("PRAGMA user_version = 6")
+                db.execute("PRAGMA user_version = $SCHEMA_VERSION")
             }
-            // The archive tag of databases and backups made under the app's former name, Polion.
-            db.execute("UPDATE OR IGNORE ownership_tags SET tag='valroot:archived' WHERE tag='polion:archived'")
-            db.execute("DELETE FROM ownership_tags WHERE tag='polion:archived'")
             val requiredTables =
                 listOf(
                     "raw_records",

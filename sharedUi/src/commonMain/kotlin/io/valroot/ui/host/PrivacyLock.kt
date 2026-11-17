@@ -16,9 +16,6 @@ interface LockVerifierStore {
     fun write(verifier: String)
 
     fun remove()
-
-    /** Rewrites a verifier kept in an older form; does nothing when it is current. */
-    fun migrate(verifier: String) {}
 }
 
 /**
@@ -83,9 +80,7 @@ class PrivacyLock(
         threads.secret {
             val result =
                 runCatching {
-                    val verifier = store.read()
-                    if (LockPassword.verify(password, verifier)) {
-                        store.migrate(verifier)
+                    if (LockPassword.verify(password, store.read())) {
                         UnlockResult(true)
                     } else {
                         UnlockResult(false, "Incorrect password")

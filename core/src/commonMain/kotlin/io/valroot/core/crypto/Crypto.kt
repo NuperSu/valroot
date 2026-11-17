@@ -35,7 +35,7 @@ object Crypto {
 
     /**
      * PBKDF2-HMAC-SHA256 of [password], encoded as UTF-8 the way the JDK's `PBKDF2WithHmacSHA256` does (an unpaired
-     * surrogate becomes `?`), so keys match what earlier versions derived.
+     * surrogate becomes `?`), so every platform derives the same key for existing backups and lock passwords.
      */
     fun pbkdf2Sha256(
         password: CharArray,

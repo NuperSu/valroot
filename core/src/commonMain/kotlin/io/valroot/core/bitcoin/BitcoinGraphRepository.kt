@@ -44,7 +44,7 @@ internal val bitcoinGraphTables =
         "bitcoin_graph_replacements",
     )
 
-/** Additive Store schema; graph evidence is empty when opening a pre-graph archive. */
+/** The Bitcoin graph tables of the Store schema. */
 internal fun createBitcoinGraphTables(db: SqliteDatabase) {
     db.execute(
         "CREATE TABLE bitcoin_graph_snapshots (id INTEGER PRIMARY KEY, scope_key TEXT NOT NULL, provider_source_id TEXT NOT NULL, anchor_height INTEGER NOT NULL, anchor_hash TEXT NOT NULL, observed_at TEXT NOT NULL, compared INTEGER NOT NULL)",

@@ -74,18 +74,8 @@ fun main(args: Array<String>) {
     }
 }
 
-/**
- * The data folder under [share]. The folder of the app's former name, Polion, is moved to it once, when it does not exist
- * yet; an existing Valroot folder is never merged with it.
- */
-internal fun dataDirectory(share: Path): Path {
-    val directory = share.resolve("valroot")
-    val legacy = share.resolve("polion")
-    if (!Files.exists(directory) && Files.isDirectory(legacy)) {
-        runCatching { Files.move(legacy, directory, java.nio.file.StandardCopyOption.ATOMIC_MOVE) }
-    }
-    return directory
-}
+/** The data folder under [share]. */
+internal fun dataDirectory(share: Path): Path = share.resolve("valroot")
 
 /** The key that seals API secrets: in the configuration folder, so copying the data folder does not copy it. */
 internal fun deviceSecretKeyFile(home: Path): Path = home.resolve(".config").resolve("valroot").resolve("device-secret.key")

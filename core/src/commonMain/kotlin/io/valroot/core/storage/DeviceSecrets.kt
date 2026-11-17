@@ -12,5 +12,5 @@ expect object DeviceSecrets {
     fun open(sealed: String): String?
 }
 
-/** Prefix of sealed values; a stored value without it was saved before sealing and is sealed when next read. */
+/** Prefix of sealed values. */
 const val SEALED_SECRET = "sealed1:"

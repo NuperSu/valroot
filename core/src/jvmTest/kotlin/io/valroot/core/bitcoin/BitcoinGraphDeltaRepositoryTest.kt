@@ -9,7 +9,6 @@ import io.valroot.core.storage.sha256
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
-import kotlin.test.assertNull
 
 class BitcoinGraphDeltaRepositoryTest {
     private val address = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
@@ -157,7 +156,7 @@ class BitcoinGraphDeltaRepositoryTest {
     }
 
     @Test
-    fun nativeArchivePreservesRangesAndVersionFiveArchiveRetainsLegacyEvidence() {
+    fun nativeArchivePreservesRanges() {
         BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val first = save(db, listOf(payload("a".repeat(64))))
@@ -187,34 +186,6 @@ class BitcoinGraphDeltaRepositoryTest {
                         .value
                         .toString(),
                 )
-            }
-        }
-        BundledSqliteDatabase(":memory:").use { old ->
-            Store(old)
-            bitcoinGraphDeltaTables.asReversed().forEach { old.execute("DROP TABLE $it") }
-            old.execute("PRAGMA user_version = 5")
-            val raw = payload("a".repeat(64))
-            val graph = BitcoinUtxoGraph.build(listOf(raw), scope)
-            val id =
-                old.transaction {
-                    BitcoinGraphRepository(old).saveInTransaction(
-                        graph,
-                        "provider",
-                        anchor,
-                        "2026-10-29T00:00:00Z",
-                        mapOf(
-                            "a".repeat(64) to sha256(raw),
-                        ),
-                    )
-                }
-            val archive = PortableBackup.discover(old).export(old)
-            BundledSqliteDatabase(":memory:").use { restored ->
-                Store(restored)
-                BitcoinGraphDeltaRepository(restored)
-                PortableBackup.discover(restored).restoreToStaging(restored, archive)
-                assertNull(BitcoinGraphDeltaRepository(restored).snapshot(id))
-                assertEquals(graph.ownedOutputs, BitcoinGraphRepository(restored).snapshot(id)!!.graph.ownedOutputs)
-                assertEquals("6", restored.query("PRAGMA user_version").single().single())
             }
         }
     }

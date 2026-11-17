@@ -25,13 +25,6 @@ class EvmChainRepository(
             "CREATE TABLE IF NOT EXISTS evm_chains (address TEXT NOT NULL, chain_id INTEGER NOT NULL, head TEXT, last_success INTEGER, " +
                 "balance_difference TEXT, error TEXT, coverage TEXT, PRIMARY KEY(address, chain_id))",
         )
-        if (db
-                .query(
-                    "PRAGMA table_info(evm_chains)",
-                ).none { it[1] == "coverage" }
-        ) {
-            db.execute("ALTER TABLE evm_chains ADD COLUMN coverage TEXT")
-        }
     }
 
     fun states(address: String? = null): List<EvmChainState> =

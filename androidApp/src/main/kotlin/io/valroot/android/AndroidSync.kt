@@ -22,8 +22,7 @@ internal class AndroidSync(
     private val prices: AndroidPrices,
 ) {
     fun refreshPreferences(): RefreshPreferences =
-        state.app.value?.let(::readRefreshPreferences)
-            ?: RefreshPreferences(state.preferences.getBoolean("background_refresh", false))
+        state.app.value?.let(::readRefreshPreferences) ?: RefreshPreferences(false)
 
     fun updateRefreshPreferences(preferences: RefreshPreferences) {
         val application = state.app.value ?: return
@@ -56,8 +55,7 @@ internal class AndroidSync(
 
     private fun readRefreshPreferences(application: PortfolioApplication): RefreshPreferences =
         RefreshPreferences(
-            application.settings.automaticRefresh()
-                ?: (state.preferences.getBoolean("background_refresh", false) || application.prices.automaticConsent()),
+            application.settings.automaticRefresh() ?: application.prices.automaticConsent(),
             application.settings.wifiOnlyRefresh(),
         )
 

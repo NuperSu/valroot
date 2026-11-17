@@ -15,11 +15,11 @@ import kotlin.test.assertTrue
 
 class DesktopRestoreTest {
     @Test
-    fun refreshPreferencesMigrateAndRespectExplicitDisableAfterRestore() {
+    fun restoredRefreshPreferencesKeepAnExplicitDisable() {
         val directory = Files.createTempDirectory("valroot-refresh-preferences-")
-        Files.writeString(directory.resolve("background-refresh"), "enabled")
         val host = DesktopHost(directory, false)
         try {
+            host.updateRefreshPreferences(io.valroot.ui.RefreshPreferences(automaticRefresh = true))
             assertTrue(host.refreshPreferences().automaticRefresh)
             host.updateRefreshPreferences(io.valroot.ui.RefreshPreferences(automaticRefresh = false, wifiOnly = true))
             assertEquals(false, host.backgroundRefreshEnabled())

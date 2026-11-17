@@ -37,13 +37,7 @@ class OverlayRepository(
                     "CREATE TABLE duplicate_decisions (first_id TEXT NOT NULL, second_id TEXT NOT NULL, revision INTEGER NOT NULL, canonical_id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(first_id, second_id, revision))",
                 )
             } else {
-                require(schema.size == 1 && schema.single().single() in setOf("1", "2")) { "Unsupported overlay schema" }
-                if (schema.single().single() == "1") {
-                    db.execute(
-                        "CREATE TABLE duplicate_decisions (first_id TEXT NOT NULL, second_id TEXT NOT NULL, revision INTEGER NOT NULL, canonical_id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(first_id, second_id, revision))",
-                    )
-                    db.execute("UPDATE overlay_schema SET version=2")
-                }
+                require(schema.size == 1 && schema.single().single() == "2") { "Unsupported overlay schema" }
                 val tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").mapNotNull { it.single() }.toSet()
                 check(
                     tables.containsAll(

@@ -1,6 +1,5 @@
 package io.valroot.core.bitcoin
 
-import io.valroot.core.backup.PortableBackup
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.storage.BundledSqliteDatabase
@@ -265,45 +264,6 @@ class BitcoinGraphRepositoryTest {
             assertEquals(listOf(BitcoinBlockAnchor(210, "f".repeat(64))), repository.anchors(otherScope))
             assertEquals(listOf(210L, 190L), repository.anchors().map { it.height })
             assertEquals(3, repository.snapshots().size)
-        }
-    }
-
-    @Test
-    fun versionFourUpgradeCreatesEmptyEvidenceAndCurrentSchemaReopens() {
-        BundledSqliteDatabase(":memory:").use { db ->
-            Store(db)
-            bitcoinGraphDeltaTables.reversed().forEach { db.execute("DROP TABLE $it") }
-            bitcoinGraphTables.reversed().forEach { db.execute("DROP TABLE $it") }
-            db.execute("PRAGMA user_version = 4")
-            Store(db)
-            assertEquals("6", db.query("PRAGMA user_version").single().single())
-            assertEquals(emptyList(), BitcoinGraphRepository(db).snapshots())
-            Store(db)
-            assertEquals(emptyList(), db.query("PRAGMA foreign_key_check"))
-        }
-    }
-
-    @Test
-    fun versionFourPortableArchiveRestoresWithEmptyGraphEvidence() {
-        val archive =
-            BundledSqliteDatabase(":memory:").use { source ->
-                Store(source)
-                bitcoinGraphDeltaTables.reversed().forEach { source.execute("DROP TABLE $it") }
-                bitcoinGraphTables.reversed().forEach { source.execute("DROP TABLE $it") }
-                source.execute("PRAGMA user_version = 4")
-                source.execute("INSERT INTO owners VALUES ('owner-a','Owner A')")
-                PortableBackup.discover(source).export(source)
-            }
-        BundledSqliteDatabase(":memory:").use { staging ->
-            Store(staging)
-            PortableBackup.discover(staging).restoreToStaging(staging, archive)
-            Store(staging)
-            assertEquals(listOf(listOf("owner-a", "Owner A")), staging.query("SELECT * FROM owners"))
-            assertNull(BitcoinGraphRepository(staging).latest())
-            val review = BitcoinGraphRepository(staging).utxoReview(scope)
-            assertNull(review.snapshotId)
-            assertEquals(false, review.compared)
-            assertEquals("6", staging.query("PRAGMA user_version").single().single())
         }
     }
 }

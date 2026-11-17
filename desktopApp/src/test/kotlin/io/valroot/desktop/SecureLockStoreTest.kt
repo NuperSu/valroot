@@ -46,19 +46,4 @@ class SecureLockStoreTest {
             Files.deleteIfExists(dir)
         }
     }
-
-    @Test
-    fun failedMigrationPreservesLegacyVerifier() {
-        val dir = Files.createTempDirectory("valroot-lock-test")
-        val marker = dir.resolve("lock-verifier")
-        try {
-            Files.writeString(marker, "legacy-verifier")
-            val store = SecureLockStore(marker) { _, _ -> error("unavailable") }
-            assertFails { store.migrate(store.read()) }
-            assertEquals("legacy-verifier", Files.readString(marker))
-        } finally {
-            Files.deleteIfExists(marker)
-            Files.deleteIfExists(dir)
-        }
-    }
 }

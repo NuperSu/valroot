@@ -100,9 +100,10 @@ class BundledSqliteDatabase(
         }
 
     /**
-     * Switches a file still in rollback-journal mode (one written by an earlier version) to write-ahead logging. The
-     * switch needs the file to itself, and SQLite refuses it at once, without the busy wait, while another connection is
-     * writing; so a refusal is retried for up to [LOCK_WAIT_MILLIS]. A file already in WAL mode needs no switch.
+     * Switches a new file, which SQLite creates in rollback-journal mode, to write-ahead logging. The switch needs the
+     * file to itself, and SQLite refuses it at once, without the busy wait, while another connection is writing (workers
+     * may open the file at the same time on first launch); so a refusal is retried for up to [LOCK_WAIT_MILLIS]. A file
+     * already in WAL mode needs no switch.
      */
     private fun useWriteAheadLog() {
         var waited = 0L

@@ -10,9 +10,6 @@ import io.valroot.core.crypto.Crypto
  */
 object BackupEncryption {
     private val magic = "VLRBK".encodeToByteArray()
-
-    /** Backups made before the app was renamed from Polion; still decrypted. */
-    private val legacyMagic = "PLNBK".encodeToByteArray()
     private const val VERSION: Byte = 3
     private const val KDF_PBKDF2_SHA256: Byte = 1
     private const val ITERATIONS = 600_000
@@ -103,9 +100,7 @@ object BackupEncryption {
         val header = ByteArray(HEADER)
         // A file shorter than the header is not a backup, rather than a damaged one.
         require(runCatching { input.readFully(header) }.getOrDefault(false)) { "This is not a Valroot backup" }
-        require(
-            header.copyOfRange(0, 5).let { it.contentEquals(magic) || it.contentEquals(legacyMagic) },
-        ) { "This is not a Valroot backup" }
+        require(header.copyOfRange(0, 5).contentEquals(magic)) { "This is not a Valroot backup" }
         require(header[5] == VERSION) { "This backup was made by an unsupported Valroot version" }
         require(header[6] == KDF_PBKDF2_SHA256) { "Unsupported backup key derivation" }
         val iterations = int(header, 7)

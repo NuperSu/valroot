@@ -35,13 +35,7 @@ class MarketRepository(
                     "CREATE TABLE market_override_withdrawals (price_id TEXT NOT NULL REFERENCES market_prices(id), effective_at INTEGER NOT NULL, observed_at INTEGER NOT NULL, PRIMARY KEY(price_id, effective_at, observed_at))",
                 )
             } else {
-                require(rows.size == 1 && rows.single().single() in setOf("1", "2")) { "Unsupported market schema" }
-                if (rows.single().single() == "1") {
-                    db.execute(
-                        "CREATE TABLE market_override_withdrawals (price_id TEXT NOT NULL REFERENCES market_prices(id), effective_at INTEGER NOT NULL, observed_at INTEGER NOT NULL, PRIMARY KEY(price_id, effective_at, observed_at))",
-                    )
-                    db.execute("UPDATE market_schema SET version=2")
-                }
+                require(rows.size == 1 && rows.single().single() == "2") { "Unsupported market schema" }
                 val tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").mapNotNull { it.single() }.toSet()
                 check(
                     tables.containsAll(

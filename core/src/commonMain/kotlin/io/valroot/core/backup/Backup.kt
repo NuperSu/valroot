@@ -25,9 +25,6 @@ class PortableBackup(
     companion object {
         const val FORMAT = "3"
         private const val MAGIC = "VALROOT-BACKUP"
-
-        /** Backups made before the app was renamed from Polion; still restored. */
-        private const val LEGACY_MAGIC = "POLION-BACKUP"
         private const val PAGE = 500
         private val excludedTables =
             (BitcoinScanStage.SCRATCH_TABLES + io.valroot.core.market.MarketFeedRepository.LOCAL_TABLES + "android_metadata")
@@ -111,7 +108,7 @@ class PortableBackup(
         source: ByteSource,
     ) {
         val input = FieldReader(source)
-        require(input.next() in setOf(MAGIC, LEGACY_MAGIC)) { "This is not a Valroot backup" }
+        require(input.next() == MAGIC) { "This is not a Valroot backup" }
         require(input.next() == FORMAT) { "This backup was made by an unsupported Valroot version" }
         val archiveVersion = input.required().toInt()
         val tableCount = input.required().toInt()
@@ -123,7 +120,7 @@ class PortableBackup(
                     .single()
                     .single()!!
                     .toInt()
-            require(archiveVersion in 0..stagingVersion) { "Database schema version mismatch" }
+            require(archiveVersion == stagingVersion) { "Database schema version mismatch" }
             val targetTables =
                 db
                     .query(

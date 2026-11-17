@@ -14,10 +14,8 @@ class TreatmentRepository(
     init {
         db.transaction {
             db.execute(
-                "CREATE TABLE IF NOT EXISTS accounting_treatments (activity_id TEXT NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, movement TEXT NOT NULL, other_movement TEXT, numerator TEXT, denominator TEXT, flag INTEGER NOT NULL, PRIMARY KEY(activity_id, position))",
+                "CREATE TABLE IF NOT EXISTS accounting_treatments (activity_id TEXT NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, movement TEXT NOT NULL, other_movement TEXT, numerator TEXT, denominator TEXT, flag INTEGER NOT NULL, quote_asset TEXT, PRIMARY KEY(activity_id, position))",
             )
-            val columns = db.query("PRAGMA table_info(accounting_treatments)").map { it[1] }
-            if ("quote_asset" !in columns) db.execute("ALTER TABLE accounting_treatments ADD COLUMN quote_asset TEXT")
         }
     }
 
@@ -88,9 +86,7 @@ class TreatmentRepository(
                     row[3]?.let {
                         QuoteValue(
                             AssetId(
-                                requireNotNull(row[6]) {
-                                    "Legacy amount has no quote asset; reclassify explicitly"
-                                },
+                                requireNotNull(row[6]) { "Treatment amount has no quote asset" },
                             ),
                             Rational(ExactInteger.parse(it), ExactInteger.parse(requireNotNull(row[4]))),
                         )

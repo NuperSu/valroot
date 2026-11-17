@@ -16,11 +16,10 @@ internal class SecureLockStore(
     private val preferences: SharedPreferences,
     private val alias: String = "io.valroot.privacy-lock.v1",
 ) : io.valroot.ui.host.LockVerifierStore {
-    override val hasLock: Boolean get() = preferences.contains(SECURE) || preferences.contains(LEGACY)
+    override val hasLock: Boolean get() = preferences.contains(SECURE)
 
     override fun read(): String {
-        val encoded = preferences.getString(SECURE, null)
-        if (encoded == null) return preferences.getString(LEGACY, null) ?: error("Missing privacy lock")
+        val encoded = preferences.getString(SECURE, null) ?: error("Missing privacy lock")
         val data = Base64.getDecoder().decode(encoded)
         require(data.size > 12 + 16)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -37,13 +36,8 @@ internal class SecureLockStore(
             preferences
                 .edit()
                 .putString(SECURE, encoded)
-                .remove(LEGACY)
                 .commit(),
         )
-    }
-
-    override fun migrate(verifier: String) {
-        if (!preferences.contains(SECURE)) write(verifier)
     }
 
     @SuppressLint("UseKtx") // The commit result confirms the verifier was removed.
@@ -52,7 +46,6 @@ internal class SecureLockStore(
             preferences
                 .edit()
                 .remove(SECURE)
-                .remove(LEGACY)
                 .commit(),
         )
     }
@@ -75,6 +68,5 @@ internal class SecureLockStore(
 
     companion object {
         private const val SECURE = "secure_verifier_v1"
-        private const val LEGACY = "verifier"
     }
 }
