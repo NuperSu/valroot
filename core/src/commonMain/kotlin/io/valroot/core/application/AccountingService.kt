@@ -23,25 +23,6 @@ import kotlin.time.Instant
 class AccountingService internal constructor(
     ctx: AppContext,
 ) : AppService(ctx) {
-    /** The on-chain transaction behind an activity: its own for Bitcoin and EVM, the exchange's record for exchanges. */
-    private fun transactionOf(
-        activity: Activity,
-        exchange: Map<ActivityId, io.valroot.core.exchange.ExchangeTransfer>,
-    ): String? {
-        val id = activity.id.value
-        return when {
-            activity.id in exchange -> exchange.getValue(activity.id).txId.lowercase()
-            id.startsWith("bitcoin:") -> id.removePrefix("bitcoin:").lowercase()
-            id.startsWith("eip155:") ->
-                id
-                    .split(':')
-                    .getOrNull(2)
-                    ?.takeIf { it.startsWith("0x") }
-                    ?.lowercase()
-            else -> null
-        }
-    }
-
     fun saveTreatments(
         activityId: ActivityId,
         values: List<Treatment>,
@@ -84,30 +65,6 @@ class AccountingService internal constructor(
         }
     }
 
-    /**
-     * An exchange opening amount, unclassified or classified as an opening of unknown cost, counted at its market value
-     * when the account's history begins. Null when no historical price exists or it was classified otherwise.
-     */
-    private fun estimatedOpening(
-        activity: Activity,
-        saved: List<Treatment>,
-        quote: AssetId,
-        knownAt: Long,
-    ): List<Treatment>? {
-        val movement = activity.movements.single()
-        val unknownCost = saved.singleOrNull()?.let { it is Treatment.Acquire && it.movement == movement.id && it.cost == null }
-        if (saved.isNotEmpty() && unknownCost != true) return null
-        val unit =
-            app.assets.unitPrice(
-                movement.amount.assetId,
-                quote,
-                activity.occurredAtEpochMillis,
-                current = false,
-                knownAtMillis = knownAt,
-            ) ?: return null
-        return listOf(Treatment.Acquire(movement.id, QuoteValue(quote, unit.amount * Rational.units(movement.amount.atomicUnits)), true))
-    }
-
     fun report(portfolio: PortfolioId? = null): AccountingView {
         app.assets.ensureDefaults()
         val catalog = ownership.load()
@@ -118,45 +75,43 @@ class AccountingService internal constructor(
         val currencyMismatch = mutableListOf<ActivityId>()
         val quote = app.assets.portfolioCurrency(portfolio)
         val zeroBasisRewards = app.settings.general().zeroBasisRewards
-        val isOpening = if (app.settings.general().estimateOpeningBasis) app.exchanges.completeOpenings() else null
         val estimated = mutableListOf<ActivityId>()
-        val isExchange = app.exchanges.exchangeActivities()
+        val owners = catalog.accounts.associate { it.id to it.ownerId }
         val automatic = mutableListOf<ActivityId>()
         val classifications = mutableMapOf<ActivityId, List<Treatment>>()
         // Prices saved up to now count, including historical prices downloaded after the activity.
         val priceAt = now()
 
-        // Saved treatments, or the defaults for an unclassified exchange activity.
+        // Saved treatments, or the defaults for an unclassified activity (wallet or exchange).
         fun classified(activity: Activity): List<Treatment> =
             classifications.getOrPut(activity.id) {
                 treatments.load(activity.id).ifEmpty {
-                    if (isExchange(activity)) {
-                        automatic.add(activity.id)
-                        DefaultTreatments.exchange(
-                            activity,
-                            quote,
-                            {
-                                it == quote ||
-                                    io.valroot.core.exchange.ExchangeAssets
-                                        .currencyOf(it) != null
-                            },
-                        ) { movement ->
-                            app.assets
-                                .unitPrice(
-                                    movement.amount.assetId,
+                    automatic.add(activity.id)
+                    // Arrivals and departures without a recorded amount take their market value at the time.
+                    if (activity.movements.any { it.role !in RECORDED_VALUE_ROLES }) estimated.add(activity.id)
+                    DefaultTreatments.forActivity(
+                        activity,
+                        quote,
+                        {
+                            it == quote ||
+                                io.valroot.core.exchange.ExchangeAssets
+                                    .currencyOf(it) != null
+                        },
+                        { first, second -> owners[first] != null && owners[first] == owners[second] },
+                    ) { movement ->
+                        app.assets
+                            .unitPrice(
+                                movement.amount.assetId,
+                                quote,
+                                activity.occurredAtEpochMillis,
+                                current = false,
+                                knownAtMillis = priceAt,
+                            )?.let {
+                                QuoteValue(
                                     quote,
-                                    activity.occurredAtEpochMillis,
-                                    current = false,
-                                    knownAtMillis = priceAt,
-                                )?.let {
-                                    QuoteValue(
-                                        quote,
-                                        it.amount * Rational.units(movement.amount.atomicUnits.let { if (it.sign < 0) -it else it }),
-                                    )
-                                }
-                        }
-                    } else {
-                        emptyList()
+                                    it.amount * Rational.units(movement.amount.atomicUnits.let { if (it.sign < 0) -it else it }),
+                                )
+                            }
                     }
                 }
             }
@@ -213,12 +168,6 @@ class AccountingService internal constructor(
                         val saved =
                             classified(activity)
                                 .let { if (zeroBasisRewards) withZeroBasisRewards(activity, it, quote) else it }
-                                .let { recorded ->
-                                    isOpening
-                                        ?.takeIf { it(activity) }
-                                        ?.let { estimatedOpening(activity, recorded, quote, priceAt) }
-                                        ?.also { estimated.add(activity.id) } ?: recorded
-                                }
                         if (saved.isEmpty()) {
                             if (affectsSelection(activity)) missing.add(activity.id)
                             incompleteAssets.addAll(ownerAssets(activity))
@@ -355,46 +304,9 @@ class AccountingService internal constructor(
                         unitPrices = unitPrices,
                         replayOrder = replayOrder,
                     )
-                val uncertainAssets = uncertain.flatMap { ownerAssets(it.activity) }.toSet()
-                val report =
-                    if (uncertain.isEmpty()) {
-                        calculated
-                    } else {
-                        calculated.copy(
-                            lots = calculated.lots.map { if (it.asset in uncertainAssets) it.copy(basis = null) else it },
-                            disposals =
-                                calculated.disposals.map { disposal ->
-                                    if (disposal.asset in
-                                        uncertainAssets
-                                    ) {
-                                        disposal.copy(
-                                            basis = null,
-                                            gain = null,
-                                            consumed =
-                                                disposal.consumed.map {
-                                                    it.copy(
-                                                        lotId = null,
-                                                        basis = null,
-                                                        acquisitionActivityId = null,
-                                                    )
-                                                },
-                                        )
-                                    } else {
-                                        disposal
-                                    }
-                                },
-                            valuations =
-                                calculated.valuations.map {
-                                    if (it.lot.asset in
-                                        uncertainAssets
-                                    ) {
-                                        it.copy(lot = it.lot.copy(basis = null), unrealizedGain = null)
-                                    } else {
-                                        it
-                                    }
-                                },
-                        )
-                    }
+                // Bitcoin order not yet verified on chain is still calculated in timestamp order; [orderingUncertain]
+                // records it, but the figures stand as they are.
+                val report = calculated
                 orderingUncertain.addAll(ownerOrderingUncertain)
                 report
             }
@@ -444,7 +356,12 @@ class AccountingService internal constructor(
 
     fun reconciliationCandidates(windowMillis: Long): List<ReconciliationCandidate> {
         val exchange = exchangeSync.transfers()
-        val reviewedPairs = overlays.decisions().map { it.first to it.second }.toSet()
+        // Reviewed pairs, and pairs already linked automatically through a shared transaction, need no review.
+        val reviewedPairs =
+            overlays.decisions().map { it.first to it.second }.toSet() +
+                ledger().transferLinks.flatMap {
+                    listOf(it.outgoingActivity to it.incomingActivity, it.incomingActivity to it.outgoingActivity)
+                }
         val pending =
             Reconciliation
                 .suggest(ledger().activities.map { it.activity }, windowMillis, amountScale()) { activity ->
@@ -462,4 +379,14 @@ class AccountingService internal constructor(
         } catch (_: IllegalArgumentException) {
             emptyList()
         }
+
+    private companion object {
+        /** Roles whose default value comes from the record itself (trade legs, fees, rewards), not an estimate. */
+        val RECORDED_VALUE_ROLES =
+            setOf(
+                io.valroot.core.ledger.MovementRole.TRADE_LEG,
+                io.valroot.core.ledger.MovementRole.FEE,
+                io.valroot.core.ledger.MovementRole.REWARD,
+            )
+    }
 }

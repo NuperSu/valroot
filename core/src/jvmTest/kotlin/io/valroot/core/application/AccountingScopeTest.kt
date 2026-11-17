@@ -190,7 +190,7 @@ class AccountingScopeTest {
         }
     }
 
-    @Test fun destinationPortfolioReportsMissingAndCurrencyMismatchedSourceDependencies() {
+    @Test fun destinationPortfolioKeepsUnclassifiedAndCurrencyMismatchedSourceLots() {
         listOf(null, "EUR").forEach { sourceQuote ->
             BundledSqliteDatabase(":memory:").use { db ->
                 val app = setup(db)
@@ -199,11 +199,13 @@ class AccountingScopeTest {
                 app.accounts.savePortfolio(Portfolio(selected, "Destination", "USD", accountIds = setOf(destination)))
                 val view = app.accounting.report(selected)
                 if (sourceQuote == null) {
-                    // Missing treatments drop the dependent inventory: no lot is invented.
-                    assertEquals(listOf(ActivityId("source")), view.missingTreatments)
+                    // Unclassified, the source is bought at its market value; without a saved price the basis is unknown.
+                    assertTrue(view.missingTreatments.isEmpty())
                     assertTrue(view.invalidTreatments.isEmpty())
                     assertTrue(view.currencyMismatch.isEmpty())
-                    assertTrue(view.report.lots.isEmpty())
+                    val lot = view.report.lots.single()
+                    assertEquals(destination, lot.account)
+                    assertEquals(null, lot.basis)
                 } else {
                     // A treatment priced in another currency keeps its lot with unknown basis, marked as a mismatch.
                     assertTrue(view.missingTreatments.isEmpty())

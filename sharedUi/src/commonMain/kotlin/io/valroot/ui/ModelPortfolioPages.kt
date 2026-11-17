@@ -279,10 +279,10 @@ internal fun ColumnScope.ModelPortfolioPages(
                     ),
                     wide,
                     listOfNotNull(
-                        "Figures needing a missing classification or cost show —.".takeIf {
+                        "Figures needing a missing classification show —.".takeIf {
                             performance.total == null || performance.basis == null
                         },
-                        "Order within a block is provisional.".takeIf { performance.provisional },
+                        "Leaves out ${performance.leftOut} without a historical price.".takeIf { performance.leftOut > 0 },
                     ).joinToString(" ").ifEmpty { null },
                 )
             }

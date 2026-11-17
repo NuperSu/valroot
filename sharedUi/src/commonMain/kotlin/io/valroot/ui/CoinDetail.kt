@@ -308,12 +308,6 @@ private fun CoinAccountingSummary(
             style = MaterialTheme.typography.bodySmall,
         )
     }
-    if (view.orderingUncertain.isNotEmpty()) {
-        Text(
-            "FIFO gains are provisional pending transaction order verification.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
     if (asset.asset in view.estimatedAssets) Text(ESTIMATED_COST_NOTE, style = MaterialTheme.typography.bodySmall)
 }
 

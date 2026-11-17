@@ -258,10 +258,16 @@ class OverlayRepository(
                 "SELECT first_id, second_id, canonical_id, state FROM duplicate_decisions l WHERE revision=(SELECT MAX(revision) FROM duplicate_decisions WHERE first_id=l.first_id AND second_id=l.second_id) ORDER BY first_id, second_id",
             ).map { DuplicateDecision(ActivityId(it[0]!!), ActivityId(it[1]!!), ActivityId(it[2]!!), LinkState.valueOf(it[3]!!)) }
 
-    /** Explicit duplicate decisions suppress only unique equal movements; all original records remain available. */
+    /**
+     * The effective ledger: activities with accepted duplicates suppressed (only unique equal movements; all original
+     * records remain available), and transfer links. A link is either a
+     * reviewed decision or automatic: two activities of one on-chain transaction ([transaction] gives an activity's,
+     * when known) that resolve to exactly one departure and its arrival, with no decision on the pair either way.
+     */
     fun replayForLedger(
         activities: Collection<Activity>,
         scale: AmountScale = AmountScale.SAME_ASSET,
+        transaction: (Activity) -> String? = { null },
     ): EffectiveLedger =
         db.transaction {
             val replayed = replayInTransaction(activities)
@@ -291,7 +297,7 @@ class OverlayRepository(
                     val movements = item.activity.movements.filter { it.id !in removed[item.activity.id].orEmpty() }
                     if (movements.isEmpty()) null else item.copy(activity = item.activity.copy(movements = movements))
                 }
-            val (links, linkConflicts) = resolveTransferLinks(projected, byId.keys, scale)
+            val (links, linkConflicts) = resolveTransferLinks(projected, byId.keys, scale, transaction)
             EffectiveLedger(projected, suppressed, conflicts, links, linkConflicts)
         }
 
@@ -299,6 +305,7 @@ class OverlayRepository(
         activities: List<EffectiveActivity>,
         originalIds: Set<ActivityId>,
         scale: AmountScale,
+        transaction: (Activity) -> String?,
     ): Pair<List<TransferLink>, List<TransferLinkConflict>> {
         val byId = activities.associateBy { it.activity.id }
         val conflicts = mutableListOf<TransferLinkConflict>()
@@ -329,6 +336,31 @@ class OverlayRepository(
                     link
                 }
             }
-        return links to conflicts.sortedWith(compareBy({ it.first.value }, { it.second.value }))
+        return links + automaticLinks(activities, links, scale, transaction) to
+            conflicts.sortedWith(compareBy({ it.first.value }, { it.second.value }))
+    }
+
+    /** Links for pairs of activities that share an on-chain transaction; see [replayForLedger]. */
+    private fun automaticLinks(
+        activities: List<EffectiveActivity>,
+        reviewed: List<TransferLink>,
+        scale: AmountScale,
+        transaction: (Activity) -> String?,
+    ): List<TransferLink> {
+        val decided = decisions().map { setOf(it.first, it.second) }.toSet()
+        val claimed =
+            reviewed
+                .flatMap { listOf(it.outgoingActivity to it.outgoingEvent, it.incomingActivity to it.incomingEvent) }
+                .toSet()
+        return activities
+            .mapNotNull { entry -> transaction(entry.activity)?.let { it to entry } }
+            .groupBy({ it.first }, { it.second })
+            .values
+            .filter { it.size == 2 && setOf(it[0].activity.id, it[1].activity.id) !in decided }
+            .mapNotNull { (first, second) ->
+                (resolveTransfer(first, second, true, true, scale) as? TransferResolution.Match)?.link?.takeIf { link ->
+                    (link.outgoingActivity to link.outgoingEvent) !in claimed && (link.incomingActivity to link.incomingEvent) !in claimed
+                }
+            }
     }
 }

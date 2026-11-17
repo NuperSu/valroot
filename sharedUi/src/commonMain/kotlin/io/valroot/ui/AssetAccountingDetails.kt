@@ -131,9 +131,6 @@ internal fun AssetAccountingContent(
                 fontSize = 12.sp,
             )
         }
-        if (view.orderingUncertain.isNotEmpty()) {
-            Text("Some portfolio activity has unverified ordering; FIFO results are provisional.", color = Orange, fontSize = 12.sp)
-        }
         if (asset in view.estimatedAssets) Text(ESTIMATED_COST_NOTE, color = Muted, fontSize = 12.sp)
         Text("Open lots (${lots.size})", fontWeight = FontWeight.SemiBold)
         if (lots.isEmpty()) Text("No classified open lots for this asset.", color = Muted, fontSize = 12.sp)
@@ -202,4 +199,4 @@ private fun AssetAccountingPages(
 
 /** How gains that include an estimated opening cost are labelled. */
 internal const val ESTIMATED_COST_NOTE =
-    "Includes an estimated cost for coins held before exchange history begins: their market value then."
+    "Includes costs or proceeds taken from the market value at the time, where none was recorded."

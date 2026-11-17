@@ -47,12 +47,16 @@ internal fun tone(value: Rational?): ModelChangeTone =
         else -> ModelChangeTone.NEGATIVE
     }
 
-/** Portfolio-wide FIFO results; each figure is null when any treatment or acquisition basis it needs is missing. */
+/**
+ * Portfolio-wide FIFO results. Each figure sums the lots and disposals whose value is known; [leftOut] counts priced
+ * lots and disposals whose basis is unknown (no historical price when acquired). A figure is null only when an
+ * activity could not be classified.
+ */
 internal data class PortfolioPerformance(
     val basis: Rational?,
     val unrealized: Rational?,
     val realized: Rational?,
-    val provisional: Boolean,
+    val leftOut: Int = 0,
 ) {
     val total: Rational? get() = if (unrealized == null || realized == null) null else unrealized + realized
 
@@ -69,13 +73,14 @@ internal fun portfolioPerformance(view: AccountingView?): PortfolioPerformance? 
     if (view == null) return null
     val uncertain = view.missingTreatments.isNotEmpty() || view.invalidTreatments.isNotEmpty()
 
-    fun total(values: List<Rational?>): Rational? =
-        if (uncertain || values.any { it == null }) null else values.filterNotNull().fold(Rational.ZERO) { a, b -> a + b }
+    fun total(values: List<Rational?>): Rational? = if (uncertain) null else values.filterNotNull().fold(Rational.ZERO) { a, b -> a + b }
     return PortfolioPerformance(
         total(view.report.lots.map { it.basis }),
         total(view.report.valuations.map { it.unrealizedGain }),
         total(view.report.disposals.map { it.gain }),
-        view.orderingUncertain.isNotEmpty(),
+        // Coins without any price are already left out of totals; only priced figures missing a basis are counted.
+        view.report.valuations.count { it.value != null && it.unrealizedGain == null } +
+            view.report.disposals.count { it.proceeds != null && it.gain == null },
     )
 }
 

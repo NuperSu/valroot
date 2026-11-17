@@ -218,7 +218,7 @@ class MexcConnectorTest {
     }
 
     @Test
-    fun anOpeningCountsAtItsMarketValueOnlyWhenChosenAndHistoryIsComplete() {
+    fun anUnclassifiedOpeningCountsAtItsMarketValue() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             // Without trades the opening is BTC's only lot.
@@ -247,40 +247,15 @@ class MexcConnectorTest {
                     true,
                 ),
             )
-            // Off by default: the unclassified opening is an opening of unknown cost.
-            val off = app.accounting.report()
-            assertTrue(opening.id in off.automaticTreatments)
-            assertNull(
-                off.report.lots
-                    .single { it.acquisitionActivityId == opening.id }
-                    .basis,
-            )
-            assertTrue(off.estimatedBasis.isEmpty())
-
-            app.settings.setEstimateOpeningBasis(true)
-            val on = app.accounting.report()
-            assertEquals(listOf(opening.id), on.estimatedBasis)
-            assertTrue(opening.id !in on.missingTreatments)
-            val lot = on.report.lots.single { it.acquisitionActivityId == opening.id }
+            // An unclassified opening counts at its market value when the history begins.
+            val report = app.accounting.report()
+            assertTrue(opening.id in report.automaticTreatments)
+            assertTrue(opening.id in report.estimatedBasis)
+            assertTrue(opening.id !in report.missingTreatments)
+            val lot = report.report.lots.single { it.acquisitionActivityId == opening.id }
             // 0.5 BTC held at 20,000 USD.
             assertEquals(Rational.of("10000"), lot.basis)
-            assertTrue(btc in on.estimatedAssets)
-
-            // Coins held before history that is still being read are not estimated.
-            app.exchanges.saveStream(
-                account,
-                app.exchanges
-                    .streams(account)
-                    .values
-                    .first()
-                    .copy(complete = false),
-            )
-            assertTrue(
-                app.accounting
-                    .report()
-                    .estimatedBasis
-                    .isEmpty(),
-            )
+            assertTrue(btc in report.estimatedAssets)
         }
     }
 

@@ -129,23 +129,10 @@ internal fun AccountingPanel(
                     fontSize = 12.sp,
                 )
             }
-            if (current.view.orderingUncertain.isNotEmpty()) {
-                TextButton(onClick = {
-                    host.verifyAccountingOrder {
-                        notice = it
-                        onSaved()
-                    }
-                }) { Text("Verify Bitcoin transaction order") }
-                Text(
-                    "Bitcoin block timestamps can affect FIFO order. Basis and gains are provisional.",
-                    color = Orange,
-                    fontSize = 12.sp,
-                )
-            }
             if (current.view.estimatedBasis.isNotEmpty()) {
                 Text(
-                    "${current.view.estimatedBasis.size} exchange opening amounts use an estimated cost: their market value " +
-                        "when the exchange history begins.",
+                    "${current.view.estimatedBasis.size} activities without a recorded cost or proceeds use the market " +
+                        "value at the time.",
                     color = Muted,
                     fontSize = 12.sp,
                 )

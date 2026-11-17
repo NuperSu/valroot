@@ -149,11 +149,13 @@ class PhaseTwoProjectionTest {
         val missing = coinAccountingMetrics(unknown, valuation("130")).associate { it.label to it.value }
         assertEquals("—", missing["Total Cost Basis"])
         assertEquals("—", missing["Total Gains"])
-        assertTrue(
-            coinAccountingMetrics(
-                view.copy(orderingUncertain = listOf(ActivityId("sale"))),
-                valuation("130"),
-            ).first().value.contains("provisional"),
+        // Bitcoin order not yet verified stays internal: the figures show as normal.
+        assertEquals(
+            metrics,
+            coinAccountingMetrics(view.copy(orderingUncertain = listOf(ActivityId("sale"))), valuation("130")).associate {
+                it.label to
+                    it.value
+            },
         )
     }
 

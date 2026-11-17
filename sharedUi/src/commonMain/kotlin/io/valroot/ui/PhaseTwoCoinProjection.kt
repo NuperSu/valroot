@@ -56,9 +56,8 @@ internal fun coinAccountingMetrics(
                 .map { it.gain },
         )
     val gains = if (unrealized == null || realized == null) null else unrealized + realized
-    val suffix = if (view?.orderingUncertain?.isNotEmpty() == true) " · provisional" else ""
 
-    fun figure(value: Rational?): String = value?.let { "${it.displayAmount()} ${view?.report?.quoteAsset?.value}$suffix" } ?: "—"
+    fun figure(value: Rational?): String = value?.let { "${it.displayAmount()} ${view?.report?.quoteAsset?.value}" } ?: "—"
     return listOf(
         ModelMetric("Total Gains", figure(gains)),
         ModelMetric("Total Cost Basis", figure(basis)),

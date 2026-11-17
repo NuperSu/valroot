@@ -385,7 +385,7 @@ class BybitConnectorTest {
     }
 
     @Test
-    fun aWithdrawalIsSuggestedWithItsArrivalOnChainByTransaction() {
+    fun aWithdrawalIsLinkedToItsArrivalOnChainByTransaction() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             app.market.setConsent(true)
@@ -437,12 +437,11 @@ class BybitConnectorTest {
                     manual = true,
                 ),
             )
-            val candidate = app.accounting.reconciliationCandidates(Bybit.DAY_MILLIS).single()
-            assertEquals(
-                setOf("bybit:$uid:funding:f2", "eip155:1:0xdef:0x" + "1".repeat(40)),
-                setOf(candidate.first.value, candidate.second.value),
-            )
-            assertEquals(100, candidate.score)
+            // The shared transaction links them without review, so they are no longer a suggestion.
+            val link = app.accounting.transferLinks().single()
+            assertEquals("bybit:$uid:funding:f2", link.outgoingActivity.value)
+            assertEquals("eip155:1:0xdef:0x" + "1".repeat(40), link.incomingActivity.value)
+            assertTrue(app.accounting.reconciliationCandidates(Bybit.DAY_MILLIS).isEmpty())
         }
     }
 

@@ -41,6 +41,39 @@ class TransferLinkReplayTest {
         "1",
     )
 
+    /** Two activities of one on-chain transaction link without review, unless a decision or a third activity says otherwise. */
+    @Test
+    fun aSharedTransactionLinksAutomaticallyUnlessRejectedOrAmbiguous() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            Store(db)
+            val repo = OverlayRepository(db)
+            val withdrawal =
+                activity(
+                    "exchange-withdrawal",
+                    movement("out-leg", "-100", "exchange"),
+                    movement("fee", "-2", "exchange", MovementRole.FEE),
+                )
+            val arrival = activity("wallet-arrival", movement("in-leg", "100", "wallet"))
+            val transaction = mapOf(withdrawal.id to "0xabc", arrival.id to "0xabc")
+            val hash: (Activity) -> String? = { transaction[it.id] }
+            val expected = TransferLink(withdrawal.id, EventId("out-leg"), arrival.id, EventId("in-leg"))
+            assertEquals(listOf(expected), repo.replayForLedger(listOf(withdrawal, arrival), transaction = hash).transferLinks)
+            // Without a shared transaction, matching amounts stay a suggestion.
+            assertTrue(repo.replayForLedger(listOf(withdrawal, arrival)).transferLinks.isEmpty())
+            // A third activity of the same transaction makes the match ambiguous.
+            val other = activity("other-arrival", movement("other-leg", "100", "wallet2"))
+            assertTrue(
+                repo
+                    .replayForLedger(listOf(withdrawal, arrival, other)) { if (it.id == other.id) "0xabc" else hash(it) }
+                    .transferLinks
+                    .isEmpty(),
+            )
+            // A rejected decision keeps them apart.
+            repo.setDecision(withdrawal.id, arrival.id, LinkState.REJECTED)
+            assertTrue(repo.replayForLedger(listOf(withdrawal, arrival), transaction = hash).transferLinks.isEmpty())
+        }
+    }
+
     @Test
     fun reviewedRelationshipSurvivesReopenAndRejectWithoutChangingMovements() {
         val file = Files.createTempFile("valroot-transfer-links", ".sqlite")

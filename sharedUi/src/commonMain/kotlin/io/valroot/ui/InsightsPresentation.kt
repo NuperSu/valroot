@@ -247,7 +247,6 @@ internal fun insightsState(
             when {
                 report == null -> "Calculating cost basis…"
                 uncertain -> "Some transactions need a classification; affected figures show —."
-                report.orderingUncertain.isNotEmpty() -> "Order within a block is provisional."
                 report.estimatedAssets.isNotEmpty() -> ESTIMATED_COST_NOTE
                 else -> null
             },

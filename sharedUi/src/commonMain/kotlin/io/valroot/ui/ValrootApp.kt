@@ -379,9 +379,6 @@ internal fun Product(
             if (updated.secondaryCurrency != previous.secondaryCurrency) app.settings.setSecondaryCurrency(updated.secondaryCurrency)
             if (updated.showPortfolioChart != previous.showPortfolioChart) app.settings.setShowPortfolioChart(updated.showPortfolioChart)
             if (updated.zeroBasisRewards != previous.zeroBasisRewards) app.settings.setZeroBasisRewards(updated.zeroBasisRewards)
-            if (updated.estimateOpeningBasis != previous.estimateOpeningBasis) {
-                app.settings.setEstimateOpeningBasis(updated.estimateOpeningBasis)
-            }
             if (updated.deviceName != previous.deviceName) app.settings.setDeviceName(updated.deviceName)
             if (updated.hideAmounts != previous.hideAmounts) app.settings.setHideAmounts(updated.hideAmounts)
             if (updated.candleCharts != previous.candleCharts) app.settings.setCandleCharts(updated.candleCharts)

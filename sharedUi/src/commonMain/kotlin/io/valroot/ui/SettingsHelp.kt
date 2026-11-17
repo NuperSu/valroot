@@ -88,8 +88,9 @@ internal val helpTopics =
             listOf(
                 "Totals use the latest saved price. Coins without a current price are left out of totals and counted " +
                     "in a note.",
-                "Cost basis and gains use first in, first out. The order of transactions within one block is provisional " +
-                    "until it has been verified. Valroot is not tax advice.",
+                "Cost basis and gains use first in, first out. Coins that arrive without a recorded cost count as bought " +
+                    "at their market value then, and coins sent elsewhere as sold at their market value; a transfer " +
+                    "between your own accounts keeps the original cost. Valroot is not tax advice.",
             ),
         ),
     )

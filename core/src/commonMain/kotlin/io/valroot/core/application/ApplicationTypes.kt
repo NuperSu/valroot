@@ -236,8 +236,6 @@ data class GeneralPreferences(
     val hideAmounts: Boolean = false,
     /** Charts draw candles instead of a line. */
     val candleCharts: Boolean = false,
-    /** Coins held before an exchange account's complete history begins count at their market value then. */
-    val estimateOpeningBasis: Boolean = false,
 )
 
 /** The default public Esplora endpoint. */

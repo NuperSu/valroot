@@ -60,7 +60,30 @@ internal class AppContext(
     /** False after a write until the holdings projection is rebuilt from the current ledger. */
     var holdingsCurrent = false
 
-    fun ledger(): EffectiveLedger = cachedLedger ?: overlays.replayForLedger(activities.current(), amountScale()).also { cachedLedger = it }
+    fun ledger(): EffectiveLedger =
+        cachedLedger ?: run {
+            val exchange = exchangeSync.transfers()
+            overlays.replayForLedger(activities.current(), amountScale()) { transactionOf(it, exchange) }.also { cachedLedger = it }
+        }
+
+    /** The on-chain transaction behind an activity: its own for Bitcoin and EVM, the exchange's record for exchanges. */
+    fun transactionOf(
+        activity: io.valroot.core.ledger.Activity,
+        exchange: Map<io.valroot.core.model.ActivityId, io.valroot.core.exchange.ExchangeTransfer>,
+    ): String? {
+        val id = activity.id.value
+        return when {
+            activity.id in exchange -> exchange.getValue(activity.id).txId.lowercase()
+            id.startsWith("bitcoin:") -> id.removePrefix("bitcoin:").lowercase()
+            id.startsWith("eip155:") ->
+                id
+                    .split(':')
+                    .getOrNull(2)
+                    ?.takeIf { it.startsWith("0x") }
+                    ?.lowercase()
+            else -> null
+        }
+    }
 
     /**
      * Amounts of one CoinGecko coin in any asset compare as decimals, so an exchange withdrawal can be linked to its
@@ -137,6 +160,11 @@ abstract class AppService internal constructor(
         }
 
     protected fun ledger() = ctx.ledger()
+
+    protected fun transactionOf(
+        activity: io.valroot.core.ledger.Activity,
+        exchange: Map<io.valroot.core.model.ActivityId, io.valroot.core.exchange.ExchangeTransfer>,
+    ) = ctx.transactionOf(activity, exchange)
 
     protected fun amountScale() = ctx.amountScale()
 

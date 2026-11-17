@@ -54,7 +54,7 @@ class AssetAccountingDetailsTest {
             onNodeWithText(
                 "Some portfolio activity needs classification or correction. Asset lots and gains may be incomplete or unavailable.",
             ).assertIsDisplayed()
-            onNodeWithText("Some portfolio activity has unverified ordering; FIFO results are provisional.").assertIsDisplayed()
+            onNodeWithText("provisional", substring = true).assertDoesNotExist()
             onNodeWithText("Lot other-asset · exact basis unknown").assertDoesNotExist()
             onNodeWithText("Next").performScrollTo().performClick()
             onNodeWithText("Lot btc-11 · exact basis unknown").performScrollTo().assertIsDisplayed()
