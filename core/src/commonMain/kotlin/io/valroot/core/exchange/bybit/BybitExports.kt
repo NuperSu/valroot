@@ -226,35 +226,43 @@ object BybitExports : ExchangeExportAdapter {
                         role = EvidenceRole.DEFERRED
                         family = ProductFamily.FUTURES
                     }
-                    val fee = optional("Fee Paid")
-                    val change = number("Change")
-                    val coin = text("Currency")
-                    legs =
-                        listOf(
-                            RecordLeg(
-                                coin,
-                                change + fee,
-                                if (kind ==
-                                    RecordKind.TRADE
-                                ) {
-                                    MovementRole.TRADE_LEG
-                                } else {
-                                    MovementRole.TRANSFER
-                                },
-                            ),
-                        ) +
-                        listOfNotNull(fee.takeIf { it.coefficient.sign != 0 }?.let { RecordLeg(coin, negate(it), MovementRole.FEE) })
-                    details =
-                        mapOf(
-                            "balanceAfter" to number("Wallet Balance").toString(),
-                            "change" to change.toString(),
-                            "fee" to fee.toString(),
-                            "operation" to operation,
-                            "contract" to text("Contract"),
-                            "cashFlow" to optional("Cash Flow").toString(),
-                            "funding" to optional("Funding").toString(),
-                        ) +
-                        if (derivative || kind == RecordKind.UNKNOWN) emptyMap() else mapOf("bybitWalletLog" to "1")
+                    // Bybit writes some rows (old INTEREST entries) without any amount or balance: they move nothing and
+                    // are kept as evidence.
+                    if (!derivative && text("Change").isBlank() && text("Wallet Balance").isBlank()) {
+                        kind = RecordKind.OTHER
+                        role = EvidenceRole.SUPPORTING
+                        details = mapOf("operation" to operation, "contract" to text("Contract"), "amountless" to "1")
+                    } else {
+                        val fee = optional("Fee Paid")
+                        val change = number("Change")
+                        val coin = text("Currency")
+                        legs =
+                            listOf(
+                                RecordLeg(
+                                    coin,
+                                    change + fee,
+                                    if (kind ==
+                                        RecordKind.TRADE
+                                    ) {
+                                        MovementRole.TRADE_LEG
+                                    } else {
+                                        MovementRole.TRANSFER
+                                    },
+                                ),
+                            ) +
+                            listOfNotNull(fee.takeIf { it.coefficient.sign != 0 }?.let { RecordLeg(coin, negate(it), MovementRole.FEE) })
+                        details =
+                            mapOf(
+                                "balanceAfter" to number("Wallet Balance").toString(),
+                                "change" to change.toString(),
+                                "fee" to fee.toString(),
+                                "operation" to operation,
+                                "contract" to text("Contract"),
+                                "cashFlow" to optional("Cash Flow").toString(),
+                                "funding" to optional("Funding").toString(),
+                            ) +
+                            if (derivative || kind == RecordKind.UNKNOWN) emptyMap() else mapOf("bybitWalletLog" to "1")
+                    }
                 }
                 TRANSFERS.id -> {
                     at = time("Date")

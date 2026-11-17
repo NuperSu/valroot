@@ -198,6 +198,15 @@ class BybitImportTest {
         )
     }
 
+    @Test fun legacyUnifiedRowsWithoutAmountsAreEvidenceThatMovesNothing() {
+        val legacy = BybitExports.UNIFIED_LEGACY.header.joinToString(",")
+        val records = records(legacy, "USDT,,INTEREST,--,,,,,,,,,--,2024-03-01 00:00:00")
+        val record = records.single()
+        assertEquals(EvidenceRole.SUPPORTING, record.role)
+        assertTrue(record.legs.isEmpty())
+        assertTrue(!record.moves)
+    }
+
     @Test fun unknownWalletOperationsRemainUnresolved() {
         val records =
             records(funding, "123,2026-01-01 12:00:00,USDT,2,Unrecognized business,12,Unknown operation") +
