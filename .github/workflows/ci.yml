@@ -57,6 +57,15 @@ jobs:
           :desktopApp:packageUberJarForCurrentOS
           :desktopApp:createDistributable
 
+      # Shared code must stay portable: compile it for iOS (klibs build on Linux; linking an app needs a Mac).
+      - name: Compile shared code for iOS
+        run: >-
+          ./gradlew --stacktrace
+          :core:compileKotlinIosArm64
+          :core:compileKotlinIosSimulatorArm64
+          :sharedUi:compileKotlinIosArm64
+          :sharedUi:compileKotlinIosSimulatorArm64
+
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
