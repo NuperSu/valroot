@@ -50,18 +50,21 @@ internal fun returnState(
             ModelMetric("Value at end", amount(result.endValue)),
             ModelMetric("Investment gain", (result.gain?.rational()?.signed(currency) ?: "—").hiddenIf(hidden)),
         )
+    val leftOut =
+        result.leftOutAssets.takeIf { it > 0 }?.let { count ->
+            "Leaves out $count ${if (count == 1) "coin" else "coins"} without a saved price at the start, end or a transfer."
+        }
     val status =
         when (result.status) {
-            ReturnStatus.OK -> null
-            ReturnStatus.NO_INVESTMENT -> "Nothing was invested during this period."
-            ReturnStatus.MISSING_PRICES ->
-                if (result.unpricedFlows > 0) {
-                    "No rate: ${result.unpricedFlows} deposit(s) or withdrawal(s) have no saved price at their time."
-                } else {
-                    "No rate: the start or end value includes coins without a saved price."
-                }
-            ReturnStatus.NO_UNIQUE_RATE -> "No single rate fits these deposits and withdrawals."
-            ReturnStatus.NO_CONVERGENCE -> "The rate could not be determined for these cash flows."
+            ReturnStatus.OK -> leftOut
+            ReturnStatus.NO_INVESTMENT -> listOfNotNull("Nothing was invested during this period.", leftOut).joinToString(" ")
+            ReturnStatus.MISSING_PRICES -> "No rate: no coin has a saved price at every point this period needs."
+            ReturnStatus.NO_UNIQUE_RATE -> listOfNotNull("No single rate fits these deposits and withdrawals.", leftOut).joinToString(" ")
+            ReturnStatus.NO_CONVERGENCE ->
+                listOfNotNull(
+                    "The rate could not be determined for these cash flows.",
+                    leftOut,
+                ).joinToString(" ")
         }
     val period = result.periodReturn
     return ModelReturnState(

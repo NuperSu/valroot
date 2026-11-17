@@ -219,7 +219,9 @@ class AnalyticsService internal constructor(
 
     /**
      * Money-weighted return of [portfolio] from [startMillis] to [endMillis]. See [MoneyWeightedReturn] for what counts as
-     * a contribution; any missing start, end or flow price makes the rate unavailable rather than approximate.
+     * a contribution. An asset without a fresh price at any point the return needs (its holding at the start or end, or
+     * one of its contributions or withdrawals) is left out of every part, as coins without a price are left out of
+     * totals; leaving out only the unpriced points would turn its value into a false gain or loss.
      */
     fun moneyWeightedReturn(
         portfolio: PortfolioId?,
@@ -231,47 +233,71 @@ class AnalyticsService internal constructor(
         val quote = app.assets.portfolioCurrency(portfolio)
         val selected = app.assets.scopedAccounts(ownership.load(), portfolio)
         val knownAt = now()
+        val zero = ExactDecimal.parse("0")
 
-        fun total(point: HistoryPoint): ExactDecimal? {
-            val held = point.valuations.filter { it.amount.atomicUnits.sign != 0 }
-            if (held.any { it.value == null || it.priceStatus != PriceStatus.FRESH }) return null
-            return held.fold(ExactDecimal.parse("0")) { sum, valuation -> sum + valuation.value!! }
-        }
-        val (startPoint, endPoint) = historySeries(listOf(startMillis, endMillis), portfolio)
-        val startValue = total(startPoint)
-        val endValue = total(endPoint)
-        // Transfer movements that leave or enter the scope are flows; transfers between scoped accounts cancel out,
-        // within one activity or across the two sides of an accepted transfer link inside the period.
-        var contributions = ExactDecimal.parse("0")
-        var withdrawals = ExactDecimal.parse("0")
-        var unpriced = 0
-        val flows = mutableListOf<Pair<Long, ExactDecimal>>()
-        val period = activitiesBetween(selected, startMillis, endMillis)
-        val internal = internalTransferSides(period, selected)
-        period.forEach { activity ->
-            activity.movements
-                .filter {
-                    it.accountId in selected &&
-                        it.role == io.valroot.core.ledger.MovementRole.TRANSFER &&
-                        (activity.id to it.id) !in internal
-                }.groupBy { it.amount.assetId }
-                .forEach { (asset, movements) ->
-                    val net = movements.fold(io.valroot.core.model.ExactInteger.ZERO) { sum, movement -> sum + movement.amount.atomicUnits }
-                    if (net.sign == 0) return@forEach
-                    val magnitude = AtomicAmount(asset, if (net.sign < 0) -net else net)
-                    val value = valueAt(magnitude, quote, activity.occurredAtEpochMillis, knownAt)
-                    if (value == null) {
-                        unpriced++
-                    } else if (net.sign > 0) {
-                        contributions += value
-                        flows += activity.occurredAtEpochMillis to value
+        /** Each held asset's value at the point, null when it has no fresh price. */
+        fun holdings(point: HistoryPoint): Map<AssetId, ExactDecimal?> =
+            point.valuations
+                .filter { it.amount.atomicUnits.sign != 0 }
+                .groupBy { it.asset }
+                .mapValues { (_, values) ->
+                    if (values.any { it.value == null || it.priceStatus != PriceStatus.FRESH }) {
+                        null
                     } else {
-                        withdrawals += value
-                        flows += activity.occurredAtEpochMillis to ExactDecimal(-value.coefficient, value.scale)
+                        values.fold(zero) { sum, valuation -> sum + valuation.value!! }
                     }
                 }
-        }
-        val priced = startValue != null && endValue != null && unpriced == 0
+        val (startPoint, endPoint) = historySeries(listOf(startMillis, endMillis), portfolio)
+        val start = holdings(startPoint)
+        val end = holdings(endPoint)
+
+        // Transfer movements that leave or enter the scope are flows; transfers between scoped accounts cancel out,
+        // within one activity or across the two sides of a transfer link inside the period.
+        data class Flow(
+            val asset: AssetId,
+            val at: Long,
+            val value: ExactDecimal?,
+            val incoming: Boolean,
+        )
+        val period = activitiesBetween(selected, startMillis, endMillis)
+        val internal = internalTransferSides(period, selected)
+        val flows =
+            period.flatMap { activity ->
+                activity.movements
+                    .filter {
+                        it.accountId in selected &&
+                            it.role == io.valroot.core.ledger.MovementRole.TRANSFER &&
+                            (activity.id to it.id) !in internal
+                    }.groupBy { it.amount.assetId }
+                    .mapNotNull { (asset, movements) ->
+                        val net =
+                            movements.fold(io.valroot.core.model.ExactInteger.ZERO) { sum, movement ->
+                                sum +
+                                    movement.amount.atomicUnits
+                            }
+                        if (net.sign == 0) return@mapNotNull null
+                        val magnitude = AtomicAmount(asset, if (net.sign < 0) -net else net)
+                        Flow(
+                            asset,
+                            activity.occurredAtEpochMillis,
+                            valueAt(magnitude, quote, activity.occurredAtEpochMillis, knownAt),
+                            net.sign > 0,
+                        )
+                    }
+            }
+        val leftOut =
+            (
+                start.filterValues { it == null }.keys + end.filterValues { it == null }.keys +
+                    flows.filter { it.value == null }.map { it.asset }
+            ).toSet()
+        val counted = flows.filter { it.asset !in leftOut }
+        val startValue = start.filterKeys { it !in leftOut }.values.fold(zero) { sum, value -> sum + value!! }
+        val endValue = end.filterKeys { it !in leftOut }.values.fold(zero) { sum, value -> sum + value!! }
+        val contributions = counted.filter { it.incoming }.fold(zero) { sum, flow -> sum + flow.value!! }
+        val withdrawals = counted.filter { !it.incoming }.fold(zero) { sum, flow -> sum + flow.value!! }
+        // Measurable when at least one asset has every price it needs, or when there is nothing at all (no investment).
+        val assets = start.keys + end.keys + flows.map { it.asset }
+        val priced = assets.isEmpty() || assets.any { it !in leftOut }
         val gain = if (priced) endValue - startValue - contributions + withdrawals else null
         val year = 365.25 * 86_400_000.0
         val span = (endMillis - startMillis) / year
@@ -282,7 +308,9 @@ class AnalyticsService internal constructor(
                 // Investor view: money put in is negative, money taken out and the final value are positive.
                 val dated =
                     listOf(DatedFlow(0.0, -startValue.toString().toDouble())) +
-                        flows.map { (at, value) -> DatedFlow((at - startMillis) / year, -value.toString().toDouble()) } +
+                        counted.map { flow ->
+                            DatedFlow((flow.at - startMillis) / year, (if (flow.incoming) -1 else 1) * flow.value.toString().toDouble())
+                        } +
                         DatedFlow(span, endValue.toString().toDouble())
                 InternalRate.solve(dated.filter { it.amount != 0.0 })
             }
@@ -290,16 +318,16 @@ class AnalyticsService internal constructor(
             startMillis,
             endMillis,
             quote,
-            startValue,
-            endValue,
-            contributions.takeIf { unpriced == 0 },
-            withdrawals.takeIf { unpriced == 0 },
+            startValue.takeIf { priced },
+            endValue.takeIf { priced },
+            contributions.takeIf { priced },
+            withdrawals.takeIf { priced },
             gain,
             rate?.let { (1 + it).pow(span) - 1 },
             rate?.takeIf { span >= 365.0 / 365.25 },
             status,
-            unpriced,
-            flows.size + unpriced,
+            leftOut.size,
+            counted.size,
         )
     }
 

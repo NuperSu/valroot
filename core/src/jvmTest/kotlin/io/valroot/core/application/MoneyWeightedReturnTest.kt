@@ -127,16 +127,17 @@ class MoneyWeightedReturnTest {
         }
     }
 
-    @Test fun aMissingFlowPriceMakesTheRateUnavailableAndShortPeriodsAreNotAnnualised() {
+    @Test fun aCoinMissingAFlowPriceIsLeftOutAndShortPeriodsAreNotAnnualised() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             record(app)
             app.transactions.saveTransaction(draft("late", TransactionType.WITHDRAWAL, btc, "0.001", 320))
-            val missing = app.analytics.moneyWeightedReturn(null, 5 * day, now)
-            assertEquals(ReturnStatus.MISSING_PRICES, missing.status)
-            assertEquals(1, missing.unpricedFlows)
-            assertNull(missing.periodReturn)
-            assertNull(missing.gain)
+            // BTC has no price for the late withdrawal, so BTC is left out of the start, end and flows alike; the rest
+            // of the portfolio is still measured.
+            val partial = app.analytics.moneyWeightedReturn(null, 5 * day, now)
+            assertEquals(1, partial.leftOutAssets)
+            assertTrue(partial.status != ReturnStatus.MISSING_PRICES)
+            assertTrue(partial.startValue != null && partial.endValue != null && partial.gain != null)
             val month = app.analytics.moneyWeightedReturn(null, now - 30 * day, now)
             assertNull(month.annualReturn)
         }
@@ -147,13 +148,14 @@ class MoneyWeightedReturnTest {
             val app = setUp(db)
             app.transactions.saveTransaction(draft("deposit", TransactionType.DEPOSIT, usd, "1000", 10))
             app.transactions.saveTransaction(draft("buy", TransactionType.BUY, btc, "0.1", 10, "10000"))
-            // The arrival has no price on its day: as two flows the rate would be unavailable.
+            // The arrival has no price on its day: as two flows BTC would be left out of the return.
             app.transactions.saveTransaction(draft("out", TransactionType.WITHDRAWAL, btc, "0.05", 100))
             app.transactions.saveTransaction(draft("in", TransactionType.TRANSFER, btc, "0.05", 150, account = b, incoming = true))
-            assertEquals(ReturnStatus.MISSING_PRICES, app.analytics.moneyWeightedReturn(null, 5 * day, now).status)
+            assertEquals(1, app.analytics.moneyWeightedReturn(null, 5 * day, now).leftOutAssets)
             app.transactions.setDecision(ActivityId("out"), ActivityId("in"), LinkState.ACCEPTED)
             val linked = app.analytics.moneyWeightedReturn(null, 5 * day, now)
             assertEquals(ReturnStatus.OK, linked.status)
+            assertEquals(0, linked.leftOutAssets)
             assertEquals(0, linked.contributions!!.compareTo(ExactDecimal.parse("1000")))
             assertEquals(0, linked.withdrawals!!.compareTo(ExactDecimal.parse("0")))
         }

@@ -14,7 +14,7 @@ enum class ReturnStatus {
     /** Nothing was invested at the start or during the period. */
     NO_INVESTMENT,
 
-    /** A start or end value, or a contribution or withdrawal, has no price; the rate would be a guess. */
+    /** No asset has a price at every point the return needs, so nothing can be measured. */
     MISSING_PRICES,
 
     /** The cash flows allow more than one rate. */
@@ -43,8 +43,8 @@ data class MoneyWeightedReturn(
     val periodReturn: Double?,
     val annualReturn: Double?,
     val status: ReturnStatus,
-    /** Contributions or withdrawals without a price at their time. */
-    val unpricedFlows: Int = 0,
+    /** Assets left out because they lack a price at their start or end holding or at one of their flows. */
+    val leftOutAssets: Int = 0,
     val flowCount: Int = 0,
 )
 
