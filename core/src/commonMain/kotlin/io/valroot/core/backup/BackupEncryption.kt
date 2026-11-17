@@ -1,15 +1,14 @@
 package io.valroot.core.backup
 
-import java.security.GeneralSecurityException
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
+import io.valroot.core.crypto.AuthenticationFailed
+import io.valroot.core.crypto.Crypto
 
-/** Shared by the desktop and Android builds; see `docs/backup-format.md`. */
-actual object BackupEncryption {
+/**
+ * Password-based streaming encryption around the backup body. The envelope is described in `docs/backup-format.md`:
+ * a versioned header with the KDF parameters, then authenticated chunks whose nonces carry a counter and a final-chunk
+ * flag, so a wrong password, tampering, reordering and truncation are all rejected.
+ */
+object BackupEncryption {
     private val magic = "VLRBK".encodeToByteArray()
 
     /** Backups made before the app was renamed from Polion; still decrypted. */
@@ -25,14 +24,9 @@ actual object BackupEncryption {
         password: CharArray,
         salt: ByteArray,
         iterations: Int,
-    ): SecretKeySpec {
+    ): ByteArray {
         require(password.isNotEmpty())
-        val spec = PBEKeySpec(password, salt, iterations, 256)
-        return try {
-            SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded, "AES")
-        } finally {
-            spec.clearPassword()
-        }
+        return Crypto.pbkdf2Sha256(password, salt, iterations)
     }
 
     private fun nonce(
@@ -49,13 +43,13 @@ actual object BackupEncryption {
     ) = ((bytes[at].toInt() and 0xff) shl 24) or ((bytes[at + 1].toInt() and 0xff) shl 16) or
         ((bytes[at + 2].toInt() and 0xff) shl 8) or (bytes[at + 3].toInt() and 0xff)
 
-    actual fun encrypt(
+    /** Returns a sink that encrypts into [output]; [EncryptingSink.close] writes the final chunk and must be called. */
+    fun encrypt(
         output: ByteSink,
         password: CharArray,
     ): EncryptingSink {
-        val random = SecureRandom()
-        val salt = ByteArray(16).also(random::nextBytes)
-        val prefix = ByteArray(7).also(random::nextBytes)
+        val salt = Crypto.randomBytes(16)
+        val prefix = Crypto.randomBytes(7)
         val header = magic + byteArrayOf(VERSION, KDF_PBKDF2_SHA256) + int(ITERATIONS) + salt + prefix
         check(header.size == HEADER)
         val key = key(password, salt, ITERATIONS)
@@ -68,10 +62,7 @@ actual object BackupEncryption {
 
             private fun emit(last: Boolean) {
                 check(counter != Int.MAX_VALUE) { "Backup is too large" }
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG * 8, nonce(prefix, counter, last)))
-                cipher.updateAAD(header)
-                val sealed = cipher.doFinal(buffer, 0, filled)
+                val sealed = Crypto.aesGcmSeal(key, nonce(prefix, counter, last), header, buffer.copyOf(filled))
                 output.write(int(sealed.size))
                 output.write(sealed)
                 counter++
@@ -104,7 +95,8 @@ actual object BackupEncryption {
         }
     }
 
-    actual fun decrypt(
+    /** Returns the decrypted body of [input]; a wrong password or damaged file fails with [IllegalArgumentException]. */
+    fun decrypt(
         input: ByteSource,
         password: CharArray,
     ): ByteSource {
@@ -140,13 +132,10 @@ actual object BackupEncryption {
                 require(input.readFully(sealed)) { "Backup ends unexpectedly" }
                 nextLength = readLength()
                 val last = nextLength == null
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG * 8, nonce(prefix, counter, last)))
-                cipher.updateAAD(header)
                 plain =
                     try {
-                        cipher.doFinal(sealed)
-                    } catch (_: GeneralSecurityException) {
+                        Crypto.aesGcmOpen(key, nonce(prefix, counter, last), header, sealed)
+                    } catch (_: AuthenticationFailed) {
                         throw IllegalArgumentException(if (counter == 0) "Wrong password or damaged backup" else "Damaged backup")
                     }
                 position = 0

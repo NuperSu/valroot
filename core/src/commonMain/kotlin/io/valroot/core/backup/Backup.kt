@@ -188,25 +188,6 @@ class PortableBackup(
     }
 }
 
-/**
- * Password-based streaming encryption around the backup body. The envelope is described in `docs/backup-format.md`:
- * a versioned header with the KDF parameters, then authenticated chunks whose nonces carry a counter and a final-chunk
- * flag, so a wrong password, tampering, reordering and truncation are all rejected.
- */
-expect object BackupEncryption {
-    /** Returns a sink that encrypts into [output]; [EncryptingSink.close] writes the final chunk and must be called. */
-    fun encrypt(
-        output: ByteSink,
-        password: CharArray,
-    ): EncryptingSink
-
-    /** Returns the decrypted body of [input]; a wrong password or damaged file fails with [IllegalArgumentException]. */
-    fun decrypt(
-        input: ByteSource,
-        password: CharArray,
-    ): ByteSource
-}
-
 interface EncryptingSink : ByteSink {
     fun close()
 }

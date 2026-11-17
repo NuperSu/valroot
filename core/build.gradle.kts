@@ -46,6 +46,9 @@ kotlin {
         implementation(libs.androidx.sqlite.bundled)
         // Locks for common code (BundledSqliteDatabase serializes its calls).
         implementation(libs.atomicfu)
+        // PBKDF2, AES-GCM, HMAC and SHA-256 on the platform's own crypto: the JDK on Android and desktop, CryptoKit on Apple.
+        implementation(libs.cryptography.core)
+        implementation(libs.cryptography.provider.optimal)
         // ACINQ's Bitcoin library (used by Phoenix): BIP32 derivation, addresses and descriptor checksums.
         implementation(libs.bitcoin.kmp)
         // Keccak-256 for EIP-55 address checksums.

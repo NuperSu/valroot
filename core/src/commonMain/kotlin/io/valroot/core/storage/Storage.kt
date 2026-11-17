@@ -19,7 +19,14 @@ interface SqliteDatabase : AutoCloseable {
     fun <T> transaction(block: () -> T): T
 }
 
-expect fun sha256(value: String): String
+/** Lowercase hex SHA-256 of [value]'s UTF-8 bytes. */
+fun sha256(value: String): String = sha256Hex(value.encodeToByteArray())
+
+/** Lowercase hex SHA-256 of [bytes]. */
+fun sha256Hex(bytes: ByteArray): String =
+    io.valroot.core.crypto.Crypto
+        .sha256(bytes)
+        .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 
 /**
  * A query on a connection that was closed, such as the one a backup restore replaced. It is a cancellation: a screen
