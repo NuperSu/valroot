@@ -1,5 +1,6 @@
 package io.valroot.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,6 +63,8 @@ fun ValrootApp(
     LaunchedEffect(application, preferenceRevision) {
         appearance = AppearanceTheme.fromKey(application.settings.theme())
     }
+    val dark = appearance == AppearanceTheme.DARK || (appearance == AppearanceTheme.SYSTEM && isSystemInDarkTheme())
+    LaunchedEffect(appearance, dark) { platform.appearanceChanged(appearance.key, dark) }
     ValrootTheme(appearance) {
         Surface(Modifier.fillMaxSize(), color = Paper) {
             // The product stays composed under the lock, so in-progress forms and selections survive a lock cycle. A

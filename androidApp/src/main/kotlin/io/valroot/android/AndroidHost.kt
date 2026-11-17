@@ -1,5 +1,7 @@
 package io.valroot.android
 
+import androidx.core.content.edit
+import androidx.core.graphics.drawable.toDrawable
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.MutableState
 import io.valroot.core.application.PortfolioApplication
@@ -105,6 +107,17 @@ internal class AndroidHost(
     override val openedBackup: kotlinx.coroutines.flow.StateFlow<String?> get() = state.openedBackup
 
     override fun forgetOpenedBackup() = backups.forgetOpenedBackup()
+
+    /** The appearance last used, for the start screen of the next launch; null before the first. */
+    val savedTheme: String? get() = state.preferences.getString(THEME, null)
+
+    override fun appearanceChanged(
+        themeKey: String,
+        dark: Boolean,
+    ) {
+        if (savedTheme != themeKey) state.preferences.edit { putString(THEME, themeKey) }
+        styleSystemBars(activity, dark)
+    }
 
     override val backupWork: kotlinx.coroutines.flow.StateFlow<String?> get() = state.backupWork
 
@@ -237,5 +250,19 @@ internal class AndroidHost(
     fun close() {
         state.closed = true
         state.executor.execute { if (state.dbOpen) runCatching { state.db.close() } }
+    }
+}
+
+private const val THEME = "appearance_theme"
+
+/** The window background and system bar icons of an appearance: light icons on a dark one, dark icons on a light one. */
+internal fun styleSystemBars(
+    activity: ComponentActivity,
+    dark: Boolean,
+) {
+    activity.window.setBackgroundDrawable((if (dark) 0xFF000000.toInt() else 0xFFF6F7F3.toInt()).toDrawable())
+    androidx.core.view.WindowInsetsControllerCompat(activity.window, activity.window.decorView).run {
+        isAppearanceLightStatusBars = !dark
+        isAppearanceLightNavigationBars = !dark
     }
 }

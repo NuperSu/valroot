@@ -98,6 +98,15 @@ interface PlatformActions {
     fun forgetOpenedBackup() {}
 
     /**
+     * The appearance in use: its saved key and whether it is dark. A host keeps the key for its start screen, which shows
+     * before local data opens, and styles its system bars.
+     */
+    fun appearanceChanged(
+        themeKey: String,
+        dark: Boolean,
+    ) {}
+
+    /**
      * What a backup save or restore is doing once its file is chosen, such as "Restoring backup…", or null when none
      * runs. The app shows it until the result arrives.
      */

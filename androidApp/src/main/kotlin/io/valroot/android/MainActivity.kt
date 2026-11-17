@@ -4,21 +4,12 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import androidx.core.view.WindowInsetsControllerCompat
 import io.valroot.ui.ValrootApp
+import io.valroot.ui.ValrootStartScreen
+import io.valroot.ui.valrootThemeIsDark
 import kotlinx.coroutines.flow.update
 
 class MainActivity : ComponentActivity() {
@@ -26,8 +17,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
         val opened = runCatching { AndroidHost(this) }.getOrNull()
+        val startTheme = opened?.savedTheme
+        val systemDark =
+            (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        styleSystemBars(this, valrootThemeIsDark(startTheme, systemDark))
         host = opened
         if (savedInstanceState == null) {
             receive(intent)
@@ -37,28 +32,14 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             if (opened == null) {
-                Text("Could not open local data. Check available storage and database compatibility.")
+                ValrootStartScreen(themeKey = null, failed = true, message = "")
             } else {
                 val app = opened.app.value
                 if (app != null) {
                     ValrootApp(app, opened, opened.locked.value)
                 } else {
                     val status by opened.syncStatus.collectAsState()
-                    MaterialTheme {
-                        Surface(Modifier.fillMaxSize()) {
-                            Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text(if (opened.openFailed.value) "Could not open local data" else "Opening your local portfolio")
-                                if (!opened.openFailed.value) LinearProgressIndicator()
-                                Text(
-                                    if (opened.openFailed.value) {
-                                        "Check storage and app compatibility. Saved data is intact."
-                                    } else {
-                                        status.message
-                                    },
-                                )
-                            }
-                        }
-                    }
+                    ValrootStartScreen(startTheme, opened.openFailed.value, status.message.takeIf { status.phase == io.valroot.ui.SyncPhase.SYNCING }.orEmpty())
                 }
             }
         }
