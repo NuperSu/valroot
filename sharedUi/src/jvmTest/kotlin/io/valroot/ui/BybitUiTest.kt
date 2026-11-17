@@ -13,7 +13,7 @@ import io.valroot.core.exchange.ExchangeKeyInfo
 import io.valroot.core.exchange.ExchangeKind
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.TrackingTargetId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
 class BybitUiTest {
     @Test
     fun connectChecksTheKeyAndTracksTheAccountItNames() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val host = BybitTestHost(executor.asCoroutineDispatcher())
@@ -74,7 +74,7 @@ class BybitUiTest {
 
     @Test
     fun mexcConnectTracksTheAccountItsKeyReads() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val host = BybitTestHost(executor.asCoroutineDispatcher())
@@ -112,7 +112,7 @@ class BybitUiTest {
 
     @Test
     fun binanceConnectUsesTheSameChecksAndShowsTradingPairs() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val host = BybitTestHost(executor.asCoroutineDispatcher())

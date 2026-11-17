@@ -2,7 +2,7 @@ package io.valroot.core.bitcoin
 
 import io.valroot.core.backup.PortableBackup
 import io.valroot.core.model.AccountId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.SqliteDatabase
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -46,7 +46,7 @@ class BitcoinGraphDeltaRepositoryTest {
 
     @Test
     fun unchangedScansShareBodiesAndRangesAndSingleChangeIsProportional() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val payloads = (1..40).map { payload(sha256("tx:$it")) }
             val first = save(db, payloads)
@@ -86,7 +86,7 @@ class BitcoinGraphDeltaRepositoryTest {
 
     @Test
     fun callerRollbackPreservesHistoricalAndCurrentMembershipAndRecoveryScope() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val raw = payload("a".repeat(64))
             val first = save(db, listOf(raw))
@@ -140,7 +140,7 @@ class BitcoinGraphDeltaRepositoryTest {
 
     @Test
     fun replacementEvidenceSurvivesDisappearanceAndHistoricalReads() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val old = payload("a".repeat(64))
             val replacement = payload("b".repeat(64)).replace(sha256("parent:${"b".repeat(64)}"), sha256("parent:${"a".repeat(64)}"))
@@ -158,13 +158,13 @@ class BitcoinGraphDeltaRepositoryTest {
 
     @Test
     fun nativeArchivePreservesRangesAndVersionFiveArchiveRetainsLegacyEvidence() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val first = save(db, listOf(payload("a".repeat(64))))
             val second = save(db, listOf(payload("a".repeat(64), 8999)))
             // Portable backups intentionally require empty scratch state before restoration, not export.
             val archive = PortableBackup.discover(db).export(db)
-            JvmSqliteDatabase(":memory:").use { restored ->
+            BundledSqliteDatabase(":memory:").use { restored ->
                 Store(restored)
                 BitcoinGraphDeltaRepository(restored)
                 PortableBackup.discover(restored).restoreToStaging(restored, archive)
@@ -189,7 +189,7 @@ class BitcoinGraphDeltaRepositoryTest {
                 )
             }
         }
-        JvmSqliteDatabase(":memory:").use { old ->
+        BundledSqliteDatabase(":memory:").use { old ->
             Store(old)
             bitcoinGraphDeltaTables.asReversed().forEach { old.execute("DROP TABLE $it") }
             old.execute("PRAGMA user_version = 5")
@@ -208,7 +208,7 @@ class BitcoinGraphDeltaRepositoryTest {
                     )
                 }
             val archive = PortableBackup.discover(old).export(old)
-            JvmSqliteDatabase(":memory:").use { restored ->
+            BundledSqliteDatabase(":memory:").use { restored ->
                 Store(restored)
                 BitcoinGraphDeltaRepository(restored)
                 PortableBackup.discover(restored).restoreToStaging(restored, archive)

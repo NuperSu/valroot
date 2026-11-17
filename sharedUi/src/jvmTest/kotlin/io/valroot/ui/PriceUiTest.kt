@@ -14,7 +14,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 class PriceUiTest {
     @Test
     fun assetDetailCanSwitchFromManualToProviderPrices() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -54,7 +54,7 @@ class PriceUiTest {
 
     @Test
     fun portfolioTotalWarnsWhenCurrentPriceIsStale() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 var clock = System.currentTimeMillis()
                 val app = PortfolioApplication(db) { clock }
@@ -77,7 +77,7 @@ class PriceUiTest {
 
     @Test
     fun automaticPricesRequireConsentAndScheduleRefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 val data = app.snapshot()
@@ -103,7 +103,7 @@ class PriceUiTest {
 
     @Test
     fun historicalPriceRangeRequiresExplicitConsent() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

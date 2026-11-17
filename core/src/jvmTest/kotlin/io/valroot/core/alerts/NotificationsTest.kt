@@ -3,7 +3,7 @@ package io.valroot.core.alerts
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.CoingeckoMarkets
 import io.valroot.core.model.ExactDecimal
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -80,7 +80,7 @@ class NotificationsTest {
         val file = Files.createTempFile("valroot-alerts", ".sqlite")
         var now = start
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { now }
                 app.market.setConsent(true)
                 assertFails { app.notifications.saveAlert("bitcoin", AlertCondition.ABOVE, d("100000")) }
@@ -97,7 +97,7 @@ class NotificationsTest {
                 assertTrue(app.notifications.evaluate("2027-01-15", 12).isEmpty())
             }
             // A new process reads the same snapshot and the recorded state: nothing is delivered again.
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { now }
                 assertTrue(app.notifications.evaluate("2027-01-15", 12).isEmpty())
                 assertEquals(1, app.notifications.history().size)
@@ -127,7 +127,7 @@ class NotificationsTest {
     }
 
     @Test fun settingsSendTheDailyUpdateMovesAndHighsOnce() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val now = start
             val app = PortfolioApplication(db) { now }
             app.market.setConsent(true)

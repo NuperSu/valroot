@@ -14,7 +14,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 class OnboardingUiTest {
     @Test
     fun erasingLocalDataReturnsToFreshOnboardingWithoutHostRevision() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -63,7 +63,7 @@ class OnboardingUiTest {
 
     @Test
     fun freshInstallCanCompleteWithoutAccountsOrNetworkRequests() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 runDesktopComposeUiTest(width = 420, height = 900) {
@@ -98,7 +98,7 @@ class OnboardingUiTest {
 
     @Test
     fun freshInstallCanSkipOfflineAndResumeSavedSetupFromSettings() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 runDesktopComposeUiTest(width = 1000, height = 900) {

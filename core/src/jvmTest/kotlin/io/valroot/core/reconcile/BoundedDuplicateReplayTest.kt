@@ -12,7 +12,7 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +42,7 @@ class BoundedDuplicateReplayTest {
 
     @Test
     fun decisionAndSuppressionPagesKeepGlobalOrderAcrossBoundaries() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val ledger = ActivityRepository(db)
             val overlays = OverlayRepository(db)
@@ -84,7 +84,7 @@ class BoundedDuplicateReplayTest {
 
     @Test
     fun globalDecisionsMatchOracleAcrossPagesAndConflictCases() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val ledger = ActivityRepository(db)
             val overlays = OverlayRepository(db)

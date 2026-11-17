@@ -18,14 +18,14 @@ import io.valroot.core.model.Rational
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AccountingCompletenessTest {
     @Test fun missingDisposalBlocksDependentInventoryUntilClassified() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             val owner = OwnerId("owner")
             val account = AccountId("account")

@@ -13,7 +13,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import io.valroot.testing.utxoResponse
 import kotlin.test.Test
@@ -24,7 +24,7 @@ class BitcoinScanResumeTest {
     private val address = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
     private val hash = "b".repeat(64)
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 15552000000L }
         val owner = OwnerId("owner")
         val account = AccountId("account")
@@ -45,7 +45,7 @@ class BitcoinScanResumeTest {
     }
 
     private fun countRows(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         table: String,
     ): Int =
         db
@@ -92,7 +92,7 @@ class BitcoinScanResumeTest {
     }
 
     @Test fun transientFailureIsRetriedWithoutTheBackoffBlockingTheUserRetry() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider(address, hash, totalTransactions = 75) { tx(it) }
             provider.failChainRequest = 3
@@ -105,7 +105,7 @@ class BitcoinScanResumeTest {
     }
 
     @Test fun changedTransactionFailsTheScanAndDiscardsItsStage() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val first = ChainProvider(address, hash, totalTransactions = 75) { tx(it) }
             first.failChainRequest = 3
@@ -133,7 +133,7 @@ class BitcoinScanResumeTest {
     }
 
     @Test fun scanCompletesPastThousandChainPages() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider(address, hash, totalTransactions = 25 * 1001) { tx(it) }
             assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport))

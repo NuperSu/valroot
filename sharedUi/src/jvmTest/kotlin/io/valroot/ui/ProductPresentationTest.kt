@@ -8,7 +8,7 @@ import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.PortfolioId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
@@ -28,7 +28,7 @@ class ProductPresentationTest {
         runBlocking {
             var time = 100_000_000L
             var calls = 0
-            var snapshot = JvmSqliteDatabase(":memory:").use { PortfolioApplication(it) { time }.snapshot() }
+            var snapshot = BundledSqliteDatabase(":memory:").use { PortfolioApplication(it) { time }.snapshot() }
             var failSnapshot = false
             val requestedScopes = mutableListOf<PortfolioId?>()
             val queries =
@@ -131,7 +131,7 @@ class ProductPresentationTest {
             var scope: PortfolioId? = null
             val first = 1_000L
             val end = 200_000_000L
-            val snapshot = JvmSqliteDatabase(":memory:").use { PortfolioApplication(it) { end }.snapshot() }
+            val snapshot = BundledSqliteDatabase(":memory:").use { PortfolioApplication(it) { end }.snapshot() }
             val queries =
                 object : ProductQueries {
                     override fun reload() = Unit
@@ -233,7 +233,7 @@ class ProductPresentationTest {
     @Test
     fun failedReloadRetainsAcceptedSnapshotAndItsFilter() =
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
                     val saved = PortfolioApplication(db) { 1L }.snapshot()
                     val queries = Queries(saved)
@@ -254,7 +254,7 @@ class ProductPresentationTest {
     @Test
     fun cancelledRequestCannotReplaceNewFilterAndDraftSurvivesReload() =
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
                     val saved = PortfolioApplication(db) { 1L }.snapshot()
                     val queries = Queries(saved)
@@ -291,7 +291,7 @@ class ProductPresentationTest {
     @Test
     fun nonHistoryPageDoesNotReplayHistoryOrDiscardSavedSnapshot() =
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
                     val saved = PortfolioApplication(db) { 1L }.snapshot()
                     val queries = Queries(saved)

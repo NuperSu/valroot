@@ -19,7 +19,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import io.valroot.core.alerts.NotificationMessage
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.flow.update
 import java.time.LocalDate
 import java.time.LocalTime
@@ -78,7 +78,7 @@ class NotificationWorker(
  * minutes. Callers hold [AutomaticPriceGate.lock] and have checked that no restore is in progress.
  */
 internal fun checkPriceAlerts(context: Context): List<NotificationMessage> =
-    AndroidSqliteDatabase(context.applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
+    BundledSqliteDatabase(context.applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
         PortfolioApplication(db, System::currentTimeMillis).notifications.runCheck(
             MarketFeedRefresher.transport::feed,
             LocalDate.now().toString(),

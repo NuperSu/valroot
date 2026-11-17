@@ -8,7 +8,7 @@ import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.bitcoin.BlockstreamTransport
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.TrackingTargetId
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.BiometricUnlock
 import io.valroot.ui.OrderBookResult
 import io.valroot.ui.PlatformActions
@@ -69,7 +69,7 @@ internal class AndroidHost(
         state.executor.execute {
             try {
                 Files.createDirectories(state.file.parent)
-                state.db = AndroidSqliteDatabase(state.file.toString())
+                state.db = BundledSqliteDatabase(state.file.toString())
                 val opened = PortfolioApplication(state.db, System::currentTimeMillis)
                 opened.settings.lockDelayMillis()?.let { privacyLock.delayMillis = it }
                 if (runCatching { sync.reconcileRefreshPreferences(opened) }.isFailure) {

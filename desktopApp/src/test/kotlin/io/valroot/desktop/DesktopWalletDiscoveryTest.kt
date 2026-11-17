@@ -14,7 +14,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.SyncPhase
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class DesktopWalletDiscoveryTest {
     private val walletId = TrackingTargetId("wallet")
 
-    private fun walletApplication(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun walletApplication(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1000L }
         val owner = Owner(OwnerId("owner"), "Personal")
         val account = Account(AccountId("account"), owner.id, "Savings", AccountKind.WALLET)
@@ -46,7 +46,7 @@ class DesktopWalletDiscoveryTest {
     @Test
     fun discoveryPreservesRateLimitAndOfflineGuidanceWithoutReportingSuccess() {
         for (reason in listOf(BitcoinProviderFailure.RATE_LIMITED, BitcoinProviderFailure.OFFLINE)) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = walletApplication(db)
                 val initial = app.snapshot().ownership
                 val progress = mutableListOf<String>()
@@ -68,7 +68,7 @@ class DesktopWalletDiscoveryTest {
 
     @Test
     fun answeredDiscoveryQueriesAreVisibleBeforeHistoryFailure() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = walletApplication(db)
             val progress = mutableListOf<String>()
             var queries = 0
@@ -103,7 +103,7 @@ class DesktopWalletDiscoveryTest {
 
     @Test
     fun successfulDiscoveryAndHistoryExposeBothStages() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = walletApplication(db)
             val progress = mutableListOf<String>()
             val status =
@@ -130,7 +130,7 @@ class DesktopWalletDiscoveryTest {
 
     @Test
     fun discoveryKeepsCapturedEndpointWhenSettingsChangeBeforeHistoryStarts() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = walletApplication(db)
             val endpoint = app.sources.endpoint()
             var calls = 0
@@ -157,7 +157,7 @@ class DesktopWalletDiscoveryTest {
 
     @Test
     fun unexpectedFailureUsesFixedGuidance() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = walletApplication(db)
             val status = discoverWalletStatus(app, walletId, EsploraTransport { error("private provider response") }) {}
             assertEquals(SyncPhase.ERROR, status.phase)

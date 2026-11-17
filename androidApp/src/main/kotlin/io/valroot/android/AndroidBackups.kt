@@ -1,7 +1,7 @@
 package io.valroot.android
 
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.readBoundedText
 import io.valroot.core.storage.walIsEmpty
 import kotlinx.coroutines.flow.update
@@ -146,7 +146,7 @@ internal class AndroidBackups(
             var replacementReady = false
             try {
                 staging = Files.createTempFile(state.file.parent, "restore-", ".sqlite")
-                AndroidSqliteDatabase(
+                BundledSqliteDatabase(
                     staging.toString(),
                 ).use { stagingDb ->
                     onDb {
@@ -179,7 +179,7 @@ internal class AndroidBackups(
                             Files.move(staging, state.file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
                             swapped = true
                         } finally {
-                            state.db = AndroidSqliteDatabase(state.file.toString())
+                            state.db = BundledSqliteDatabase(state.file.toString())
                             reopened = true
                         }
                         publish(PortfolioApplication(state.db, System::currentTimeMillis))

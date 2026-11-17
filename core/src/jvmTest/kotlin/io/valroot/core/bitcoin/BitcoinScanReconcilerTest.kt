@@ -7,7 +7,7 @@ import io.valroot.core.ledger.LedgerDeltas
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ProviderId
 import io.valroot.core.model.SourceId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -36,7 +36,7 @@ class BitcoinScanReconcilerTest {
                 { "2026-01-01T00:00:00Z" },
             ).fetch(HistoryRequest(SourceId("esplora"), ProviderId("esplora"), BITCOIN_MAINNET, account)).observations.single()
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 val ledger = ActivityRepository(db)
                 val reconciler = BitcoinScanReconciler(db, ledger)

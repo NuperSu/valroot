@@ -34,7 +34,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.sha256
 import io.valroot.core.sync.JobState
@@ -116,7 +116,7 @@ class SourceConnectorTest {
     }
 
     @Test fun aNewFamilyRefreshesThroughTheRegistryIntoHoldingsAndExport() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.snapshot()
             app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -169,7 +169,7 @@ class SourceConnectorTest {
         val bitcoin = BitcoinConnector(EsploraTransport { error("not called") }, DEFAULT_ENDPOINT)
         assertSame(bitcoin, SourceRegistry(listOf(bitcoin)).forNetwork(BITCOIN_MAINNET))
         assertFails { SourceRegistry(listOf(bitcoin, BitcoinConnector(EsploraTransport { error("x") }, DEFAULT_ENDPOINT))) }
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.snapshot()
             app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))

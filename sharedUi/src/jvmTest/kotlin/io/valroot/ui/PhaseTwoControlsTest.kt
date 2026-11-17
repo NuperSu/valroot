@@ -14,7 +14,7 @@ import io.valroot.core.application.AssetSort
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.AssetId
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 class PhaseTwoControlsTest {
     @Test
     fun marketCoinUsesGlobalAccountingAndRestoresEarlierPortfolioScope() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -60,7 +60,7 @@ class PhaseTwoControlsTest {
 
     @Test
     fun modeledCurrencySortFiltersAndExplanationUseRealWorkflows() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

@@ -3,7 +3,7 @@ package io.valroot.core.exchange
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.application.SourceRefreshOptions
 import io.valroot.core.model.AccountId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -56,7 +56,7 @@ class ExchangeConnectorTest {
     }
 
     private fun withApp(test: (PortfolioApplication) -> Unit) =
-        JvmSqliteDatabase(":memory:").use { db -> test(PortfolioApplication(db) { 0L }) }
+        BundledSqliteDatabase(":memory:").use { db -> test(PortfolioApplication(db) { 0L }) }
 
     private fun PortfolioApplication.readOnce(
         exchange: Exchange,
@@ -207,7 +207,7 @@ class ExchangeConnectorTest {
 
     @Test
     fun aSpentBudgetNeverMarksHistoryCompleteWithoutReading() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val day = ExchangeConnector.DAY_MILLIS
             // Read back to day 10 earlier; retention now ends at day 20, after the saved start.

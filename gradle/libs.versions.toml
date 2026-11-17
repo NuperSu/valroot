@@ -7,14 +7,16 @@ activity = "1.12.4"
 material3 = "1.9.0"
 work = "2.10.0"
 serialization = "1.9.0"
-sqlite-jdbc = "3.49.1.0"
+androidx-sqlite = "2.7.1"
+atomicfu = "0.33.0"
 secp256k1-kmp = "0.24.0"
 bitcoin-kmp = "0.32.0"
 sha3 = "0.8.0"
 
 [libraries]
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
-sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
+androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "androidx-sqlite" }
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 secp256k1-kmp-jni-jvm = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-jvm", version.ref = "secp256k1-kmp" }
 secp256k1-kmp-jni-android = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-android", version.ref = "secp256k1-kmp" }
 bitcoin-kmp = { module = "fr.acinq.bitcoin:bitcoin-kmp", version.ref = "bitcoin-kmp" }

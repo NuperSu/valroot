@@ -30,7 +30,7 @@ import io.valroot.core.model.SourceRecordId
 import io.valroot.core.onboarding.OnboardingAction
 import io.valroot.core.reconcile.ClassificationRule
 import io.valroot.core.reconcile.LinkState
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -39,7 +39,7 @@ import kotlin.test.assertTrue
 class AccountsUiTest {
     @Test
     fun accountSourceOpensScanDetails() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -82,7 +82,7 @@ class AccountsUiTest {
 
     @Test
     fun compactAccountManagementArchivesAndRestoresWithoutDeletingHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -167,7 +167,7 @@ class AccountsUiTest {
 
     @Test
     fun phoneCanArchiveAndRestoreAnAccount() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -195,7 +195,7 @@ class AccountsUiTest {
 
     @Test
     fun transferReviewRemovesRelationshipsRejectsConflictsAndKeepsSuggestionsUsable() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { 1000L }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -279,7 +279,7 @@ class AccountsUiTest {
 
     @Test
     fun ruleManagerEditsAndTogglesWithoutBroadeningFilters() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

@@ -25,7 +25,7 @@ import io.valroot.core.model.Rational
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,7 +35,7 @@ import kotlin.test.assertTrue
 
 class HistoricalPriceWorkflowTest {
     @Test fun applicationUsesMostRecentProviderPriceForCurrentAndHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val clock = 1_710_000_000_000L
             val app = PortfolioApplication(db) { clock }
             app.demo.seed()
@@ -87,7 +87,7 @@ class HistoricalPriceWorkflowTest {
     }
 
     @Test fun currentValuationRequiresRecentQuoteWhileHistoricalDailyPricesRemainUsable() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var clock = 1_710_000_000_000L
             val app = PortfolioApplication(db) { clock }
             app.demo.seed()
@@ -137,7 +137,7 @@ class HistoricalPriceWorkflowTest {
     }
 
     @Test fun rangeImportStoresIntradayPricesExactlyAndRejectsInvalidOrCancelledBatches() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.prices.setSourceConsent(true)
             val payload = """{"prices":[[$day,42000.125],[${day + 3_600_000},4.25e4]]}"""
@@ -192,7 +192,7 @@ class HistoricalPriceWorkflowTest {
     private val response = """{"market_data":{"current_price":{"usd":42000.123456789,"eur":39000,"gbp":33000}}}"""
 
     @Test fun consentAndInputValidationPrecedeNetworkRequests() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             var requests = 0
             val transport =
@@ -220,7 +220,7 @@ class HistoricalPriceWorkflowTest {
         val file = Files.createTempFile("valroot-historical-price", ".sqlite")
         val recentNow = day + 3_600_000L
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { recentNow }
                 val owner = OwnerId("owner")
                 val account = AccountId("account")
@@ -266,7 +266,7 @@ class HistoricalPriceWorkflowTest {
                 assertEquals(Rational.fromDecimal(ExactDecimal.parse("2000.123456789")), valuation.unrealizedGain)
                 app.prices.setSourceConsent(false)
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { recentNow }
                 assertFalse(app.prices.sourceConsent())
                 assertEquals(
@@ -304,7 +304,7 @@ class HistoricalPriceWorkflowTest {
 
     @Test fun erasureAndConsentReplacementCancelInFlightObservations() {
         for (wipe in listOf(false, true)) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = PortfolioApplication(db) { now }
                 app.prices.setSourceConsent(true)
                 val failure =
@@ -323,7 +323,7 @@ class HistoricalPriceWorkflowTest {
     }
 
     @Test fun hostInvalidationCancelsAtCommitAndObservedTimeIsResponseCompletion() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var clock = now
             val app = PortfolioApplication(db) { clock }
             app.prices.setSourceConsent(true)
@@ -351,7 +351,7 @@ class HistoricalPriceWorkflowTest {
     }
 
     @Test fun missingInvalidAndRateLimitedResultsDoNotRecordPrices() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.prices.setSourceConsent(true)
             assertEquals(PriceStatus.MISSING, app.prices.fetchHistorical({ "{}" }, btc, usd, day).status)

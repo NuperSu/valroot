@@ -1,7 +1,7 @@
 package io.valroot.core.application
 
 import io.valroot.core.model.AccountId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 
 class ExampleDataRemovalTest {
     @Test fun removingExampleDataRetiresItsRecordsPricesAndLabel() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_710_000_000_000L }
             app.demo.seed()
             assertTrue(app.snapshot().sampleData)

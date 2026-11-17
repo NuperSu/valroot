@@ -12,7 +12,7 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.Price
 import io.valroot.core.model.ProviderId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -24,7 +24,7 @@ class MarketProjectionTest {
 
     @Test
     fun savedProviderQuoteIsVisibleWithoutHoldingsOrOwnership() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             val before = app.snapshot()
             app.assets.register(
@@ -49,7 +49,7 @@ class MarketProjectionTest {
     @Test
     fun perUnitHistoryPreservesGapsExactValuesAndManualOverrideWithdrawal() {
         var now = 1000L
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.snapshot()
             app.assets.register(
@@ -87,7 +87,7 @@ class MarketProjectionTest {
 
     @Test
     fun marketListExcludesWrongCurrencyFutureUnknownProvidersAndFiatBases() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.snapshot()
             app.assets.register(

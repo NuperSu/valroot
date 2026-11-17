@@ -13,7 +13,7 @@ import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
 import io.valroot.core.reconcile.LinkState
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.test.Test
@@ -46,7 +46,7 @@ class MoneyWeightedReturnTest {
         assertEquals(ReturnStatus.NO_INVESTMENT, InternalRate.solve(listOf(DatedFlow(0.0, 5.0), DatedFlow(1.0, 6.0))).second)
     }
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { now }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -92,7 +92,7 @@ class MoneyWeightedReturnTest {
     }
 
     @Test fun contributionsWithdrawalsAndGainFollowTheDefinitions() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             record(app)
             val result = app.analytics.moneyWeightedReturn(null, 5 * day, now)
@@ -128,7 +128,7 @@ class MoneyWeightedReturnTest {
     }
 
     @Test fun aMissingFlowPriceMakesTheRateUnavailableAndShortPeriodsAreNotAnnualised() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             record(app)
             app.transactions.saveTransaction(draft("late", TransactionType.WITHDRAWAL, btc, "0.001", 320))
@@ -143,7 +143,7 @@ class MoneyWeightedReturnTest {
     }
 
     @Test fun anAcceptedLinkBetweenScopedAccountsIsNotAFlow() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             app.transactions.saveTransaction(draft("deposit", TransactionType.DEPOSIT, usd, "1000", 10))
             app.transactions.saveTransaction(draft("buy", TransactionType.BUY, btc, "0.1", 10, "10000"))
@@ -160,7 +160,7 @@ class MoneyWeightedReturnTest {
     }
 
     @Test fun anExchangeCurrencyDepositIsWorthItsAmount() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val fiat = app.exchanges.assets("bybit", setOf("USD")).getValue("USD")
             app.transactions.saveTransaction(draft("cash", TransactionType.DEPOSIT, fiat, "500", 10))

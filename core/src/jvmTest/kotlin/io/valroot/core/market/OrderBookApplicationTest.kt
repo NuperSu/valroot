@@ -3,7 +3,7 @@ package io.valroot.core.market
 import io.valroot.core.alerts.AlertCondition
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.ExactDecimal
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -19,7 +19,7 @@ class OrderBookApplicationTest {
     private val depth = """{"error":[],"result":{"XETHZUSD":{"bids":[["3000.1","2",1]],"asks":[["3000.2","1.5",1]]}}}"""
 
     @Test fun coinsUseCoingeckosKrakenListingsCachedForAWeek() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var now = 1_800_000_000_000L
             val app = PortfolioApplication(db) { now }
             val requests = mutableListOf<String>()
@@ -45,7 +45,7 @@ class OrderBookApplicationTest {
     }
 
     @Test fun aNotificationCheckRefreshesOnlyWhenSomethingIsOn() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.market.setConsent(true)
             var requests = 0

@@ -9,7 +9,7 @@ import androidx.work.WorkerParameters
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.bitcoin.BitcoinProviderException
 import io.valroot.core.bitcoin.BitcoinProviderFailure
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.SyncPhase
 import io.valroot.ui.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +24,7 @@ class RefreshWorker(
 ) : Worker(context, parameters) {
     override fun doWork(): Result {
         val automaticEnabled =
-            AndroidSqliteDatabase(applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
+            BundledSqliteDatabase(applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
                 PortfolioApplication(db, System::currentTimeMillis).settings.automaticRefresh() != false
             }
         if (!automaticEnabled) return Result.success()
@@ -87,7 +87,7 @@ class RefreshWorker(
             return try {
                 val file = context.getDatabasePath("portfolio.sqlite")
                 file.parentFile?.mkdirs()
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     val app = PortfolioApplication(db, System::currentTimeMillis)
                     // Each source needs its own consent. Wallet discovery and order verification are Bitcoin-only.
                     val plan = HostRefresh(app, withoutBitcoin) { ensureActive() }

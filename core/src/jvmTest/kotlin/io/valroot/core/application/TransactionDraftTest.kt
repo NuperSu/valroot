@@ -12,7 +12,7 @@ import io.valroot.core.model.Rational
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,7 +45,7 @@ class TransactionDraftTest {
     }
 
     @Test fun sharedNativeAndDesktopWorkflow() {
-        io.valroot.testing.verifyManualTransactionWorkflow { JvmSqliteDatabase(":memory:") }
+        io.valroot.testing.verifyManualTransactionWorkflow { BundledSqliteDatabase(":memory:") }
     }
 
     @Test fun exactLinkedLegsAndFeesNeverBecomeSingleLegTrades() {
@@ -98,7 +98,7 @@ class TransactionDraftTest {
     }
 
     @Test fun internalTransfersCarryBasisAndExternalIncomingKeepsItUnknown() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
             app.transactions.saveTransaction(draft("buy", TransactionType.BUY, "2", "100"))
@@ -124,7 +124,7 @@ class TransactionDraftTest {
     }
 
     @Test fun buysSellsRewardsWithdrawalsAndSeparateFeesHaveIndependentExactOracle() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
             app.transactions.saveTransaction(draft("fund", TransactionType.DEPOSIT, "1000", "1", usd))
@@ -156,7 +156,7 @@ class TransactionDraftTest {
     }
 
     @Test fun zeroBasisRewardsReplaceOnlyRewardCostAndAreReversible() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
             app.transactions.saveTransaction(draft("buy", TransactionType.BUY, "1", "100", time = 2000))
@@ -181,7 +181,7 @@ class TransactionDraftTest {
     }
 
     @Test fun failedTreatmentWriteRollsBackAllLegsNotesAndDraft() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
             db.execute(
@@ -199,7 +199,7 @@ class TransactionDraftTest {
         val file = Files.createTempFile("transaction-reopen", ".sqlite")
         val value = draft("retained", TransactionType.BUY, "1", "100").copy(notes = "Executed quote evidence")
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { 10000L }
                 setup(app)
                 app.transactions.saveTransaction(value.copy(notes = "  "))
@@ -210,7 +210,7 @@ class TransactionDraftTest {
                 assertEquals(2, history.size)
                 assertEquals(history[0].movements.map { it.id }, history[1].movements.map { it.id })
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { 10000L }
                 assertEquals(
                     "2",
@@ -221,7 +221,7 @@ class TransactionDraftTest {
                 )
                 assertEquals("Corrected", app.transactions.overlay(value.id)?.note)
                 val backup = app.backup.export("phase3-password".toCharArray())
-                JvmSqliteDatabase(":memory:").use { restored ->
+                BundledSqliteDatabase(":memory:").use { restored ->
                     app.backup.restoreToStaging(restored, backup, "phase3-password".toCharArray())
                     val copy = PortfolioApplication(restored) { 10000L }
                     assertEquals(app.transactions.draft(value.id), copy.transactions.draft(value.id))
@@ -238,7 +238,7 @@ class TransactionDraftTest {
     }
 
     @Test fun treatmentsPricedInAnotherCurrencyKeepTheirLotWithUnknownBasis() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
             // Reports are in US dollars; a buy paid in euros keeps its lot, but its basis in dollars is unknown.

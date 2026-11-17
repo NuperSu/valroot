@@ -14,7 +14,7 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "io.valroot.desktop.MainKt"
-        // sqlite-jdbc loads its native library; allow it so newer JDKs do not warn about restricted methods.
+        // The bundled SQLite and libsecp256k1 load native libraries; allow it so newer JDKs do not warn about restricted methods.
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
         nativeDistributions {
             // A self-contained folder with its own Java runtime; `createDistributable` builds it, and the Deb needs dpkg.
@@ -22,7 +22,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb,
             )
-            modules("java.instrument", "java.sql", "jdk.unsupported", "java.net.http")
+            modules("java.instrument", "jdk.unsupported", "java.net.http")
             packageName = "Valroot"
             packageVersion = "1.0.0"
             description = "Local-first, watch-only crypto portfolio tracker"

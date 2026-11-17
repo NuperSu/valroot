@@ -18,7 +18,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -214,7 +214,7 @@ class EvmConnectorTest {
         }
     }
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1_800_000_000_000L }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -233,7 +233,7 @@ class EvmConnectorTest {
     }
 
     @Test fun historyFeesGapsAndSkipping() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = FakeAlchemy()
             val connector = EvmConnector(provider.post)
@@ -352,7 +352,7 @@ class EvmConnectorTest {
     ) = """{"standard":"$standard","address":"$contract","fromAddress":"$from","toAddress":"$to","amount":"$amount"}"""
 
     @Test fun contractPaymentsAreRecoveredFromOneInchTracesWhereAlchemyDoesNotListThem() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             slug = "bnb-mainnet"
             val app = setUp(db)
             val provider = FakeAlchemy()
@@ -440,7 +440,7 @@ class EvmConnectorTest {
     }
 
     @Test fun tokensOneInchLeavesOutStartHidden() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = FakeAlchemy()
             var listed = emptyList<String>()
@@ -458,7 +458,7 @@ class EvmConnectorTest {
             app.assets.setShown(usdcAsset, true)
             assertTrue(usdcAsset !in app.assets.hidden())
             app.evm.recovered().saveListing(me, chain, OneInchListing(1_800_000_000_000L, setOf(usdc)))
-            JvmSqliteDatabase(":memory:").use { other ->
+            BundledSqliteDatabase(":memory:").use { other ->
                 val fresh = setUp(other)
                 fresh.evm.addChains(me, setOf(chain))
                 listed = listOf(usdc)
@@ -469,7 +469,7 @@ class EvmConnectorTest {
     }
 
     @Test fun aFailedOrPartialNetworkCheckStillRefreshesAndIsRepeated() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = FakeAlchemy()
             val connector = EvmConnector(provider.post)
@@ -492,7 +492,7 @@ class EvmConnectorTest {
     }
 
     @Test fun aFailingNetworkGroupKeepsTheChainsOtherGroupsFound() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = FakeAlchemy().apply { failOtherGroups = true }
             val outcome = EvmConnector(provider.post).refresh(app, SourceRefreshOptions())

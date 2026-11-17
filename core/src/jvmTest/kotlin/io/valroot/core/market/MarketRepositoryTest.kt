@@ -7,7 +7,7 @@ import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.NetworkId
 import io.valroot.core.model.Price
 import io.valroot.core.model.ProviderId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -17,7 +17,7 @@ import kotlin.test.assertNull
 
 class MarketRepositoryTest {
     @Test fun indexedLookupMatchesSelectionAcrossPoliciesAndWithdrawalTimes() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = MarketRepository(db)
             register(repository)
@@ -88,7 +88,7 @@ class MarketRepositoryTest {
     }
 
     @Test fun switchingToProviderPricesEndsAllActiveOverridesWithoutChangingHistoryOrOtherPairs() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = MarketRepository(db)
             register(repository)
@@ -108,7 +108,7 @@ class MarketRepositoryTest {
     }
 
     @Test fun newerAutomaticPriceReplacesOlderManualOverrideButNewerManualStillWins() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = MarketRepository(db)
             register(repository)
@@ -125,7 +125,7 @@ class MarketRepositoryTest {
     }
 
     @Test fun aPreferredSourceWinsWhileItHasAFreshPriceAndTheFallbackOtherwise() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = MarketRepository(db)
             register(repository)
@@ -184,7 +184,7 @@ class MarketRepositoryTest {
     fun identityMetadataAndMappingsSurviveReopen() {
         val file = Files.createTempFile("valroot-market", ".sqlite")
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repository = MarketRepository(db)
                 register(repository)
@@ -205,7 +205,7 @@ class MarketRepositoryTest {
                 }
                 assertFailsWith<IllegalArgumentException> { repository.putMetadata(token1, AssetMetadata("oops", "wrong", 9, 100)) }
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repository = MarketRepository(db)
                 assertEquals(token1, repository.resolveProvider(provider1, "asset-one"))
@@ -224,7 +224,7 @@ class MarketRepositoryTest {
     fun priceSelectionIsPreciseHistoricalAndExplicitAboutMissingOrStale() {
         val file = Files.createTempFile("valroot-prices", ".sqlite")
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repository = MarketRepository(db)
                 register(repository)
@@ -273,7 +273,7 @@ class MarketRepositoryTest {
                     repository.recordPrice(low.copy(id = "missing-asset", price = Price(AssetId("unknown"), usd, ExactDecimal.parse("1"))))
                 }
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 assertEquals(
                     "9",

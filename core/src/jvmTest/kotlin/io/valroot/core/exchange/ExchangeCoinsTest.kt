@@ -3,7 +3,7 @@ package io.valroot.core.exchange
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.CoingeckoCatalog
 import io.valroot.core.model.AssetId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -109,7 +109,7 @@ class ExchangeCoinsTest {
 
     @Test
     fun applicationMatchesSymbolsOnceAndKeepsTheUsersChoice() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.snapshot()
             app.market.setConsent(true)

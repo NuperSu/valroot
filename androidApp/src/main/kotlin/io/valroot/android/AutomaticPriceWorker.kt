@@ -7,7 +7,7 @@ import androidx.work.WorkerParameters
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.ui.MARKET_SCHEDULED_AGE_MILLIS
 import io.valroot.core.market.KrakenRateLimitedException
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.PriceRefreshPhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -75,7 +75,7 @@ class AutomaticPriceWorker(
 
     private fun refresh(): Result =
         try {
-            AndroidSqliteDatabase(applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
+            BundledSqliteDatabase(applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
                 val app = PortfolioApplication(db, System::currentTimeMillis)
                 if (!app.prices.automaticConsent() ||
                     (inputData.getBoolean("automatic", false) && app.settings.automaticRefresh() == false)

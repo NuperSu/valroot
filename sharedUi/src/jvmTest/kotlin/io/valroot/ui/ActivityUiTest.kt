@@ -34,7 +34,7 @@ import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
 import io.valroot.core.onboarding.OnboardingAction
 import io.valroot.core.reconcile.ActivityOverlay
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,7 +44,7 @@ import kotlin.test.assertTrue
 class ActivityUiTest {
     @Test
     fun openLotLinksToItsAcquisitionActivity() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -74,7 +74,7 @@ class ActivityUiTest {
 
     @Test
     fun disposalOpensRecordedActivityAndEvidence() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -99,7 +99,7 @@ class ActivityUiTest {
 
     @Test
     fun assetDetailOpensAndClearsActivityFilter() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -128,7 +128,7 @@ class ActivityUiTest {
 
     @Test
     fun activityNetworkMenuUsesRecordedSources() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -205,7 +205,7 @@ class ActivityUiTest {
 
     @Test
     fun activityStatusMenuFiltersConfirmedHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -234,7 +234,7 @@ class ActivityUiTest {
     fun mediumLayoutRecordsAndPersistsManualActivity() {
         val path = Files.createTempFile("valroot-ui", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 TestHost().use { host ->
                     val app = PortfolioApplication(db) { System.currentTimeMillis() }
                     app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -277,7 +277,7 @@ class ActivityUiTest {
                     }
                 }
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
                 assertEquals(1, app.snapshot(ActivityFilter(search = "UI deposit")).activityTotal)
@@ -300,7 +300,7 @@ class ActivityUiTest {
 
     @Test
     fun activityCorrectionsSupportEveryLegAndResetToSource() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { System.currentTimeMillis() }
             app.settings.updateOnboarding(OnboardingAction.Skip)
             app.demo.seed()
@@ -326,7 +326,7 @@ class ActivityUiTest {
 
     @Test
     fun tenThousandActivitiesRemainPagedAndSearchable() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -386,7 +386,7 @@ class ActivityUiTest {
 
     @Test
     fun wideLayoutEditsSearchesAndExports() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

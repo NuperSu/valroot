@@ -1,7 +1,7 @@
 package io.valroot.core.market
 
 import io.valroot.core.model.AssetId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -13,7 +13,7 @@ class MarketMigrationTest {
     fun migratesVersionOneAndRejectsIncompleteSchemaAtomically() {
         val path = Files.createTempFile("valroot-market-migrate", ".db")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 val repository = MarketRepository(db)
                 repository.registerAsset(

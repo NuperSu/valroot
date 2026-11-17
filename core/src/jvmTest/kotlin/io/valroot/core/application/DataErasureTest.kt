@@ -2,7 +2,7 @@ package io.valroot.core.application
 
 import io.valroot.core.model.ActivityId
 import io.valroot.core.reconcile.ActivityOverlay
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -15,7 +15,7 @@ class DataErasureTest {
             val path = directory.resolve("portfolio.sqlite")
             val canary = "PRIVATE_PORTFOLIO_ERASURE_CANARY_"
             try {
-                JvmSqliteDatabase(path.toString()).use { db ->
+                BundledSqliteDatabase(path.toString()).use { db ->
                     db.query("PRAGMA journal_mode = $mode")
                     val app = PortfolioApplication(db) { 15552000000L }
                     app.demo.seed()

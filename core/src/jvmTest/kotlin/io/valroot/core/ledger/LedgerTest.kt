@@ -7,7 +7,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -68,7 +68,7 @@ class LedgerTest {
                         MovementRole.TRADE_LEG,
                     ),
                 ).copy(kind = ActivityKind.TRADE)
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repository = ActivityRepository(db)
                 repository.save(original)
@@ -84,7 +84,7 @@ class LedgerTest {
                     )
                 }
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repository = ActivityRepository(db)
                 assertEquals(ActivityStatus.REVERSED, repository.history(original.id).last().status)
@@ -97,7 +97,7 @@ class LedgerTest {
 
     @Test
     fun unallocatedFeesPersistAcrossRevisions() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = ActivityRepository(db)
             val fee =
@@ -125,7 +125,7 @@ class LedgerTest {
 
     @Test
     fun currentPagesReturnLatestNumericRevisionWithoutSkippingIds() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = ActivityRepository(db)
             val first = activity("a", movement("one", "wallet", "1"))

@@ -20,7 +20,7 @@ import io.valroot.core.model.OwnerId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -36,7 +36,7 @@ class EvmAssetsApplicationTest {
     private val nft = EvmAssets.nft(1, "0x" + "6".repeat(40), ExactInteger.parse("7"))
 
     private fun setUp(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         clock: () -> Long = { 1_800_000_000_000L },
     ): PortfolioApplication {
         val app = PortfolioApplication(db, clock)
@@ -95,7 +95,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun chainAssetsLinkToOneCoinAndUnknownTokensStartHidden() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             assertEquals(setOf(ethMain, ethBase), app.assets.forCoin("ethereum").toSet())
             assertEquals("usd-coin", app.market.coinId(usdcBase))
@@ -114,7 +114,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun oneCoinPriceValuesEveryLinkedAsset() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val requests = mutableListOf<String>()
             // DefiLlama's US dollar prices are the fallback; CoinGecko's come first (see usdComesFromCoingeckoFirst).
@@ -133,7 +133,7 @@ class EvmAssetsApplicationTest {
             // Links and visibility choices survive an encrypted restore.
             app.assets.setShown(spam, true)
             val archive = app.backup.export("password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, archive, "password".toCharArray())
                 val restored = PortfolioApplication(staging) { 1_800_000_000_000L }
                 assertEquals(setOf(ethMain, ethBase), restored.assets.forCoin("ethereum").toSet())
@@ -143,7 +143,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun usdComesFromCoingeckoFirst() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val requests = mutableListOf<String>()
             app.linkedCoins.refreshPrices({ url, _ ->
@@ -169,7 +169,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun usdHistoryComesFromDefiLlamaBackToTheFirstMovement() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val day = 86_400_000L
             var now = 1_800_000_000_000L
             val app = setUp(db) { now }
@@ -220,7 +220,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun linkedCoinHistoryIsFilledOnceDailyFirstAndValuesEveryLinkedAsset() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val now = 1_800_000_000_000L
             val day = 86_400_000L
@@ -257,7 +257,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun anAssetJoiningACoinAfterItsHistoryWasFetchedGetsItsHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val now = 1_800_000_000_000L
             val day = 86_400_000L
@@ -294,7 +294,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun aCoinSoldSinceStillGetsItsHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             app.transactions.saveManualActivity(
                 Activity(
@@ -325,7 +325,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun rebasingTokensFollowTheProviderBalanceAsRewards() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val contract = "0xae7ab96520de3a18e5e111b5eaab095312d7fe84"
             val steth = EvmAssets.token(1, contract)
@@ -392,7 +392,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun unlistedNativePaymentsKeepTheBalanceAtOrAboveZeroAndMatchTheProvider() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val address = "0x" + "1".repeat(40)
 
@@ -468,7 +468,7 @@ class EvmAssetsApplicationTest {
     }
 
     @Test fun linkedAssetsTakeTheirCoinLogo() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val requests = mutableListOf<String>()
             val transport: (String, String?) -> String = { url, _ ->

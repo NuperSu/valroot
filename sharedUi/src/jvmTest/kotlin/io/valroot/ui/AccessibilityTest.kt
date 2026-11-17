@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.model.ModelPage
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,7 +34,7 @@ class AccessibilityTest {
         for ((width, height) in listOf(360 to 800, 390 to 844, 1440 to 900)) {
             for (fontScale in listOf(1f, 1.5f)) {
                 val label = "${width}x$height@$fontScale"
-                JvmSqliteDatabase(":memory:").use { db ->
+                BundledSqliteDatabase(":memory:").use { db ->
                     ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                         val app = PortfolioApplication(db) { 1_800_000_000_000L }
                         app.settings.updateOnboarding(OnboardingAction.Skip)

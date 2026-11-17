@@ -10,7 +10,7 @@ import io.valroot.core.onboarding.OnboardingRepository
 import io.valroot.core.onboarding.OnboardingState
 import io.valroot.core.onboarding.OnboardingStep
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 class OnboardingEngineTest {
     @Test
     fun emptyInstallCanFinishOfflineWithoutCreatingRecordsOrConsent() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             assertEquals(OnboardingState(), app.settings.onboarding())
             repeat(3) { app.settings.updateOnboarding(OnboardingAction.Next) }
@@ -37,7 +37,7 @@ class OnboardingEngineTest {
 
     @Test
     fun answersStepAndPresentationSurviveReopenSkipResumeBackAndRestart() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var app = PortfolioApplication(db) { 1000L }
             app.settings.updateOnboarding(OnboardingAction.SetPresentation(OnboardingPresentation.ASSISTED))
             app.settings.updateOnboarding(OnboardingAction.Next)
@@ -78,7 +78,7 @@ class OnboardingEngineTest {
 
     @Test
     fun populatedInstallEntersPortfolioUntilExplicitRestart() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.accounts.saveOwner(Owner(OwnerId("personal"), "Personal"))
             assertNull(app.settings.onboarding())
@@ -90,7 +90,7 @@ class OnboardingEngineTest {
 
     @Test
     fun malformedStateRecoversAndFutureVersionIsPreservedUntilExplicitRestart() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
 
             fun save(value: String) {
@@ -114,7 +114,7 @@ class OnboardingEngineTest {
 
     @Test
     fun oversizedStateIsPreservedWithoutParsingUntilExplicitRestart() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             val payload = "x".repeat(9000)
             val states =
@@ -139,12 +139,12 @@ class OnboardingEngineTest {
 
     @Test
     fun backupRestoresPartialSetupAndWipeStartsFresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.settings.updateOnboarding(OnboardingAction.Next)
             val expected = app.settings.updateOnboarding(OnboardingAction.ToggleGoal(OnboardingGoal.OTHER))
             val backup = PortableBackup.discover(db)
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 val restored = PortfolioApplication(staging) { 1000L }
                 backup.restoreToStaging(staging, backup.export(db))
                 assertEquals(expected, restored.settings.onboarding())

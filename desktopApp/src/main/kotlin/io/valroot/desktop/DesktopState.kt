@@ -4,7 +4,7 @@ import androidx.compose.runtime.MutableState
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.DefiLlamaTransport
 import io.valroot.core.market.HttpCoingeckoTransport
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.PriceRefreshPhase
 import io.valroot.ui.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,16 +48,16 @@ internal class DesktopState(
     /** Guards the sync connection and the notification schedule. */
     val hostLock = Any()
 
-    lateinit var db: JvmSqliteDatabase
+    lateinit var db: BundledSqliteDatabase
     lateinit var app: MutableState<PortfolioApplication>
-    private var syncDb: JvmSqliteDatabase? = null
+    private var syncDb: BundledSqliteDatabase? = null
     private var syncApp: PortfolioApplication? = null
 
     /** The sync worker's own connection, opened on first use and reused until a restore or close releases it. */
     fun syncApplication(): PortfolioApplication =
         synchronized(hostLock) {
             syncApp ?: run {
-                val connection = JvmSqliteDatabase(file.toString())
+                val connection = BundledSqliteDatabase(file.toString())
                 syncDb = connection
                 PortfolioApplication(connection, System::currentTimeMillis).also { syncApp = it }
             }

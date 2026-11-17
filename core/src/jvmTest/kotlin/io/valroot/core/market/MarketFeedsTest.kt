@@ -4,7 +4,7 @@ import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.bitcoin.BITCOIN_ASSET
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -42,7 +42,7 @@ class MarketFeedsTest {
     }
 
     @Test fun refreshNeedsConsentCachesFeedsAndSkipsFreshOnes() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var now = 1_800_000_000_000L
             val app = PortfolioApplication(db) { now }
             val requests = mutableListOf<Pair<String, String?>>()
@@ -82,7 +82,7 @@ class MarketFeedsTest {
     }
 
     @Test fun rateLimitPausesRequestsAndKeepsCachedFeeds() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var now = 1_800_000_000_000L
             val app = PortfolioApplication(db) { now }
             app.market.setConsent(true)
@@ -123,14 +123,14 @@ class MarketFeedsTest {
     }
 
     @Test fun apiKeyAndFeedsStayOutOfBackupsWhileConsentIsKept() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.market.setConsent(true)
             app.market.setCoingeckoApiKey("CG-abcdefghijklmnop")
             assertFails { app.market.setCoingeckoApiKey("bad key!") }
             app.market.refreshFeeds({ url, _ -> if (url.contains("/coins/markets")) markets else trending })
             val backup = app.backup.export("fixture-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "fixture-password".toCharArray())
                 val restored = PortfolioApplication(staging) { 1_800_000_000_000L }
                 assertNull(restored.market.coingeckoApiKey())
@@ -143,7 +143,7 @@ class MarketFeedsTest {
     }
 
     @Test fun autoSyncGrantsMarketConsent() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.prices.setAutomaticRefresh(true)
             assertTrue(app.market.consent())
@@ -158,7 +158,7 @@ class MarketFeedsTest {
         assertNotNull(CoingeckoMarkets.parseTrending(trending, "usd", null).first().image)
         assertNull(CoingeckoMarkets.logoUrl("https://evil.example/coins/images/1/small/x.png"))
         assertNull(CoingeckoMarkets.logoUrl("http://coin-images.coingecko.com/coins/images/1/small/x.png"))
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var now = 1_800_000_000_000L
             val app = PortfolioApplication(db) { now }
             app.market.setConsent(true)
@@ -175,7 +175,7 @@ class MarketFeedsTest {
             app.market.saveLogo(url, byteArrayOf(1, 2, 3))
             assertTrue(app.market.cachedLogo(url)!!.contentEquals(byteArrayOf(1, 2, 3)))
             val backup = app.backup.export("fixture-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "fixture-password".toCharArray())
                 assertNull(PortfolioApplication(staging) { now }.market.cachedLogo(url))
             }

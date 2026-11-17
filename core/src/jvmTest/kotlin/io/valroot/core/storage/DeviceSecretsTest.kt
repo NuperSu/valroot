@@ -21,7 +21,7 @@ class DeviceSecretsTest {
 
     @Test
     fun apiSecretsAreStoredSealedAndReadBack() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             app.exchanges.setKey(ExchangeKind.BYBIT, account, "KEYKEYKEYKEY", "SECRETSECRETSECRET")
             app.evm.setAlchemyApiKey("alchemy-key-0123456789")
@@ -38,7 +38,7 @@ class DeviceSecretsTest {
 
     @Test
     fun aPlaintextSecretIsSealedWhenReadAndAnUnreadableOneCountsAsMissing() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val stored = MarketFeedRepository(db)
             stored.putDeviceSetting("coingecko_api_key", "CG-plain-0123456789")

@@ -8,7 +8,7 @@ import io.valroot.core.bitcoin.BlockstreamTransport
 import io.valroot.core.market.KrakenPriceTransport
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.TrackingTargetId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.OrderBookResult
 import io.valroot.ui.PlatformActions
 import io.valroot.ui.RefreshPreferences
@@ -79,7 +79,7 @@ internal class DesktopHost(
                 setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
             )
         }
-        state.db = JvmSqliteDatabase(state.file.toString())
+        state.db = BundledSqliteDatabase(state.file.toString())
         state.app =
             try {
                 mutableStateOf(PortfolioApplication(state.db, System::currentTimeMillis))

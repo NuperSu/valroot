@@ -3,7 +3,7 @@ package io.valroot.desktop
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.OwnerId
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.SyncPhase
 import io.valroot.ui.SyncStatus
 import java.nio.file.Files
@@ -84,7 +84,7 @@ class DesktopRestoreTest {
             }
         try {
             val archive =
-                JvmSqliteDatabase(":memory:").use { db ->
+                BundledSqliteDatabase(":memory:").use { db ->
                     val source = PortfolioApplication(db) { 1000L }
                     source.prices.setAutomaticConsent(true)
                     source.backup.export("password".toCharArray())
@@ -124,7 +124,7 @@ class DesktopRestoreTest {
             host.updateRefreshPreferences(io.valroot.ui.RefreshPreferences(automaticRefresh = true))
             assertTrue(started.await(10, TimeUnit.SECONDS))
             val archive =
-                JvmSqliteDatabase(":memory:").use { db ->
+                BundledSqliteDatabase(":memory:").use { db ->
                     val source = PortfolioApplication(db) { 1000L }
                     source.accounts.saveOwner(Owner(OwnerId("restored"), "Restored"))
                     source.backup.export("password".toCharArray())
@@ -207,7 +207,7 @@ class DesktopRestoreTest {
         try {
             sync(host) { it.accounts.saveOwner(Owner(OwnerId("old"), "Old data")) }
             val archive =
-                JvmSqliteDatabase(":memory:").use { db ->
+                BundledSqliteDatabase(":memory:").use { db ->
                     val source = PortfolioApplication(db) { 1000L }
                     source.accounts.saveOwner(Owner(OwnerId("restored"), "Restored data"))
                     source.backup.export("password".toCharArray())

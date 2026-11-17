@@ -10,7 +10,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 class NestedArchiveTest {
     @Test
     fun restoringGroupPreservesIndependentChildArchiveAndOriginalTargetIntent() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             val original = app.snapshot().ownership
             app.accounts.archiveAccount(AccountId("child"))
@@ -37,7 +37,7 @@ class NestedArchiveTest {
 
     @Test
     fun childIntentCanChangeWhileAncestorKeepsTargetsPaused() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             val original = app.snapshot().ownership
             app.accounts.archiveAccount(AccountId("group"))
@@ -54,7 +54,7 @@ class NestedArchiveTest {
 
     @Test
     fun archiveFailureRollsBackTagsIntentAndTargetState() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             val original = app.snapshot().ownership
             db.execute("CREATE TRIGGER fail_archive BEFORE UPDATE OF enabled ON targets BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
@@ -68,7 +68,7 @@ class NestedArchiveTest {
         }
     }
 
-    private fun fixture(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun fixture(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1000L }
         val owner = OwnerId("owner")
         app.accounts.saveOwner(Owner(owner, "Owner"))

@@ -19,7 +19,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -206,7 +206,7 @@ class BybitConnectorTest {
         }
     }
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { now }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -233,7 +233,7 @@ class BybitConnectorTest {
 
     @Test
     fun firstRefreshRebuildsTheAccountFromBothLogs() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             val outcome =
@@ -313,7 +313,7 @@ class BybitConnectorTest {
 
     @Test
     fun laterRefreshesReadOnlyNewRecordsAndKeepActivitiesStable() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             val connector = BybitConnector { _, request -> bybit.get(request) }
@@ -350,7 +350,7 @@ class BybitConnectorTest {
 
     @Test
     fun keysThatCanTradeOrBelongElsewhereAreRefused() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit().apply { readOnly = 0 }
             val connector = BybitConnector { _, request -> bybit.get(request) }
@@ -370,7 +370,7 @@ class BybitConnectorTest {
 
     @Test
     fun unmatchedSymbolsWaitForTheUsersChoice() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             bybit.funding += bybit.fundingRow("f5", "ZZZ", "I", "7", "7", at(7), "Airdrop", "Airdrop")
@@ -386,7 +386,7 @@ class BybitConnectorTest {
 
     @Test
     fun aWithdrawalIsSuggestedWithItsArrivalOnChainByTransaction() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             app.market.setConsent(true)
 
@@ -448,7 +448,7 @@ class BybitConnectorTest {
 
     @Test
     fun aServerErrorOnAnOldWindowFailsTheRefreshInsteadOfEndingTheHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit().apply { serverErrorBefore = now - 30 * Bybit.DAY_MILLIS }
             val connector = BybitConnector { _, request -> bybit.get(request) }
@@ -462,7 +462,7 @@ class BybitConnectorTest {
 
     @Test
     fun anInterruptedConvertHistoryResumesWhereItStopped() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             repeat(250) { i ->
@@ -484,7 +484,7 @@ class BybitConnectorTest {
 
     @Test
     fun anInterruptedWindowResumesFromItsNextPage() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             bybit.failOnce = { it.path == "/v5/account/transaction-log" && it.query.toMap()["cursor"] == "2" }
@@ -504,7 +504,7 @@ class BybitConnectorTest {
 
     @Test
     fun anInterruptedOlderWindowResumesAfterTheNewerWindowIsReadAgain() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             val old = now - 60 * Bybit.DAY_MILLIS
@@ -528,7 +528,7 @@ class BybitConnectorTest {
     }
 
     @Test fun anInterruptedNewestWindowResumesAfterTimeMovesOn() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val bybit = FakeBybit()
             val connector = BybitConnector { _, request -> bybit.get(request) }

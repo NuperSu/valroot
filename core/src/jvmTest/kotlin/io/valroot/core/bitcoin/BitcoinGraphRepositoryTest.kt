@@ -3,7 +3,7 @@ package io.valroot.core.bitcoin
 import io.valroot.core.backup.PortableBackup
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.SqliteDatabase
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -62,7 +62,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun reviewPagesExactEvidenceWithoutGraphReconstruction() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val queries = mutableListOf<String>()
             val tracked =
@@ -127,7 +127,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun reviewMissingParentWithMultipleSpendersIsOneRow() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = BitcoinGraphRepository(db)
             db.transaction { save(repository, listOf(payload("b".repeat(64)), payload("c".repeat(64)))) }
@@ -141,7 +141,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun reviewDoesNotMixDisabledScopesAndResetsPagesAfterRefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = BitcoinGraphRepository(db)
             assertNull(repository.utxoReview(scope).snapshotId)
@@ -165,11 +165,11 @@ class BitcoinGraphRepositoryTest {
         val pending = payload("b".repeat(64))
         val competing = payload("c".repeat(64))
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 db.transaction { save(BitcoinGraphRepository(db), listOf(pending, competing)) }
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 val loaded = BitcoinGraphRepository(db).latest()!!
                 val graph = BitcoinUtxoGraph.build(listOf(pending, competing), scope)
@@ -194,7 +194,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun absentPendingSpenderRemainsHistoricalAndConfirmedCompetitionIsExplicit() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = BitcoinGraphRepository(db)
             val oldId = db.transaction { save(repository, listOf(payload("b".repeat(64)))) }
@@ -225,7 +225,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun exactScopeMembershipAndCallerRollbackArePreserved() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = BitcoinGraphRepository(db)
             db.transaction { save(repository, listOf(payload("b".repeat(64)))) }
@@ -245,7 +245,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun recoveryBaselineIsScopedAndRollsBackWithItsSnapshot() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = BitcoinGraphRepository(db)
             val otherScope = mapOf(address to AccountId("another-account"))
@@ -270,7 +270,7 @@ class BitcoinGraphRepositoryTest {
 
     @Test
     fun versionFourUpgradeCreatesEmptyEvidenceAndCurrentSchemaReopens() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             bitcoinGraphDeltaTables.reversed().forEach { db.execute("DROP TABLE $it") }
             bitcoinGraphTables.reversed().forEach { db.execute("DROP TABLE $it") }
@@ -286,7 +286,7 @@ class BitcoinGraphRepositoryTest {
     @Test
     fun versionFourPortableArchiveRestoresWithEmptyGraphEvidence() {
         val archive =
-            JvmSqliteDatabase(":memory:").use { source ->
+            BundledSqliteDatabase(":memory:").use { source ->
                 Store(source)
                 bitcoinGraphDeltaTables.reversed().forEach { source.execute("DROP TABLE $it") }
                 bitcoinGraphTables.reversed().forEach { source.execute("DROP TABLE $it") }
@@ -294,7 +294,7 @@ class BitcoinGraphRepositoryTest {
                 source.execute("INSERT INTO owners VALUES ('owner-a','Owner A')")
                 PortableBackup.discover(source).export(source)
             }
-        JvmSqliteDatabase(":memory:").use { staging ->
+        BundledSqliteDatabase(":memory:").use { staging ->
             Store(staging)
             PortableBackup.discover(staging).restoreToStaging(staging, archive)
             Store(staging)

@@ -5,7 +5,7 @@ import io.valroot.core.market.HttpCoingeckoTransport
 import io.valroot.core.market.KrakenPriceTransport
 import android.content.Context
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.OrderBookResult
 import io.valroot.ui.loadOrderBook
 import io.valroot.ui.marketRefreshMessage
@@ -31,7 +31,7 @@ internal object MarketFeedRefresher {
                         "Market refresh is paused while data is restored."
                     } else {
                         runCatching {
-                            AndroidSqliteDatabase(path).use { db ->
+                            BundledSqliteDatabase(path).use { db ->
                                 val app = PortfolioApplication(db, System::currentTimeMillis)
                                 val result = marketRefreshMessage(app.market.refreshFeeds(transport::feed, maxAgeMillis))
                                 refreshEvmCatalogAndPrices(app)
@@ -104,7 +104,7 @@ internal object MarketFeedRefresher {
                         OrderBookResult.Failed("Market data is paused while data is restored.")
                     } else {
                         runCatching {
-                            AndroidSqliteDatabase(path).use { db ->
+                            BundledSqliteDatabase(path).use { db ->
                                 loadOrderBook(
                                     PortfolioApplication(db, System::currentTimeMillis),
                                     coinId,
@@ -135,7 +135,7 @@ internal object MarketFeedRefresher {
                         io.valroot.ui.CandleResult.Unavailable("Market data is paused while data is restored.")
                     } else {
                         runCatching {
-                            AndroidSqliteDatabase(path).use { db ->
+                            BundledSqliteDatabase(path).use { db ->
                                 io.valroot.ui.loadCandles(
                                     PortfolioApplication(db, System::currentTimeMillis),
                                     coinId,

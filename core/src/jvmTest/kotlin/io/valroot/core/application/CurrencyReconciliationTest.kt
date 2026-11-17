@@ -26,7 +26,7 @@ import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
 import io.valroot.core.reconcile.LinkState
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,7 +39,7 @@ class CurrencyReconciliationTest {
     fun displayCurrenciesRegisterPersistAndSupportManualQuotes() {
         val file = Files.createTempFile("valroot-currencies", ".sqlite")
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 var at = 15552000000L
                 val app = PortfolioApplication(db) { at }
                 app.demo.seed()
@@ -84,7 +84,7 @@ class CurrencyReconciliationTest {
                     )
                 }
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { 15552000001L }
                 assertEquals(AssetId("USD"), app.snapshot().currency)
                 assertEquals(
@@ -109,7 +109,7 @@ class CurrencyReconciliationTest {
     fun reviewedPairsLeaveTheQueueImmediatelyAndAfterReopenWithoutChangingRecords() {
         val file = Files.createTempFile("valroot-reconciliation", ".sqlite")
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { 1000L }
                 val owner = OwnerId("owner")
                 app.accounts.saveOwner(Owner(owner, "Owner"))
@@ -132,7 +132,7 @@ class CurrencyReconciliationTest {
                 assertEquals(original, ActivityRepository(db).current())
                 assertTrue(original.all { ActivityRepository(db).history(it.id).size == 1 })
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val app = PortfolioApplication(db) { 1000L }
                 assertTrue(app.accounting.reconciliationCandidates(1000).isEmpty())
                 assertEquals(3, ActivityRepository(db).current().size)

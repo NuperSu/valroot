@@ -12,7 +12,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import java.lang.management.ManagementFactory
 import java.lang.management.MemoryType
@@ -36,7 +36,7 @@ object BitcoinHeapStress {
         val path = directory.resolve("portfolio.sqlite")
         println("Bitcoin heap stress: confirmed=$transactions descendants=$DESCENDANTS heap=${Runtime.getRuntime().maxMemory()}")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val application = application(db)
                 val provider = Provider(transactions)
                 var firstCounts: Map<String, Long>? = null
@@ -81,7 +81,7 @@ object BitcoinHeapStress {
         }
     }
 
-    private fun application(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun application(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1_700_000_000_000L }
         val owner = OwnerId("stress-owner")
         val account = AccountId("stress-wallet")
@@ -101,7 +101,7 @@ object BitcoinHeapStress {
     }
 
     private fun validate(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         transactions: Int,
     ) {
         val total = transactions.toLong() + 1 + DESCENDANTS
@@ -133,12 +133,12 @@ object BitcoinHeapStress {
     }
 
     private fun count(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         table: String,
     ) = scalar(db, "SELECT COUNT(*) FROM $table")
 
     private fun scalar(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         sql: String,
     ) = db
         .query(sql)

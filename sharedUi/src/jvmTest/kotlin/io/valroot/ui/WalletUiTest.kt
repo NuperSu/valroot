@@ -14,7 +14,7 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.ownership.TargetRole
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.Executors
@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
 class WalletUiTest {
     @Test
     fun walletDialogValidatesSavesAndRequestsDiscovery() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executorDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
             try {
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }

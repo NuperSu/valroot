@@ -18,7 +18,7 @@ import io.valroot.core.model.ProviderId
 import io.valroot.core.model.SourceId
 import io.valroot.core.model.SourceRecordId
 import io.valroot.core.model.SyncJobId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -90,7 +90,7 @@ class SyncPipelineTest {
         val families = listOf("btc", "evm", "exchange")
         val connectors = families.associateWith(::FakeConnector)
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val store = Store(db)
                 val providers =
                     families.map { family ->
@@ -128,7 +128,7 @@ class SyncPipelineTest {
                 }
                 assertEquals(3, ledger.current().size)
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 val balances = LedgerDeltas.calculate(ActivityRepository(db).current())
                 listOf("btc" to "12", "evm" to "24", "exchange" to "36").forEach { (family, amount) ->

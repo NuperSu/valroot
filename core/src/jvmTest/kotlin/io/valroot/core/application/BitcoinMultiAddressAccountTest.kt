@@ -13,7 +13,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import io.valroot.testing.utxoResponse
 import kotlin.test.Test
@@ -25,7 +25,7 @@ class BitcoinMultiAddressAccountTest {
     private val account = AccountId("wallet")
     private val hash = "b".repeat(64)
 
-    private fun application(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun application(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 15_552_000_000L }
         val owner = OwnerId("owner")
         app.accounts.saveOwner(Owner(owner, "Owner"))
@@ -93,7 +93,7 @@ class BitcoinMultiAddressAccountTest {
     }
 
     private fun assertComplete(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         app: PortfolioApplication,
         count: Int,
     ) {
@@ -113,7 +113,7 @@ class BitcoinMultiAddressAccountTest {
 
     @Test
     fun equalCountsUnderOneAccountFetchBothAddressesAndRepeatWithoutDuplicates() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = application(db)
             val provider = Provider(1)
             repeat(2) {
@@ -129,7 +129,7 @@ class BitcoinMultiAddressAccountTest {
 
     @Test
     fun secondAddressFailureResumesWithItsOwnPaginationAfterApplicationRecreation() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = application(db)
             val provider = Provider(26)
             provider.failAddress = addresses[1]

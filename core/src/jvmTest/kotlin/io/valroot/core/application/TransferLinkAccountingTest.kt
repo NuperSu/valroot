@@ -11,7 +11,7 @@ import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
 import io.valroot.core.reconcile.LinkState
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -46,7 +46,7 @@ class TransferLinkAccountingTest {
     )
 
     @Test fun anAcceptedLinkCarriesTheOriginalCostToTheReceivingAccount() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 400 * day }
             app.snapshot()
             app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -89,7 +89,7 @@ class TransferLinkAccountingTest {
     }
 
     @Test fun aWithdrawalOfAnExchangeCoinCarriesItsCostToTheSameCoinOnAChain() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 400 * day }
             app.snapshot()
             app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))

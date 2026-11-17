@@ -4,7 +4,7 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.Price
 import io.valroot.core.model.ProviderId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -17,7 +17,7 @@ class PriceSeriesLookupTest {
 
     @Test fun seriesLookupMatchesPerInstantLookupExactly() {
         repeat(25) { seed ->
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val market = MarketRepository(db)
                 market.registerAsset(
                     AssetDefinition(btc, AssetIdentity(AssetKind.CUSTOM, null, "btc")),

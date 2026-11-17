@@ -13,7 +13,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 class OverlayRepositoryTest {
     @Test
     fun batchedClassificationMatchesReplayAndRollsBackConsumerWrites() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val overlays = OverlayRepository(db)
             overlays.saveRule(ClassificationRule("rule", 1, ActivityKind.REWARD, matchKind = ActivityKind.TRANSFER))
@@ -86,7 +86,7 @@ class OverlayRepositoryTest {
         val file = Files.createTempFile("valroot-overlays", ".sqlite")
         try {
             val initial = base()
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val ledger = ActivityRepository(db)
                 val overlays = OverlayRepository(db)
@@ -136,7 +136,7 @@ class OverlayRepositoryTest {
                 assertEquals(0, overlays.setDecision(initial.id, ActivityId("peer"), LinkState.ACCEPTED))
                 assertEquals(0, overlays.setDecision(ActivityId("peer"), initial.id, LinkState.ACCEPTED))
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val ledger = ActivityRepository(db)
                 val overlays = OverlayRepository(db)

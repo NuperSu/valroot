@@ -25,7 +25,7 @@ import io.valroot.core.model.Rational
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -35,7 +35,7 @@ class AccountingValuationTest {
     private val day = 86_400_000L
 
     @Test fun reportValuesOpenLotsOnlyWithFreshPrices() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             val owner = OwnerId("owner")
             val account = AccountId("account")

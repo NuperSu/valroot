@@ -15,7 +15,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import io.valroot.testing.utxoResponse
 import kotlin.test.Test
@@ -127,7 +127,7 @@ class BitcoinWholeHistoryAcceptanceTest {
             }
         }
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1_800_000_000_000L }
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
         listOf("spending" to a, "savings" to b).forEach { (name, address) ->
@@ -150,7 +150,7 @@ class BitcoinWholeHistoryAcceptanceTest {
     /** Everything a user sees or exports, plus the accepted transaction graph. */
     private fun results(
         app: PortfolioApplication,
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
     ) = listOf(
         app.csv.export(),
         app.snapshot().valuations.map { it.asset to it.amount },
@@ -162,7 +162,7 @@ class BitcoinWholeHistoryAcceptanceTest {
 
     @Test fun interruptedResumedAndRebuiltHistoriesAreIdentical() {
         val uninterrupted =
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setUp(db)
                 assertEquals(listOf(JobState.COMPLETED, JobState.COMPLETED), app.bitcoin.refresh(transport))
                 // A's 33 transactions span two pages; the second page is requested after the last ID of the first.
@@ -187,7 +187,7 @@ class BitcoinWholeHistoryAcceptanceTest {
             }
         // Interrupt the first sync after a growing number of requests, then resume; every cut gives the same end state.
         for (cut in listOf(3, 8, 15, 22)) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setUp(db)
                 var calls = 0
                 val failing =

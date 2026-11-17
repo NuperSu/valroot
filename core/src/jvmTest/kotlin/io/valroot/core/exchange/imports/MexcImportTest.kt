@@ -11,7 +11,7 @@ import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -185,7 +185,7 @@ class MexcImportTest {
     }
 
     @Test fun importRequiresZoneThenCommitsAndUndoesAFileOnlyAccount() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { at + 100_000 }
             app.snapshot()
             val fills = table(MexcExports.TRADES, "$uid,BTC_USDT,2026-01-01 12:00:00,Buy,10000,0.1,1000,0BTC,Maker")

@@ -11,7 +11,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.testing.utxoResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 
 class ProviderProvenanceTest {
     @Test fun endpointSwitchRetainsSeparateObservationsAtIdenticalRetrievalTime() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val address = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
             val owner = OwnerId("owner")
@@ -72,7 +72,7 @@ class ProviderProvenanceTest {
                     .toSet(),
             )
             val archive = app.backup.export("password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, archive, "password".toCharArray())
                 assertEquals(app.bitcoin.providerEndpoints(), PortfolioApplication(staging) { 15552000000L }.bitcoin.providerEndpoints())
                 assertEquals(2, staging.query("SELECT DISTINCT source_id FROM raw_observations").size)

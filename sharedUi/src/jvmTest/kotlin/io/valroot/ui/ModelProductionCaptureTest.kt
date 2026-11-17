@@ -21,7 +21,7 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.io.File
 import javax.imageio.ImageIO
 import kotlin.test.Test
@@ -38,7 +38,7 @@ class ModelProductionCaptureTest {
             Triple(1440, 900, 1f),
             Triple(390, 844, 1.5f),
         )) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                     val app = PortfolioApplication(db) { 1_800_000_000_000L }
                     app.settings.updateOnboarding(OnboardingAction.Skip)

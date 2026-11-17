@@ -7,7 +7,7 @@ import io.valroot.core.market.CoingeckoProviderException
 import io.valroot.core.market.CoingeckoProviderFailure
 import io.valroot.core.market.PriceStatus
 import io.valroot.core.model.AssetId
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.flow.update
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -35,7 +35,7 @@ internal object PriceHistoryWorker {
         executor.execute {
             val message =
                 try {
-                    AndroidSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use { db ->
+                    BundledSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use { db ->
                         val count =
                             PortfolioApplication(db, System::currentTimeMillis).prices.fetchHistory(
                                 { url ->
@@ -71,7 +71,7 @@ internal object PriceHistoryWorker {
         executor.execute {
             val message =
                 try {
-                    AndroidSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use { db ->
+                    BundledSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use { db ->
                         val result =
                             PortfolioApplication(db, System::currentTimeMillis).prices.fetchHistorical(
                                 { url ->

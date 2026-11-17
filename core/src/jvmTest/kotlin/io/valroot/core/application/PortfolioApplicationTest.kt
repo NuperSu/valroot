@@ -8,7 +8,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.reconcile.ActivityOverlay
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -17,14 +17,14 @@ import kotlin.test.assertTrue
 class PortfolioApplicationTest {
     @Test
     fun refreshAndMarketPreferencesSurvivePortableBackup() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             assertEquals(null, app.settings.automaticRefresh())
             assertEquals("dark", app.settings.theme())
             app.settings.setRefreshPreferences(automatic = false, wifiOnly = true)
             app.market.setFavorites(setOf(AssetId("btc"), AssetId("eth")))
             val backup = app.backup.export("password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "password".toCharArray())
                 val restored = PortfolioApplication(staging) { 1000L }
                 assertEquals(false, restored.settings.automaticRefresh())
@@ -36,7 +36,7 @@ class PortfolioApplicationTest {
 
     @Test
     fun assetListPreferencePersistsInBackupWithoutChangingBalances() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.demo.seed()
             val before = app.snapshot().balances
@@ -48,7 +48,7 @@ class PortfolioApplicationTest {
             assertEquals(preference, PortfolioApplication(db) { 1000L }.settings.assetList())
             assertEquals(before, app.snapshot().balances)
             val backup = app.backup.export("fixture-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "fixture-password".toCharArray())
                 assertEquals(preference, PortfolioApplication(staging) { 1000L }.settings.assetList())
             }
@@ -57,7 +57,7 @@ class PortfolioApplicationTest {
 
     @Test
     fun dashboardWidgetsPersistOrderVisibilityAndBackup() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             val defaults = app.settings.dashboardWidgets()
             assertEquals(DashboardWidget.entries, defaults.map { it.widget })
@@ -68,7 +68,7 @@ class PortfolioApplicationTest {
             assertFails { app.settings.setDashboardWidgets(changed.drop(1)) }
             assertEquals(changed, app.settings.dashboardWidgets())
             val backup = app.backup.export("fixture-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "fixture-password".toCharArray())
                 assertEquals(changed, PortfolioApplication(staging) { 1000L }.settings.dashboardWidgets())
             }
@@ -77,7 +77,7 @@ class PortfolioApplicationTest {
 
     @Test
     fun appearancePreferencePersistsAndRejectsUnknownValues() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             assertEquals("dark", app.settings.theme())
             app.settings.setTheme("light")
@@ -87,7 +87,7 @@ class PortfolioApplicationTest {
             app.settings.setTheme("dark")
             assertEquals("dark", app.settings.theme())
             val backup = app.backup.export("fixture-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "fixture-password".toCharArray())
                 assertEquals("dark", PortfolioApplication(staging) { 1000L }.settings.theme())
             }
@@ -96,7 +96,7 @@ class PortfolioApplicationTest {
 
     @Test
     fun generalPreferencesPersistThroughRestartAndBackup() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             assertEquals(GeneralPreferences(), app.settings.general())
             app.settings.setLandingPage(LandingPage.INSIGHTS)
@@ -112,7 +112,7 @@ class PortfolioApplicationTest {
             val expected = GeneralPreferences(LandingPage.INSIGHTS, AssetId("USD"), false, true, "My Pixel", hideAmounts = true)
             assertEquals(expected, PortfolioApplication(db) { 1000L }.settings.general())
             val backup = app.backup.export("fixture-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, backup, "fixture-password".toCharArray())
                 assertEquals(expected, PortfolioApplication(staging) { 1000L }.settings.general())
             }
@@ -124,7 +124,7 @@ class PortfolioApplicationTest {
 
     @Test
     fun aSecondaryCurrencyWaitsForPricesInOtherCurrencies() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.assets.setCurrency(AssetId("USD"))
             // Prices are in US dollars only, so no other currency can be shown next to them yet.
@@ -139,7 +139,7 @@ class PortfolioApplicationTest {
 
     @Test
     fun csvEscapesSpreadsheetFormulasWithoutChangingSignedAmounts() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             app.demo.seed()
             app.transactions.saveOverlay(ActivityOverlay(ActivityId("demo-deposit"), label = "  =2+2", note = "@formula,\"quoted\""))
@@ -152,7 +152,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun persistedCorrectionsHistoryAndPagination() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             assertTrue(app.snapshot().activities.isEmpty())
             app.demo.seed()
@@ -219,7 +219,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun historicalAnalyticsAndSampleFlagsUseAuthoritativeLedger() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val at = 15552000000L
             val app = PortfolioApplication(db) { at }
             assertEquals(false, app.snapshot().sampleData)
@@ -271,7 +271,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun portfolioScopeFiltersProjectionAndHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             app.demo.seed()
             val owner =
@@ -338,7 +338,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun reloadInvalidatesProjectionAfterAnotherInstanceWrites() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val first = PortfolioApplication(db) { 15552000000L }
             first.demo.seed()
             first.snapshot()
@@ -351,7 +351,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun accountAndInvalidTargetAreNotPartiallySaved() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val owner =
                 io.valroot.core.model
@@ -390,7 +390,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun bitcoinScanRequiresConsentAndOnlyRecordsSuccessfulStableScan() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val owner =
                 io.valroot.core.model
@@ -542,7 +542,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun archivedAccountsCanBeRestoredWithoutLosingHistoryOrTreatments() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             app.demo.seed()
             val before = app.snapshot()
@@ -573,8 +573,8 @@ class PortfolioApplicationTest {
     }
 
     @Test fun portableBackupPreservesTheTargetsOwnAndroidLocaleMetadata() {
-        JvmSqliteDatabase(":memory:").use { source ->
-            JvmSqliteDatabase(":memory:").use { target ->
+        BundledSqliteDatabase(":memory:").use { source ->
+            BundledSqliteDatabase(":memory:").use { target ->
                 source.execute("CREATE TABLE android_metadata (locale TEXT)")
                 source.execute("INSERT INTO android_metadata VALUES ('en_US')")
                 target.execute("CREATE TABLE android_metadata (locale TEXT)")
@@ -590,7 +590,7 @@ class PortfolioApplicationTest {
     }
 
     @Test fun backupFromBeforeScanTablesRestoresIntoCurrentSchema() {
-        JvmSqliteDatabase(":memory:").use { oldDb ->
+        BundledSqliteDatabase(":memory:").use { oldDb ->
             val oldApp = PortfolioApplication(oldDb) { 15552000000L }
             oldApp.demo.seed()
             val expected = oldApp.snapshot()
@@ -598,7 +598,7 @@ class PortfolioApplicationTest {
             oldDb.execute("DROP TABLE bitcoin_scan_stage")
             oldDb.execute("DROP TABLE bitcoin_scan_blocks")
             val archive = oldApp.backup.export("password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 oldApp.backup.restoreToStaging(staging, archive, "password".toCharArray())
                 assertEquals(expected, PortfolioApplication(staging) { 15552000000L }.snapshot())
             }
@@ -606,12 +606,12 @@ class PortfolioApplicationTest {
     }
 
     @Test fun encryptedStagingRestoreAndWipe() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             app.demo.seed()
             app.sources.setConsent(true)
             val archive = app.backup.export("password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 assertFails { app.backup.restoreToStaging(staging, archive, "wrong".toCharArray()) }
                 app.backup.restoreToStaging(staging, archive, "password".toCharArray())
                 val restored = PortfolioApplication(staging) { 15552000000L }

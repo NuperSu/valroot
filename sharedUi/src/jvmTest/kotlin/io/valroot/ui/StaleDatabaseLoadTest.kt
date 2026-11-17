@@ -1,7 +1,7 @@
 package io.valroot.ui
 
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 class StaleDatabaseLoadTest {
     @Test
     fun aLoadFromAReplacedApplicationEndsQuietly() {
-        val db = JvmSqliteDatabase(":memory:")
+        val db = BundledSqliteDatabase(":memory:")
         val stale = PortfolioApplication(db) { 0L }
         // A restore closes the connection the old application holds.
         db.close()

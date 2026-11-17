@@ -22,7 +22,7 @@ import io.valroot.core.onboarding.OnboardingPresentation
 import io.valroot.core.onboarding.OnboardingStep
 import io.valroot.core.sources.SourceWorkflow
 import io.valroot.core.sources.SupportedSources
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.nio.file.Files
@@ -37,7 +37,7 @@ class OnboardingHandoffUiTest {
     @Test
     fun completingWithEachSupportedSourceOpensItsFormWithoutGrantingConsentOrCreatingRecords() {
         SupportedSources.choices.forEach { choice ->
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 OfflineHost().use { host ->
                     val app = PortfolioApplication(db) { 1L }
                     app.settings.updateOnboarding(OnboardingAction.Next)
@@ -84,7 +84,7 @@ class OnboardingHandoffUiTest {
         val directory = Files.createTempDirectory("valroot-onboarding-reopen")
         val path = directory.resolve("portfolio.db").toString()
         try {
-            JvmSqliteDatabase(path).use { db ->
+            BundledSqliteDatabase(path).use { db ->
                 OfflineHost().use { host ->
                     val app = PortfolioApplication(db) { 1L }
                     runDesktopComposeUiTest(width = 1000, height = 900) {
@@ -119,7 +119,7 @@ class OnboardingHandoffUiTest {
                     }
                 }
             }
-            JvmSqliteDatabase(path).use { db ->
+            BundledSqliteDatabase(path).use { db ->
                 OfflineHost().use { host ->
                     val app = PortfolioApplication(db) { 2L }
                     runDesktopComposeUiTest(width = 1000, height = 900) {
@@ -155,7 +155,7 @@ class OnboardingHandoffUiTest {
                     }
                 }
             }
-            JvmSqliteDatabase(path).use { db ->
+            BundledSqliteDatabase(path).use { db ->
                 OfflineHost().use { host ->
                     val app = PortfolioApplication(db) { 3L }
                     runDesktopComposeUiTest(width = 1000, height = 900) {

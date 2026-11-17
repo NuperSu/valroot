@@ -5,13 +5,13 @@ import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class JvmSqliteBusyTimeoutTest {
+class SqliteBusyTimeoutTest {
     @Test fun aSecondConnectionWaitsForAWriterInsteadOfFailing() {
         val file = Files.createTempFile("valroot-busy", ".sqlite")
         try {
-            JvmSqliteDatabase(file.toString()).use { first ->
-                JvmSqliteDatabase(file.toString()).use { second ->
-                    assertEquals("5000", second.query("PRAGMA busy_timeout").single().single())
+            BundledSqliteDatabase(file.toString()).use { first ->
+                BundledSqliteDatabase(file.toString()).use { second ->
+                    assertEquals("30000", second.query("PRAGMA busy_timeout").single().single())
                     first.execute("CREATE TABLE t (v TEXT)")
                     val writer =
                         thread {

@@ -39,7 +39,7 @@ import io.valroot.core.reconcile.ClassificationOrigin
 import io.valroot.core.reconcile.ClassificationRule
 import io.valroot.core.reconcile.LinkState
 import io.valroot.core.reconcile.OverlayRepository
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -129,7 +129,7 @@ class RestorePreservationTest {
      * alerts, notification history, CSV receipts, manual prices and every preference. The clock ends at [T1].
      */
     private fun populate(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         clock: TestClock,
     ): PortfolioApplication {
         clock.millis = T0
@@ -292,7 +292,7 @@ class RestorePreservationTest {
     @Test
     fun everyUserRecordSurvivesEncryptedRestore() {
         val clock = TestClock(T0)
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             val app = populate(source, clock)
             // Fixture check: each record kind is present before export, so an empty restore cannot pass.
             assertEquals(3, app.notifications.alerts().size)
@@ -303,7 +303,7 @@ class RestorePreservationTest {
             assertEquals(1, OverlayRepository(source).replayForLedger(ActivityRepository(source).current()).transferLinks.size)
 
             val archive = app.backup.export(password())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, archive, password())
                 val restored = PortfolioApplication(staging) { clock.millis }
 
@@ -401,13 +401,13 @@ class RestorePreservationTest {
     @Test
     fun restoredAlertsDoNotRedeliver() {
         val clock = TestClock(T0)
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             val app = populate(source, clock)
             val alerts = app.notifications.alerts()
             val history = app.notifications.history()
             val above = alerts.single { it.condition == AlertCondition.ABOVE }
             val archive = app.backup.export(password())
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, archive, password())
                 val restoredClock = TestClock(T1)
                 val restored = PortfolioApplication(staging) { restoredClock.millis }
@@ -445,12 +445,12 @@ class RestorePreservationTest {
     @Test
     fun secondExportOfARestoredDatabaseIsIdentical() {
         val clock = TestClock(T0)
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             val app = populate(source, clock)
             val firstArchive = app.backup.export(password())
             val firstBody = plainBody(firstArchive)
             assertTrue(firstBody.decodeToString().contains("Quantity corrected from statement"))
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 app.backup.restoreToStaging(staging, firstArchive, password())
                 val second = PortfolioApplication(staging) { clock.millis }.backup.export(password())
                 assertContentEquals(firstBody, plainBody(second))

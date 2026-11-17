@@ -3,7 +3,7 @@ package io.valroot.android
 import android.content.Context
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.KrakenPriceTransport
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.testing.verifyBitcoinAccountingWorkflow
 import java.io.File
 
@@ -16,7 +16,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
                 io.valroot.testing.verifyAccountHistoryWorkflow {
                     val file = File.createTempFile("valroot-account-fixture-", ".sqlite", context.cacheDir)
                     files.add(file)
-                    AndroidSqliteDatabase(file.path)
+                    BundledSqliteDatabase(file.path)
                 }
             } finally {
                 files.forEach { file ->
@@ -31,7 +31,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
                 io.valroot.testing.verifyManualTransactionWorkflow {
                     val file = File.createTempFile("valroot-manual-fixture-", ".sqlite", context.cacheDir)
                     files.add(file)
-                    AndroidSqliteDatabase(file.path)
+                    BundledSqliteDatabase(file.path)
                 }
             } finally {
                 files.forEach { file ->
@@ -46,7 +46,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
                 verifyBitcoinAccountingWorkflow {
                     val file = File.createTempFile("valroot-chain-fixture-", ".sqlite", context.cacheDir)
                     files.add(file)
-                    AndroidSqliteDatabase(file.path)
+                    BundledSqliteDatabase(file.path)
                 }
             } finally {
                 files.forEach { file ->
@@ -58,7 +58,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
         "dataErasure" to {
             for (mode in listOf("DELETE", "PERSIST", "WAL")) {
                 withTemporaryDatabase(context.cacheDir) { file ->
-                    AndroidSqliteDatabase(file.path).use { db ->
+                    BundledSqliteDatabase(file.path).use { db ->
                         db.query("PRAGMA journal_mode = $mode")
                         val app = PortfolioApplication(db, System::currentTimeMillis)
                         app.demo.seed()
@@ -83,7 +83,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
         },
         "automaticHourlyPriceWorkflow" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     val hour = 3_600_000L
                     val current = System.currentTimeMillis() / hour * hour
                     val at = current + 30_000
@@ -117,7 +117,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
         },
         "historicalPriceWorkflow" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     val at = System.currentTimeMillis()
                     val day = at / 86_400_000L * 86_400_000L
                     val app = PortfolioApplication(db) { at }
@@ -169,7 +169,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
         },
         "persistedProjections" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     val app = PortfolioApplication(db, System::currentTimeMillis)
                     app.demo.seed()
                     check(app.snapshot().activityTotal == 4)
@@ -188,7 +188,7 @@ internal fun applicationChecks(context: Context): List<ReliabilityCheck> =
                             .isNotEmpty(),
                     )
                 }
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     check(PortfolioApplication(db, System::currentTimeMillis).snapshot().activityTotal == 4)
                 }
             }
@@ -200,7 +200,7 @@ internal fun livePriceChecks(context: Context): List<ReliabilityCheck> =
     listOf<ReliabilityCheck>(
         "liveHourlyPrice" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     val app = PortfolioApplication(db, System::currentTimeMillis)
                     app.prices.setAutomaticConsent(true)
                     val transport = KrakenPriceTransport()

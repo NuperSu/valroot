@@ -2,7 +2,7 @@ package io.valroot.core.market
 
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.ExactDecimal
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,7 +54,7 @@ class MarketCandlesTest {
     }
 
     @Test fun coingeckoComesFirstAndKrakenOnlyWhenItCannotAnswerAndIsAllowed() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.market.setConsent(true)
             val requests = mutableListOf<String>()
@@ -89,7 +89,7 @@ class MarketCandlesTest {
     }
 
     @Test fun theCandleStillFormingIsBuiltFromShorterClosedCandles() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.market.setConsent(true)
             val hour = 3_600_000L
@@ -143,7 +143,7 @@ class MarketCandlesTest {
     }
 
     @Test fun rangesShareRecentResponsesAndARateLimitPausesCandleRequests() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var at = now
             val app = PortfolioApplication(db) { at }
             app.market.setConsent(true)

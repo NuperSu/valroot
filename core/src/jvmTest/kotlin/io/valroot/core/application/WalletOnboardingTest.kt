@@ -10,7 +10,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -24,7 +24,7 @@ class WalletOnboardingTest {
 
     @Test
     fun firstWalletCreatesOwnershipAndConsentTogetherAndPersists() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.bitcoinWallets.save(wallet(), account, owner, consentAccepted = true)
             val reopened = PortfolioApplication(db) { 1000L }
@@ -38,7 +38,7 @@ class WalletOnboardingTest {
 
     @Test
     fun invalidWalletOrMissingConsentLeavesFreshPortfolioUntouched() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             val initial = app.snapshot().ownership
             assertFails { app.bitcoinWallets.save(wallet(), account, owner) }
@@ -51,7 +51,7 @@ class WalletOnboardingTest {
 
     @Test
     fun existingAccountUsesStoredConsentAndDuplicateCannotCreateOrphans() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.accounts.saveOwner(owner)
             app.accounts.saveAccount(account)
@@ -71,7 +71,7 @@ class WalletOnboardingTest {
 
     @Test
     fun inactiveOrGroupAccountCannotReceiveWallet() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.accounts.saveOwner(owner)
             app.accounts.saveAccount(account.copy(kind = AccountKind.GROUP))
@@ -90,7 +90,7 @@ class WalletOnboardingTest {
 
     @Test
     fun writeFailureRollsBackOwnerAccountWalletAndConsent() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             val initial = app.snapshot().ownership
             db.execute("CREATE TRIGGER fail_wallet BEFORE INSERT ON targets BEGIN SELECT RAISE(ABORT, 'injected failure'); END")

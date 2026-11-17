@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.Density
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.AssetId
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
@@ -48,7 +48,7 @@ class RewriteAcceptanceTest {
             Triple(1440, 900, 1f),
             Triple(390, 844, 1.5f),
         )) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 Host().use { host ->
                     val app = PortfolioApplication(db) { System.currentTimeMillis() }
                     app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -154,7 +154,7 @@ class RewriteAcceptanceTest {
 
     @Test
     fun portfolioManualEntryValidatesAndPersistsExactQuantity() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Host().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -191,7 +191,7 @@ class RewriteAcceptanceTest {
 
     @Test
     fun savedMarketCoinWithoutHoldingOpensDetailWithoutInventingOwnership() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Host().use { host ->
                 val now = System.currentTimeMillis()
                 val app = PortfolioApplication(db) { now }
@@ -245,7 +245,7 @@ class RewriteAcceptanceTest {
 
     @Test
     fun firstManualEntryCreatesLocalAccountAndRecordsOneSatoshi() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Host().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -312,7 +312,7 @@ class RewriteAcceptanceTest {
 
     @Test
     fun aPortfolioSavedInEurosRefreshesInUsDollarsWithoutAskingForMoreConsent() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Host().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -344,7 +344,7 @@ class RewriteAcceptanceTest {
 
     @Test
     fun refreshRequiresConsentAndPreventsDuplicatesWhileKeepingSavedData() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Host().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

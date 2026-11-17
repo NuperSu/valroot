@@ -4,7 +4,7 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.NetworkId
 import io.valroot.core.model.ProviderId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -40,7 +40,7 @@ class CoingeckoPricesTest {
 
     @Test fun dayConversionMatchesCalendarDates() {
         val recorded = mutableListOf<String>()
-        val market = MarketRepository(JvmSqliteDatabase(":memory:")).also(::register)
+        val market = MarketRepository(BundledSqliteDatabase(":memory:")).also(::register)
         val client =
             CoingeckoPriceClient(
                 { url ->
@@ -57,7 +57,7 @@ class CoingeckoPricesTest {
     }
 
     @Test fun storedHistoricalPriceIsReadBackOnlyUnderItsProviderPolicy() {
-        val market = MarketRepository(JvmSqliteDatabase(":memory:")).also(::register)
+        val market = MarketRepository(BundledSqliteDatabase(":memory:")).also(::register)
         val client = CoingeckoPriceClient({ history("42000.5") }, market, { 5L })
         val result = client.historical(btc, "bitcoin", usd, "usd", dayMillis, "btc-day")
         assertEquals(PriceStatus.FRESH, result.status)
@@ -71,7 +71,7 @@ class CoingeckoPricesTest {
     }
 
     @Test fun missingProviderQuoteRecordsNothing() {
-        val market = MarketRepository(JvmSqliteDatabase(":memory:")).also(::register)
+        val market = MarketRepository(BundledSqliteDatabase(":memory:")).also(::register)
         val client = CoingeckoPriceClient({ """{"market_data":{"current_price":{}}}""" }, market, { 5L })
         assertEquals(PriceStatus.MISSING, client.historical(btc, "bitcoin", usd, "usd", dayMillis, "none").status)
         val coingecko = PricePolicy(listOf(ProviderId(CoingeckoPrices.PROVIDER_ID)), maxAgeMillis = Long.MAX_VALUE / 4)

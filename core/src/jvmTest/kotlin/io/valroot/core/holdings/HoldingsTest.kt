@@ -19,7 +19,7 @@ import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.Portfolio
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.OwnershipSnapshot
 import io.valroot.core.storage.Store
 import java.nio.file.Files
@@ -32,7 +32,7 @@ class HoldingsTest {
     private val asset = AssetId("asset")
 
     @Test fun historicalSeriesMatchesIndividualQueries() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = HoldingsRepository(db)
             val activities =
@@ -88,7 +88,7 @@ class HoldingsTest {
         val spend = event("spend", 200, "a" to "-210")
         val transfer = event("transfer", 300, "a" to "-300", "b" to "300")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 val repo = HoldingsRepository(db)
                 repo.refresh(listOf(deposit, spend))
@@ -131,7 +131,7 @@ class HoldingsTest {
                 assertNull(repo.reconcile(observed, incremental.copy(coverage = BalanceCoverage.UNKNOWN)).reconstructed)
                 assertEquals("10", repo.reconcile(observed, incremental).difference.toString())
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 assertEquals(
                     "700",
@@ -144,7 +144,7 @@ class HoldingsTest {
     }
 
     @Test fun completeStreamReconcilesAcrossBatchesAndRollsBackOnFailure() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = HoldingsRepository(db)
             val initial = (0 until 300).map { event("item-$it", it.toLong(), "a" to "1000000000000000000000000000") }

@@ -22,7 +22,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,7 +119,7 @@ class MexcConnectorTest {
         }
     }
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { now }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -152,7 +152,7 @@ class MexcConnectorTest {
 
     @Test
     fun keepsRecentRecordsAndOpensWhatMexcNoLongerKeeps() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val mexc = FakeMexc()
             val outcome = MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
@@ -187,7 +187,7 @@ class MexcConnectorTest {
 
     @Test
     fun unclassifiedExchangeActivityCountsWithDefaultsAndASavedClassificationWins() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             MexcConnector { _, request -> FakeMexc().get(request) }.refresh(app, SourceRefreshOptions())
             val view = app.accounting.report()
@@ -219,7 +219,7 @@ class MexcConnectorTest {
 
     @Test
     fun anOpeningCountsAtItsMarketValueOnlyWhenChosenAndHistoryIsComplete() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             // Without trades the opening is BTC's only lot.
             val mexc = FakeMexc().apply { trades.clear() }
@@ -286,7 +286,7 @@ class MexcConnectorTest {
 
     @Test
     fun laterRefreshesKeepTradesMexcHasDropped() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val mexc = FakeMexc()
             val connector = MexcConnector { _, request -> mexc.get(request) }
@@ -304,7 +304,7 @@ class MexcConnectorTest {
 
     @Test
     fun aMinuteWithMoreThanAPageOfTradesFailsInsteadOfSkippingTrades() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val mexc = FakeMexc()
             repeat(120) { i -> mexc.trades += mexc.trade("burst$i", "0.001", "50", "0.05", "USDT", true, now - 5 * day + i * 100L) }

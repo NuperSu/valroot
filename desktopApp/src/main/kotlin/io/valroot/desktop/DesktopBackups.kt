@@ -2,7 +2,7 @@ package io.valroot.desktop
 
 import androidx.compose.runtime.MutableState
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.readBoundedText
 import io.valroot.core.storage.walIsEmpty
 import kotlinx.coroutines.flow.update
@@ -129,7 +129,7 @@ internal class DesktopBackups(
                     var replacementReady = false
                     try {
                         staging = Files.createTempFile(state.directory, "restore-", ".sqlite")
-                        JvmSqliteDatabase(staging.toString()).use { stagingDb ->
+                        BundledSqliteDatabase(staging.toString()).use { stagingDb ->
                             Files.newInputStream(path).buffered().use { input ->
                                 app.value.backup.restoreToStaging(stagingDb, { b, o, l -> input.read(b, o, l) }, password.toCharArray())
                             }
@@ -149,7 +149,7 @@ internal class DesktopBackups(
                                 Files.move(staging, state.file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
                                 swapped = true
                             } finally {
-                                state.db = JvmSqliteDatabase(state.file.toString())
+                                state.db = BundledSqliteDatabase(state.file.toString())
                                 reopened = true
                             }
                             val replacement = PortfolioApplication(state.db, System::currentTimeMillis)

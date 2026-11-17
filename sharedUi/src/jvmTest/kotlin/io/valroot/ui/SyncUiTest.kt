@@ -13,7 +13,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.EmptyCoroutineContext
@@ -43,7 +43,7 @@ class SyncUiTest {
 
     @Test
     fun dataHealthOpensUnknownActiveScopeEvidence() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -72,7 +72,7 @@ class SyncUiTest {
 
     @Test
     fun syncProgressAndSettingsRemainVisibleWhenDatabaseDispatcherIsBusy() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -115,7 +115,7 @@ class SyncUiTest {
 
     @Test
     fun fullHistoryRecoveryRequiresConsentAndExplicitConfirmation() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             TestHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

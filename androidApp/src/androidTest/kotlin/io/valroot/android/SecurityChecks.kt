@@ -44,7 +44,7 @@ internal fun securityChecks(context: Context): List<ReliabilityCheck> =
         // Uses the app's own Keystore key (the one the app seals with), so the key is kept afterwards.
         "apiSecretsSealedWithKeystore" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                io.valroot.core.storage.AndroidSqliteDatabase(file.path).use { db ->
+                io.valroot.core.storage.BundledSqliteDatabase(file.path).use { db ->
                     val app = io.valroot.core.application.PortfolioApplication(db, System::currentTimeMillis)
                     val account = io.valroot.core.model.AccountId("reliability")
                     val kind = io.valroot.core.exchange.ExchangeKind.BYBIT

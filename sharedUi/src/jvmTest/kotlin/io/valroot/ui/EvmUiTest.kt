@@ -41,7 +41,7 @@ import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +58,7 @@ class EvmUiTest {
 
     @Test
     fun connectDialogRejectsBadChecksumAndTracksValidAddress() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val host = EvmTestHost(executor.asCoroutineDispatcher())
@@ -103,7 +103,7 @@ class EvmUiTest {
 
     @Test
     fun alchemyKeyRowSavesAndRejectsThroughSettings() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val dispatcher = executor.asCoroutineDispatcher()
@@ -160,7 +160,7 @@ class EvmUiTest {
 
     @Test
     fun chainStatusShowsCoverageNoteUnderItsChainOnly() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val host = EvmTestHost(executor.asCoroutineDispatcher())
@@ -186,7 +186,7 @@ class EvmUiTest {
 
     @Test
     fun hiddenTokenReviewShowsTokenAndShowMovesItIntoValuations() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val host = EvmTestHost(executor.asCoroutineDispatcher())

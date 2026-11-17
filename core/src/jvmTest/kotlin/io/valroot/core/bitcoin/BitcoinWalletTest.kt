@@ -11,7 +11,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,7 +49,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun discoveryRequiresConsentAndIsAtomicAtLimit() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -101,7 +101,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun discoveryKeepsOwnershipEditsSavedDuringTheScan() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -130,7 +130,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun unusedBareXpubAndSingleBranchDescriptorGiveNotices() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -208,7 +208,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun discoveryMovesTheOwnersStandaloneAddressIntoTheWalletAndItsBalanceFollows() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val owner = OwnerId("o")
             val walletAccount = AccountId("wallet-account")
@@ -261,7 +261,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun walletSavedWithoutDiscoveryIsDiscoveredBeforeTheNextRefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -285,7 +285,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun usedAddressInTheTrailingGapCallsForDiscoveryAgain() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -309,7 +309,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun discoveredXpubWithHistoryCompletesRefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 15552000000L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -337,7 +337,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun discoveryNamesTheAccountThatAlreadyTracksAnAddress() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -368,7 +368,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun failedImportIsRetriedWithTheSameWalletInsteadOfBlockingTheExpression() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val owner = OwnerId("o")
             val account = AccountId("a")
@@ -404,7 +404,7 @@ class BitcoinWalletTest {
     }
 
     @Test fun resumingATrackedWalletRemovesAnEmptyDuplicateAndItsAccount() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
             val owner = OwnerId("o")
             app.accounts.saveOwner(Owner(owner, "Owner"))

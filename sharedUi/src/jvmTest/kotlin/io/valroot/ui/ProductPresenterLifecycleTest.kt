@@ -12,7 +12,7 @@ import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.application.PortfolioSnapshot
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.TrackingTargetId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -39,7 +39,7 @@ import kotlin.test.assertTrue
 class ProductPresenterLifecycleTest {
     @Test
     fun compositionRecreationRestoresSavedNavigationAndCreatesFreshPresenter() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
                 val application = PortfolioApplication(db) { 1L }
                 val host = Host(dispatcher)
@@ -110,7 +110,7 @@ class ProductPresenterLifecycleTest {
     @Test
     fun overlappingMutationsKeepBusyUntilLastQueuedActionCompletes() =
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
                     val queries = Queries(PortfolioApplication(db) { 1L }.snapshot())
                     val presenter = ProductPresenter(ProductPresentation(), queries, dispatcher, this)
@@ -149,7 +149,7 @@ class ProductPresenterLifecycleTest {
     @Test
     fun queuedMessagesKeepOrderWhenSnackbarCollectionRestarts() =
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val presenter =
                     ProductPresenter(
                         ProductPresentation(),
@@ -173,7 +173,7 @@ class ProductPresenterLifecycleTest {
     @Test
     fun cancelledSnapshotNeverPublishesStaleFilterOrAnErrorNotification() =
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
                     val accepted = PortfolioApplication(db) { 1L }.snapshot()
                     val queries = Queries(accepted)

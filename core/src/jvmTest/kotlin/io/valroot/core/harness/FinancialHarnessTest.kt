@@ -39,7 +39,7 @@ import io.valroot.core.model.SourceRecordId
 import io.valroot.core.model.SyncJobId
 import io.valroot.core.reconcile.ActivityOverlay
 import io.valroot.core.reconcile.OverlayRepository
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import io.valroot.core.sync.SyncJob
 import io.valroot.core.sync.SyncOrchestrator
@@ -53,7 +53,7 @@ class FinancialHarnessTest {
     @Test fun fakeChainAndExchangeFlowAcrossEntireFinancialCore() {
         val path = Files.createTempFile("valroot-financial-harness", ".db")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val store = Store(db)
                 val fixtures =
                     checkNotNull(javaClass.getResource("/financial-families.tsv")).readText().trim().lines().associate { line ->
@@ -177,7 +177,7 @@ class FinancialHarnessTest {
                 assertEquals(Rational.of("13"), report.valuations.single { it.lot.asset.value == "new-chain" }.unrealizedGain)
                 assertEquals(Rational.of("16"), report.valuations.single { it.lot.asset.value == "exchange" }.unrealizedGain)
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 assertEquals(2, ActivityRepository(db).current().size)
                 assertEquals(
@@ -196,7 +196,7 @@ class FinancialHarnessTest {
     }
 
     @Test fun largeSyntheticPortfolioReplaysIncrementallyAndFully() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val account = AccountId("portfolio")
             val asset = AssetId("synthetic")
@@ -229,7 +229,7 @@ class FinancialHarnessTest {
     }
 
     @Test fun corruptProviderFixtureCannotCommit() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val provider =
                 SyncProvider(

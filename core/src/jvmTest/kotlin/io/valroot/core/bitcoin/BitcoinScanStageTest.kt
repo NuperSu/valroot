@@ -6,7 +6,7 @@ import io.valroot.core.ledger.ActivityStatus
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ProviderId
 import io.valroot.core.model.SourceId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -40,7 +40,7 @@ class BitcoinScanStageTest {
             ).fetch(HistoryRequest(SourceId("esplora"), ProviderId("esplora"), BITCOIN_MAINNET, account)).observations
         val transport = EsploraTransport { "[\"$firstId\",\"$secondId\"]" }
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val store = Store(db)
                 val ledger = ActivityRepository(db)
                 val stage = BitcoinScanStage(db, store, ledger)

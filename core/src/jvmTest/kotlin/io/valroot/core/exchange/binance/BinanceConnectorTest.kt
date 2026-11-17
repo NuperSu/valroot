@@ -19,7 +19,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -153,7 +153,7 @@ class BinanceConnectorTest {
         }
     }
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { now }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -193,12 +193,12 @@ class BinanceConnectorTest {
     fun aBudgetSpentBeforeTradesKeepsHistoryUnfinished() {
         // The requests a full refresh makes before dust and trades: the history streams and the balances.
         val streams =
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val binance = FakeBinance()
                 BinanceConnector { _, request -> binance.get(request) }.refresh(setUp(db), SourceRefreshOptions())
                 binance.requests.indexOfFirst { it.path == "/sapi/v1/asset/dribblet" }
             }
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val binance = FakeBinance()
             val outcome =
@@ -214,7 +214,7 @@ class BinanceConnectorTest {
 
     @Test
     fun recordsTradesTransfersAndRewardsAndFillWhatTheyMiss() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val binance = FakeBinance()
             val outcome =
@@ -283,7 +283,7 @@ class BinanceConnectorTest {
 
     @Test
     fun laterRefreshesReadNewWindowsAndOnlySymbolsWhoseCoinsChanged() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val binance = FakeBinance()
             val connector = BinanceConnector { _, request -> binance.get(request) }
@@ -318,7 +318,7 @@ class BinanceConnectorTest {
 
     @Test
     fun keysThatCanTradeAreRefusedAndAddedPairsAreRead() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val binance = FakeBinance().apply { readOnly = false }
             val connector = BinanceConnector { _, request -> binance.get(request) }

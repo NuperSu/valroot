@@ -23,7 +23,7 @@ import io.valroot.core.model.OwnerId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -37,7 +37,7 @@ class CsvImportFlowTest {
             "2026-01-16T08:00:00Z,buy,XBT,0.01,43000,,Bought with the XBT ticker\r\n" +
             "2026-01-18T08:00:00Z,bogus,BTC,1,1,,\r\n"
 
-    private fun app(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun app(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1_800_000_000_000L }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -62,7 +62,7 @@ class CsvImportFlowTest {
 
     @Test
     fun choosingAFileShowsCountsResolvesAnAssetAndImportsOnce() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = app(db)
                 val host = host(delegate) { "trades.csv" to trades }
@@ -110,7 +110,7 @@ class CsvImportFlowTest {
 
     @Test
     fun alreadyImportedFilesAreSkippedAndSaysSo() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = app(db)
                 val options =
@@ -144,7 +144,7 @@ class CsvImportFlowTest {
 
     @Test
     fun templateIsSavedAndUnreadableFilesAreExplained() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = app(db)
                 var reply = "" to (null as String?)
@@ -173,7 +173,7 @@ class CsvImportFlowTest {
 
     @Test
     fun historyListsImportsAndUndoReversesThem() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = app(db)
                 val options =
@@ -218,7 +218,7 @@ class CsvImportFlowTest {
 
     @Test
     fun emptyHistorySaysNoImportsYet() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = app(db)
                 runDesktopComposeUiTest(width = 900, height = 800) {

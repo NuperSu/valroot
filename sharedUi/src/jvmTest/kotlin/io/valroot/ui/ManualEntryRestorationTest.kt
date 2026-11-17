@@ -25,7 +25,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.lang.reflect.Proxy
@@ -37,7 +37,7 @@ import kotlin.time.Instant
 class ManualEntryRestorationTest {
     @Test
     fun recreationPreservesAssetAccountClassificationAndAmountInRecordedActivity() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.demo.seed()
             val initial = app.snapshot()
@@ -129,7 +129,7 @@ class ManualEntryRestorationTest {
 
     @Test
     fun manualFormRejectsWrongSignsAndInvalidFeesWithoutWritingActivity() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.demo.seed()
             val data = app.snapshot()
@@ -179,7 +179,7 @@ class ManualEntryRestorationTest {
 
     @Test
     fun manualPaymentRecordsExactPrincipalFeeAndEnteredTimestamp() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.demo.seed()
             val data = app.snapshot()

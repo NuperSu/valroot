@@ -9,7 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 
 /**
  * State shared by [AndroidHost] and its helpers: the database file and its connection, the background executor and
@@ -38,7 +38,7 @@ internal class AndroidState(
     val backupWork = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     /** Opened on [executor]; a restore replaces it. */
-    lateinit var db: AndroidSqliteDatabase
+    lateinit var db: BundledSqliteDatabase
 
     /** Whether the database has been opened. */
     val dbOpen: Boolean get() = ::db.isInitialized

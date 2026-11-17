@@ -4,7 +4,7 @@ import io.valroot.core.ledger.ActivityRepository
 import io.valroot.core.ledger.LedgerDeltas
 import io.valroot.core.ledger.MovementRole
 import io.valroot.core.model.AccountId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -66,7 +66,7 @@ class BitcoinMainnetEvidenceTest {
             spendTx.block!!.hash,
         )
 
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val ledger = ActivityRepository(db)
             val stage = BitcoinScanStage(db, Store(db), ledger)
 

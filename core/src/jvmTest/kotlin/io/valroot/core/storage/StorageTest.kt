@@ -19,8 +19,8 @@ class StorageTest {
         val payload = "\u20ac".repeat(1_100_000)
         val record = observation("large", "provider-a", sha256(payload), payload)
         try {
-            Store(JvmSqliteDatabase(path.toString())).use { it.ingest(record) }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            Store(BundledSqliteDatabase(path.toString())).use { it.ingest(record) }
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db).use { store ->
                     store.ingest(record)
                     store.ingest(record.copy(sourceId = "provider-b"))
@@ -44,7 +44,7 @@ class StorageTest {
     fun reopenAndRetainDistinctProvenanceAndRevisions() {
         val path = Files.createTempFile("valroot", ".sqlite")
         try {
-            Store(JvmSqliteDatabase(path.toString())).use { store ->
+            Store(BundledSqliteDatabase(path.toString())).use { store ->
                 store.ingest(observation("1", "provider-a"))
                 assertEquals("1", store.ingest(observation("2", "provider-b")).value)
                 store.ingest(observation("1", "provider-a"))
@@ -54,7 +54,7 @@ class StorageTest {
                 assertEquals(3, store.observations().size)
                 assertFails { store.ingest(observation("1", "provider-a", sha256("data"), "collision")) }
             }
-            Store(JvmSqliteDatabase(path.toString())).use { store ->
+            Store(BundledSqliteDatabase(path.toString())).use { store ->
                 assertEquals(2, store.revisions().size)
                 assertEquals(3, store.observations().size)
             }
@@ -65,7 +65,7 @@ class StorageTest {
 
     @Test
     fun rollbackAndForeignKeyEnforcement() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db).use { store ->
                 assertFails {
                     db.transaction {
@@ -83,10 +83,10 @@ class StorageTest {
     fun rejectsFutureSchemaAndCorruptDatabase() {
         val path = Files.createTempFile("valroot-schema", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use { it.execute("PRAGMA user_version = 999") }
-            assertFails { JvmSqliteDatabase(path.toString()).use { Store(it) } }
+            BundledSqliteDatabase(path.toString()).use { it.execute("PRAGMA user_version = 999") }
+            assertFails { BundledSqliteDatabase(path.toString()).use { Store(it) } }
             Files.writeString(path, "not a database")
-            assertFails { JvmSqliteDatabase(path.toString()).use { Store(it) } }
+            assertFails { BundledSqliteDatabase(path.toString()).use { Store(it) } }
         } finally {
             Files.deleteIfExists(path)
         }
@@ -94,7 +94,7 @@ class StorageTest {
 
     @Test
     fun serializesConcurrentIngestion() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db).use { store ->
                 val threads =
                     (0 until 20).map { i ->
@@ -111,7 +111,7 @@ class StorageTest {
     fun migrationRollsBackOnConflictingSchemaAndCanRetry() {
         val path = Files.createTempFile("valroot-migration", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 Store(db)
                 listOf("portfolio_owners", "portfolio_accounts", "ownership_tags", "targets", "accounts", "portfolios", "owners").forEach {
                     db.execute("DROP TABLE $it")
@@ -136,7 +136,7 @@ class StorageTest {
                 Store(db)
                 assertEquals("6", db.query("PRAGMA user_version").single().single())
             }
-            JvmSqliteDatabase(path.toString()).use { db -> Store(db) }
+            BundledSqliteDatabase(path.toString()).use { db -> Store(db) }
         } finally {
             Files.deleteIfExists(path)
         }
@@ -147,12 +147,12 @@ class StorageTest {
         val original = Files.createTempFile("valroot-source", ".sqlite")
         val backup = original.resolveSibling(original.fileName.toString() + ".backup")
         try {
-            JvmSqliteDatabase(original.toString()).use { db ->
+            BundledSqliteDatabase(original.toString()).use { db ->
                 val store = Store(db)
                 store.ingest(observation("1", "a"))
                 db.snapshot(backup.toString())
             }
-            Store(JvmSqliteDatabase(backup.toString())).use { store ->
+            Store(BundledSqliteDatabase(backup.toString())).use { store ->
                 assertEquals(1, store.records().size)
                 assertEquals(1, store.observations().size)
             }
@@ -164,7 +164,7 @@ class StorageTest {
 
     @Test
     fun missingTableInCurrentSchemaIsRejected() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             db.execute("DROP TABLE ownership_tags")
             assertFails { Store(db) }

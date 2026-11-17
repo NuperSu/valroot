@@ -18,7 +18,7 @@ import io.valroot.core.market.OrderBookSnapshot
 import io.valroot.core.market.OrderLevel
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.model.ModelAlertRule
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -116,7 +116,7 @@ class CoinAlertsOrderBookTest {
     }
 
     @Test fun alertsAddToggleEditAndDeleteFromTheCoinPage() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -187,7 +187,7 @@ class CoinAlertsOrderBookTest {
     }
 
     @Test fun orderBookLoadsAfterConsentAndKeepsTheLastBookWhenARequestFails() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

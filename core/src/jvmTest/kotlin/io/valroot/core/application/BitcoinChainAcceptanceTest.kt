@@ -17,7 +17,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import io.valroot.testing.utxoResponse
 import kotlin.test.Test
@@ -33,7 +33,7 @@ class BitcoinChainAcceptanceTest {
 
     private fun blockHash(height: Long): String = height.toString(16).padStart(64, '0')
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 15552000000L }
         val owner = OwnerId("owner")
         val account = AccountId("account")
@@ -129,7 +129,7 @@ class BitcoinChainAcceptanceTest {
             }
     }
 
-    private fun acceptedData(db: JvmSqliteDatabase): Map<String, List<List<String?>>> =
+    private fun acceptedData(db: BundledSqliteDatabase): Map<String, List<List<String?>>> =
         listOf(
             "ledger_activities",
             "ledger_movements",
@@ -148,11 +148,11 @@ class BitcoinChainAcceptanceTest {
      * The accepted ledger and graph. Raw provider observations are evidence that a scan stores before it is applied, so a
      * rejected scan may add them while the accepted state stays unchanged.
      */
-    private fun acceptedLedgerAndGraph(db: JvmSqliteDatabase) = acceptedData(db).filterKeys { !it.startsWith("raw_") }
+    private fun acceptedLedgerAndGraph(db: BundledSqliteDatabase) = acceptedData(db).filterKeys { !it.startsWith("raw_") }
 
     private fun initialScan(
         app: PortfolioApplication,
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         provider: ChainProvider,
     ) {
         assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
@@ -170,7 +170,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun unchangedProviderSkipsHistoryAndLeavesAcceptedDataIdentical() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -189,7 +189,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun newTransactionForcesFullScanThatAppliesIt() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -205,7 +205,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun anAddressWithMoreUnconfirmedTransactionsThanEsploraListsStillCompletes() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             provider.busyMempool = 60
@@ -220,7 +220,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun pendingTransactionsNoLongerListedInABusyMempoolAreNotReversed() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             provider.busyMempool = 60
@@ -234,7 +234,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun pendingTransactionAtLastScanForcesFullScanOnNextRefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             provider.pendingTransaction = true
@@ -250,7 +250,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun changedProviderOrRecoveryForcesFullScan() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -269,7 +269,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun shallowReorganizationWithProvenAncestorAcceptsReplacementSnapshot() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -287,7 +287,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun deepReorganizationPreservesAcceptedLedgerAndGraphSnapshot() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -305,7 +305,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun explicitDeepRecoveryEstablishesBaselineAndAllowsNormalRefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -329,7 +329,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun failedRecoveryRetainsAcceptedDataAndDoesNotAdvanceBaseline() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -355,7 +355,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun recoveryDiscardsCompletedScratchHistoryFromAnInterruptedAttempt() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -379,7 +379,7 @@ class BitcoinChainAcceptanceTest {
     @Test
     fun recoveryRetainsBlockAndFinalTipValidation() {
         for (movingTip in listOf(false, true)) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setUp(db)
                 val provider = ChainProvider()
                 initialScan(app, db, provider)
@@ -404,7 +404,7 @@ class BitcoinChainAcceptanceTest {
     @Test
     fun lowerRecoveryBaselineSurvivesPortableBackupAndNormalRefresh() {
         val archive =
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setUp(db)
                 val provider = ChainProvider()
                 initialScan(app, db, provider)
@@ -414,7 +414,7 @@ class BitcoinChainAcceptanceTest {
                 assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
                 PortableBackup.discover(db).export(db)
             }
-        JvmSqliteDatabase(":memory:").use { restored ->
+        BundledSqliteDatabase(":memory:").use { restored ->
             PortfolioApplication(restored) { 15552000000L }
             PortableBackup.discover(restored).restoreToStaging(restored, archive)
             val app = PortfolioApplication(restored) { 15552000000L }
@@ -433,7 +433,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun staleAnchorsWithoutProvenAncestorPreserveAcceptedData() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -450,7 +450,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun laggingProviderPreservesAcceptedLedgerAndGraphSnapshot() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -466,7 +466,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun longDowntimeAcceptsCanonicalSavedCheckpointBeyondRewindBound() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -484,7 +484,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun reorganizationDuringBlockValidationCannotCommitStaleCheckpoint() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -506,7 +506,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun orphanedInterruptedSessionIsDiscardedAndNextRetryAcceptsFreshHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -543,7 +543,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun unverifiedPositionScanRejectsNoncanonicalTransactionBlockBeforeApply() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -562,7 +562,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun endpointChangeDuringInitialTipRequestCannotAttributeOldResponseToNewProvider() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -587,7 +587,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun endpointChangeAfterBlockVerificationPreservesAcceptedDataAndDiscardsOldStage() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -618,7 +618,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun precreatedTransportEndpointMismatchCannotResumePendingOldProviderSession() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)
@@ -651,7 +651,7 @@ class BitcoinChainAcceptanceTest {
 
     @Test
     fun changedWatchedScopeCannotCommitAnInFlightScan() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val provider = ChainProvider()
             initialScan(app, db, provider)

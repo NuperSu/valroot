@@ -14,7 +14,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -28,7 +28,7 @@ class ConnectorPersistenceTest {
         val path = Files.createTempFile("connector", ".sqlite")
         try {
             val families = listOf("btc", "evm", "exchange")
-            val db = JvmSqliteDatabase(path.toString())
+            val db = BundledSqliteDatabase(path.toString())
             Store(db).use { store ->
                 val ledger = ActivityRepository(db)
                 for (family in families) {
@@ -68,7 +68,7 @@ class ConnectorPersistenceTest {
                 assertEquals(3, store.observations().size)
                 assertEquals(3, ledger.current().size)
             }
-            JvmSqliteDatabase(path.toString()).use { reopened ->
+            BundledSqliteDatabase(path.toString()).use { reopened ->
                 Store(reopened)
                 val balances = LedgerDeltas.calculate(ActivityRepository(reopened).current())
                 families.forEach { assertEquals("42", balances.getValue(AccountId(it)).getValue(AssetId(it)).toString()) }

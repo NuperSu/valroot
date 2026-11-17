@@ -15,7 +15,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,7 +31,7 @@ class BitcoinDeltaRefreshIntegrationTest {
 
     private fun hash(height: Long): String = height.toString(16).padStart(64, '0')
 
-    private fun application(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun application(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1_700_000_000_000L }
         val owner = OwnerId("owner")
         app.accounts.saveOwner(Owner(owner, "Owner"))
@@ -94,13 +94,13 @@ class BitcoinDeltaRefreshIntegrationTest {
     }
 
     private fun count(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         table: String,
     ): String = db.query("SELECT COUNT(*) FROM $table").single().single()!!
 
     @Test
     fun productionRefreshSharesUnchangedBodiesAndPersistsChangedDiagnosticsAndBackup() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = application(db)
             val provider = Provider()
             repeat(2) { assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport)) }
@@ -150,7 +150,7 @@ class BitcoinDeltaRefreshIntegrationTest {
             assertEquals(1, app.snapshot().sourceStatus.utxoMismatchCount)
             BitcoinStagedGraph.SCRATCH_TABLES.forEach { assertEquals("0", count(db, it)) }
             val archive = PortableBackup.discover(db).export(db)
-            JvmSqliteDatabase(":memory:").use { restored ->
+            BundledSqliteDatabase(":memory:").use { restored ->
                 val reopened = PortfolioApplication(restored) { 1_700_000_000_000L }
                 PortableBackup.discover(restored).restoreToStaging(restored, archive)
                 assertEquals(review, reopened.bitcoin.utxoReview(limit = 1))
@@ -161,7 +161,7 @@ class BitcoinDeltaRefreshIntegrationTest {
 
     @Test
     fun providerReportsWatchedAddressForUnownedOutputWithoutBorrowingItsGraphContext() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = application(db)
             val provider = Provider().also { it.spendAddress = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT" }
             app.bitcoin.refresh(provider.transport)
@@ -183,7 +183,7 @@ class BitcoinDeltaRefreshIntegrationTest {
 
     @Test
     fun reorganizationUsesDeltaAnchorsAndFailedReplacementPreservesAcceptedState() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = application(db)
             val provider = Provider().also { it.confirmed = true }
             app.bitcoin.refresh(provider.transport)

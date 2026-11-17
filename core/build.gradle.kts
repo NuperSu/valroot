@@ -34,7 +34,6 @@ kotlin {
         }
     }
     sourceSets.jvmMain.dependencies {
-        implementation(libs.sqlite.jdbc)
         // libsecp256k1 (Bitcoin Core's curve library) for bitcoin-kmp, with natives for Linux, macOS and Windows.
         implementation(libs.secp256k1.kmp.jni.jvm)
     }
@@ -43,6 +42,10 @@ kotlin {
     }
     sourceSets.commonMain.dependencies {
         implementation(libs.kotlinx.serialization.json)
+        // SQLite compiled into the app, so every platform runs the same version with the same settings.
+        implementation(libs.androidx.sqlite.bundled)
+        // Locks for common code (BundledSqliteDatabase serializes its calls).
+        implementation(libs.atomicfu)
         // ACINQ's Bitcoin library (used by Phoenix): BIP32 derivation, addresses and descriptor checksums.
         implementation(libs.bitcoin.kmp)
         // Keccak-256 for EIP-55 address checksums.

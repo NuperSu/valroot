@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 class DatabaseClosedTest {
     @Test
     fun aClosedConnectionRefusesEveryUseAsACancellation() {
-        val db = JvmSqliteDatabase(":memory:")
+        val db = BundledSqliteDatabase(":memory:")
         db.execute("CREATE TABLE t (v TEXT)")
         db.close()
         val refused = assertFailsWith<DatabaseClosed> { db.query("SELECT v FROM t") }

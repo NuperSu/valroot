@@ -46,7 +46,7 @@ class OwnershipRepositoryTest {
         val portfolio = Portfolio(PortfolioId("p"), "P", "USD", setOf(owner.id), setOf(account.id), setOf("tax"))
         val snapshot = OwnershipSnapshot(listOf(owner), listOf(account, child), listOf(address, wallet), listOf(portfolio))
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repo = OwnershipRepository(db)
                 repo.replace(snapshot)
@@ -55,7 +55,7 @@ class OwnershipRepositoryTest {
                 assertEquals(snapshot, repo.load())
                 repo.replace(snapshot)
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 assertEquals(snapshot, OwnershipRepository(db).load())
             }

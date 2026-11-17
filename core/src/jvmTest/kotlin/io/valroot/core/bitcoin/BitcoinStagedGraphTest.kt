@@ -3,7 +3,7 @@ package io.valroot.core.bitcoin
 import io.valroot.core.ledger.ActivityRepository
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.SqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
@@ -198,7 +198,7 @@ class BitcoinStagedGraphTest {
     private fun withDatabase(block: (SqliteDatabase) -> Unit) {
         val path = Files.createTempFile("bitcoin-staged-graph", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use(block)
+            BundledSqliteDatabase(path.toString()).use(block)
         } finally {
             Files.deleteIfExists(path)
         }

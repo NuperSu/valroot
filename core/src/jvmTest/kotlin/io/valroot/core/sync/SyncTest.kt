@@ -9,7 +9,7 @@ import io.valroot.core.model.NetworkId
 import io.valroot.core.model.ProviderId
 import io.valroot.core.model.SourceId
 import io.valroot.core.model.SyncJobId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -60,14 +60,14 @@ class SyncTest {
                     HistoryPage(listOf(record("b")), null, Coverage.COMPLETE)
                 }
             }
-        JvmSqliteDatabase(path).use { db ->
+        BundledSqliteDatabase(path).use { db ->
             val sync = SyncOrchestrator(db, Store(db), listOf(fetcher), clock)
             sync.enqueue(job)
             assertTrue(sync.runOne())
             assertEquals("next", sync.status(job.id)?.cursor)
             assertEquals(JobState.READY, sync.status(job.id)?.state)
         }
-        JvmSqliteDatabase(path).use { db ->
+        BundledSqliteDatabase(path).use { db ->
             val store = Store(db)
             val sync = SyncOrchestrator(db, store, listOf(fetcher), clock)
             assertTrue(sync.runOne())
@@ -79,7 +79,7 @@ class SyncTest {
 
     @Test
     fun failuresFailOverAndNeverOverwriteDataOrMarkComplete() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             val broken = provider("bad") { throw IllegalStateException("sensitive provider message") }
@@ -100,7 +100,7 @@ class SyncTest {
 
     @Test
     fun badPageRollsBackAllRawAndCheckpointAndPartialIsVisible() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             var invalid = true
@@ -128,7 +128,7 @@ class SyncTest {
 
     @Test
     fun cancelDuringFetchAndLeaseExpiryPreventStaleWrites() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             lateinit var sync: SyncOrchestrator
@@ -147,7 +147,7 @@ class SyncTest {
 
     @Test
     fun retryDuringFetchPreservesLeaseAndPaginationCycleEvidence() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             lateinit var sync: SyncOrchestrator
@@ -183,7 +183,7 @@ class SyncTest {
 
     @Test
     fun retryOfCompletedOrUnknownJobPreservesItsCursorHistory() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             val fetcher =
@@ -210,7 +210,7 @@ class SyncTest {
 
     @Test
     fun repeatedCursorCyclesAndMismatchedRecordsNeverAdvanceCheckpoint() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             var calls = 0
@@ -241,7 +241,7 @@ class SyncTest {
 
     @Test
     fun expiredLeaseReclaimsAndFencesTheOldWorker() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val store = Store(db)
             val clock = Clock()
             lateinit var sync: SyncOrchestrator
@@ -270,12 +270,12 @@ class SyncTest {
         val path = Files.createTempFile("valroot-sync-recovery", ".sqlite").toString()
         val clock = Clock()
         val fetcher = provider("p") { HistoryPage(listOf(record("recovered")), null, Coverage.COMPLETE) }
-        JvmSqliteDatabase(path).use { db ->
+        BundledSqliteDatabase(path).use { db ->
             val sync = SyncOrchestrator(db, Store(db), listOf(fetcher), clock)
             sync.enqueue(job)
             db.execute("UPDATE sync_jobs SET state='RUNNING', token=1, lease_until=1500 WHERE id='job'")
         }
-        JvmSqliteDatabase(path).use { db ->
+        BundledSqliteDatabase(path).use { db ->
             val sync = SyncOrchestrator(db, Store(db), listOf(fetcher), clock)
             assertFalse(sync.runOne())
             clock.now = 1500
@@ -297,8 +297,8 @@ class SyncTest {
                 check(release.await(10, TimeUnit.SECONDS))
                 HistoryPage(emptyList(), null, Coverage.COMPLETE)
             }
-        JvmSqliteDatabase(path).use { db1 ->
-            JvmSqliteDatabase(path).use { db2 ->
+        BundledSqliteDatabase(path).use { db1 ->
+            BundledSqliteDatabase(path).use { db2 ->
                 val first = SyncOrchestrator(db1, Store(db1), listOf(blocking), clock, SyncSettings(maxConcurrent = 2))
                 val second = SyncOrchestrator(db2, Store(db2), listOf(blocking), clock, SyncSettings(maxConcurrent = 1))
                 first.enqueue(job)
@@ -349,14 +349,14 @@ class SyncTest {
                 if (fail) throw IllegalStateException("timeout")
                 HistoryPage(emptyList(), null, Coverage.COMPLETE)
             }.copy(minimumIntervalMillis = 5000)
-        JvmSqliteDatabase(path).use { db ->
+        BundledSqliteDatabase(path).use { db ->
             val sync = SyncOrchestrator(db, Store(db), listOf(fetcher), clock)
             sync.enqueue(job)
             sync.runOne()
             clock.now += 1000
             assertFalse(sync.runOne())
         }
-        JvmSqliteDatabase(path).use { db ->
+        BundledSqliteDatabase(path).use { db ->
             val sync = SyncOrchestrator(db, Store(db), listOf(fetcher), clock)
             fail = false
             clock.now += 3999

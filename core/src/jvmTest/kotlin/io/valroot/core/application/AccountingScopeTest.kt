@@ -27,7 +27,7 @@ import io.valroot.core.ownership.Portfolio
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -38,7 +38,7 @@ import kotlin.test.assertTrue
 
 class AccountingScopeTest {
     @Test fun sourceJobsMatchAddressAndAccountWithoutInventingAcceptance() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             val address = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"
             val target =
@@ -80,7 +80,7 @@ class AccountingScopeTest {
     }
 
     @Test fun savedEvidenceIsScopedBoundedAndContainsRevisionMetadata() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             val store = Store(db)
             val payload = "fixture transaction"
@@ -114,7 +114,7 @@ class AccountingScopeTest {
     }
 
     @Test fun effectiveActivityLookupRespectsPortfolioScope() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             buy(app, "own", first, "USD")
             buy(app, "other", second, "USD")
@@ -145,7 +145,7 @@ class AccountingScopeTest {
 
     @Test fun unrelatedOwnerMissingOrForeignQuoteDoesNotSuppressSelectedInventory() {
         listOf(null, "EUR", "invalid").forEach { otherQuote ->
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setup(db)
                 buy(app, "own", first, "USD")
                 buy(app, "other", second, otherQuote?.let { if (it == "invalid") "USD" else it })
@@ -176,7 +176,7 @@ class AccountingScopeTest {
     }
 
     @Test fun destinationPortfolioReplaysSameOwnerSourceLots() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             buy(app, "own", first, "USD")
             transfer(app, first, destination)
@@ -192,7 +192,7 @@ class AccountingScopeTest {
 
     @Test fun destinationPortfolioReportsMissingAndCurrencyMismatchedSourceDependencies() {
         listOf(null, "EUR").forEach { sourceQuote ->
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setup(db)
                 buy(app, "source", first, sourceQuote)
                 transfer(app, first, destination)
@@ -219,7 +219,7 @@ class AccountingScopeTest {
     }
 
     @Test fun destinationDiagnosticsExcludeUnrelatedAssetInSourceAccount() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             buy(app, "own", first, "USD")
             transfer(app, first, destination)
@@ -242,7 +242,7 @@ class AccountingScopeTest {
     }
 
     @Test fun sameAccountInternalTransferIsInvalidWithoutCreatingBasis() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             buy(app, "own", first, "USD")
             transfer(app, first, first)
@@ -254,7 +254,7 @@ class AccountingScopeTest {
     }
 
     @Test fun unrelatedOwnerUnverifiedBitcoinDoesNotMakeSelectedBasisUnknown() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             buy(app, "own", first, "USD")
             ActivityRepository(db).save(activity("other", 2, listOf(movement("other", second, "1")), false, "bitcoin-v1"))
@@ -280,7 +280,7 @@ class AccountingScopeTest {
     }
 
     @Test fun crossOwnerInternalTransferIsInvalidWithoutCreatingBasis() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setup(db)
             buy(app, "own", first, "USD")
             transfer(app, first, second)
@@ -291,7 +291,7 @@ class AccountingScopeTest {
         }
     }
 
-    private fun setup(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setup(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1000L }
         val owner = OwnerId("first-owner")
         val other = OwnerId("second-owner")

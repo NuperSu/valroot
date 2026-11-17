@@ -15,7 +15,7 @@ import io.valroot.core.market.CoingeckoProviderFailure
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.flow.update
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,7 +64,7 @@ class MarketDiscoveryTest {
     }
 
     @Test fun moversAreRankedWithinTheNamedUniverse() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { System.currentTimeMillis() }
             app.market.setConsent(true)
             app.market.refreshFeeds(::feeds)
@@ -85,7 +85,7 @@ class MarketDiscoveryTest {
     }
 
     @Test fun mainLoadsAfterConsentOpensMarketOnlyCoinsAndKeepsFavorites() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)
@@ -129,7 +129,7 @@ class MarketDiscoveryTest {
     }
 
     @Test fun rateLimitedAndOfflineStatesKeepTheLastListsVisible() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 var now = System.currentTimeMillis()
                 val app = PortfolioApplication(db) { now }
@@ -158,7 +158,7 @@ class MarketDiscoveryTest {
     }
 
     @Test fun emptyFeedWithConsentInvitesARefresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

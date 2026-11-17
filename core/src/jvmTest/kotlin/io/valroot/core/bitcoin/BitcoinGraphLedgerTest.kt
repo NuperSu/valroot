@@ -5,7 +5,7 @@ import io.valroot.core.ledger.ActivityStatus
 import io.valroot.core.ledger.LedgerDeltas
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.ActivityId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -68,7 +68,7 @@ class BitcoinGraphLedgerTest {
     }
 
     private class Fixture(
-        val db: JvmSqliteDatabase,
+        val db: BundledSqliteDatabase,
     ) {
         val store = Store(db)
         val ledger = ActivityRepository(db)
@@ -94,7 +94,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun pendingCompetitionSupersedesBothBranchesAndTheirDescendants() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val fixture = Fixture(db)
             with(fixture) {
                 val funding = payload(fund, confirmed = true)
@@ -126,7 +126,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun stagedGraphStateControlsLedgerWithoutMaterializingGraph() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             with(Fixture(db)) {
                 val payloads =
                     listOf(
@@ -147,7 +147,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun confirmedWinnerReversesLosingBranchAndItsDescendant() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             with(Fixture(db)) {
                 val funding = payload(fund, confirmed = true)
                 val first = payload(original, fund, inputAddress = address, outputValue = 9_000)
@@ -182,7 +182,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun confirmationReorganizationAndDisappearanceAppendRevisions() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             with(Fixture(db)) {
                 val pending = payload(original)
                 apply(listOf(pending))
@@ -212,7 +212,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun disappearanceOnlyReconcilesEnabledAccounts() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             with(Fixture(db)) {
                 apply(listOf(payload(original), payload(competitor, parent = hex('9'), outputAddress = otherAddress)))
                 apply(emptyList(), scope = mapOf(address to account))
@@ -225,7 +225,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun graphLedgerAndStageCompletionRollbackTogetherWhenLedgerWriteFails() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             with(Fixture(db)) {
                 val pending = payload(original)
                 val graph = apply(listOf(pending))
@@ -277,7 +277,7 @@ class BitcoinGraphLedgerTest {
 
     @Test
     fun moreThanTenRevisionsRetainNumericOrderAndDisappearFromLatestRevision() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             with(Fixture(db)) {
                 repeat(12) { index -> apply(listOf(payload(original, confirmed = index % 2 == 1))) }
                 val id = ActivityId("bitcoin:$original")

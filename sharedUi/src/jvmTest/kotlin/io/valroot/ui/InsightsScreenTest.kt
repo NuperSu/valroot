@@ -10,14 +10,14 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import io.valroot.core.application.LandingPage
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class InsightsScreenTest {
     @Test fun everySectionHasDataAndDecisionsIsGone() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.settings.updateOnboarding(OnboardingAction.Skip)

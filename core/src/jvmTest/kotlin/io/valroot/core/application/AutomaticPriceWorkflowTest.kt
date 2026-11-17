@@ -5,7 +5,7 @@ import io.valroot.core.market.CoingeckoProviderFailure
 import io.valroot.core.market.KrakenRateLimitedException
 import io.valroot.core.model.PortfolioId
 import io.valroot.core.ownership.Portfolio
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,14 +16,14 @@ class AutomaticPriceWorkflowTest {
     @Test fun cooldownSurvivesDatabaseCloseAndReopen() {
         val path = Files.createTempFile("price-cooldown", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val app = PortfolioApplication(db) { now }
                 app.prices.setAutomaticConsent(true)
                 assertFailsWith<KrakenRateLimitedException> {
                     app.prices.refreshAutomatic({ throw KrakenRateLimitedException(120_000) })
                 }
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 var clock = now + 60_000
                 val app = PortfolioApplication(db) { clock }
                 assertFailsWith<KrakenRateLimitedException> { app.prices.refreshAutomatic({ error("unexpected request") }) }
@@ -43,7 +43,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun rateLimitStopsTheWholePriceBatchAndPreservesSavedData() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.accounts.savePortfolio(Portfolio(PortfolioId("euro"), "Euro", "EUR"))
             app.prices.setAutomaticConsent(true)
@@ -88,7 +88,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun restoreInvalidationCancelsInFlightRequestWithoutChangingConsentScope() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.prices.setAutomaticConsent(true)
             val current = now / hour * hour
@@ -105,7 +105,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun revokedConsentStopsRemainingCurrencyRequests() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.accounts.savePortfolio(Portfolio(PortfolioId("euro"), "Euro", "EUR"))
             app.prices.setAutomaticConsent(true)
@@ -124,7 +124,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun aEuroPortfolioIsValuedInUsDollarsAndRefreshContinuesAfterOneRequestFails() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.accounts.savePortfolio(Portfolio(PortfolioId("euro"), "Euro", "EUR"))
             app.prices.setAutomaticConsent(true)
@@ -153,7 +153,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun automaticRefreshSwitchSetsPreferenceAndPriceConsentTogether() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             assertEquals(null, app.settings.automaticRefresh())
             assertEquals(false, app.prices.automaticConsent())
@@ -174,7 +174,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun everyFinishedPriceRefreshStartsTheCooldown() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var clock = now
             val app = PortfolioApplication(db) { clock }
             app.prices.setAutomaticRefresh(true)
@@ -196,7 +196,7 @@ class AutomaticPriceWorkflowTest {
     ) = "[${start / 1000},\"1\",\"2\",\"1\",\"$price\",\"1\",\"1\",1]"
 
     @Test fun repeatedHourlyFetchDoesNotDuplicateButPreservesRevisionsAndReversions() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var clock = now
             var price = "40000"
             val current = now / hour * hour
@@ -223,7 +223,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun dailyHistoryIsFetchedOncePerUtcDayAndKeepsClosedPrices() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var clock = now
             val day = 86_400_000L
             val app = PortfolioApplication(db) { clock }
@@ -250,7 +250,7 @@ class AutomaticPriceWorkflowTest {
     }
 
     @Test fun fetchRequiresConsentStoresClosedHoursAndRollsBackOnCancellation() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             val current = now / hour * hour
             val payload = """{"error":[],"result":{"XXBTZUSD":[${candle(

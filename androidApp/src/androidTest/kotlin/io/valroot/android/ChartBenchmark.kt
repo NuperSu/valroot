@@ -4,7 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.os.Bundle
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.io.File
 
 /**
@@ -31,7 +31,7 @@ internal fun Instrumentation.chartBenchmark() {
             results.putLong(name, (System.nanoTime() - start) / 1_000_000L)
             return value
         }
-        AndroidSqliteDatabase(copy.path).use { db ->
+        BundledSqliteDatabase(copy.path).use { db ->
             val app = time("open") { PortfolioApplication(db, System::currentTimeMillis) }
             time("snapshot") { app.snapshot() }
             time("snapshotAgain") { app.snapshot() }

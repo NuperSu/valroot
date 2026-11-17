@@ -12,7 +12,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +42,7 @@ class DuplicateReplayTest {
 
     @Test
     fun reviewedDuplicateRemovesOnlyMatchingLegAndRetainsFeesAndSourceAudit() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = OverlayRepository(db)
             val canonical = activity("a", movement("a-leg", "100"))
@@ -77,7 +77,7 @@ class DuplicateReplayTest {
 
     @Test
     fun ambiguousAndMissingMatchesRemainVisibleAndNeverSuppress() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = OverlayRepository(db)
             val canonical = activity("a", movement("first", "100"), movement("second", "100"))

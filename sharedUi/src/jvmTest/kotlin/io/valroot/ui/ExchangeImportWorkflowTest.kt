@@ -24,7 +24,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -34,7 +34,7 @@ import kotlin.test.assertTrue
 class ExchangeImportWorkflowTest {
     @Test
     fun selectingDepositAssigningAccountCommittingAndUndoingPreservesReceipt() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.snapshot()
@@ -127,8 +127,8 @@ class ExchangeImportWorkflowTest {
 
     @Test
     fun unsupportedFilesCannotCommitAndRestoringDropsPendingSelection() {
-        JvmSqliteDatabase(":memory:").use { firstDb ->
-            JvmSqliteDatabase(":memory:").use { restoredDb ->
+        BundledSqliteDatabase(":memory:").use { firstDb ->
+            BundledSqliteDatabase(":memory:").use { restoredDb ->
                 ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                     val first = PortfolioApplication(firstDb) { 1_800_000_000_000L }
                     val restored = PortfolioApplication(restoredDb) { 1_800_000_000_000L }

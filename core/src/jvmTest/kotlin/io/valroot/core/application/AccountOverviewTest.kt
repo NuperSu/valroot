@@ -12,7 +12,7 @@ import io.valroot.core.ownership.Portfolio
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.testing.PublicBitcoin800000
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,11 +21,11 @@ import kotlin.test.assertTrue
 
 class AccountOverviewTest {
     @Test fun publicTransactionHistoryFailureRetryArchiveRecoveryAndRestore() {
-        io.valroot.testing.verifyAccountHistoryWorkflow { JvmSqliteDatabase(":memory:") }
+        io.valroot.testing.verifyAccountHistoryWorkflow { BundledSqliteDatabase(":memory:") }
     }
 
     @Test fun connectionValidationAndPortfolioChangesAreAtomic() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1_800_000_000_000L }
             app.snapshot()
             val owner = OwnerId("owner")

@@ -3,7 +3,7 @@ package io.valroot.desktop
 import androidx.compose.runtime.MutableState
 import io.valroot.core.alerts.NotificationMessage
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.MARKET_SCHEDULED_AGE_MILLIS
 import io.valroot.ui.PRICE_REFRESH_INTERVAL_MILLIS
 import io.valroot.ui.PriceRefreshPhase
@@ -57,7 +57,7 @@ internal class DesktopNotificationRunner(
                     if (state.priceRestorePaused || state.closing.get()) {
                         emptyList()
                     } else {
-                        JvmSqliteDatabase(state.file.toString()).use { connection ->
+                        BundledSqliteDatabase(state.file.toString()).use { connection ->
                             PortfolioApplication(connection, System::currentTimeMillis).notifications.runCheck(
                                 state.priceTransport::feed,
                                 LocalDate.now().toString(),
@@ -157,7 +157,7 @@ internal class DesktopNotificationRunner(
             }
             state.priceRefreshStatus.value = PriceRefreshPhase.RUNNING
             try {
-                JvmSqliteDatabase(state.file.toString()).use { connection ->
+                BundledSqliteDatabase(state.file.toString()).use { connection ->
                     val application = PortfolioApplication(connection, System::currentTimeMillis)
                     if (application.prices.automaticConsent()) {
                         try {

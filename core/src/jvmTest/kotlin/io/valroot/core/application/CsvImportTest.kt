@@ -9,7 +9,7 @@ import io.valroot.core.model.OwnerId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -66,7 +66,7 @@ class CsvImportTest {
 
     private val account = AccountId("exchange")
 
-    private fun app(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun app(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1_800_000_000_000L }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -86,7 +86,7 @@ class CsvImportTest {
             "2026-01-17T08:00:00Z,buy,DOGE,10,0.1,,\r\n"
 
     @Test fun importsOnceUndoesAndRestores() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = app(db)
             val preview = app.csv.preview("trades.csv", file, options)
             assertEquals(
@@ -137,7 +137,7 @@ class CsvImportTest {
     }
 
     @Test fun referencesIdentifyRowsAndChoicesAreExplicit() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = app(db)
             val text =
                 "date,type,asset,quantity,price,fee,fee_currency,reference\n" +

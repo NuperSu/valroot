@@ -1,6 +1,6 @@
 package io.valroot.core.backup
 
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -38,7 +38,7 @@ class BackupTest {
     }
 
     @Test fun snapshotAndEncryptionRoundTrip() {
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             val store = Store(source)
             store.ingest(
                 RawObservation("id", "btc", "tx", "main", "provider", "2026-10-28T00:00:00Z", "payload", "1", sha256("payload"), "{}"),
@@ -48,7 +48,7 @@ class BackupTest {
             val encrypted = encrypt(body)
             assertTrue(!encrypted.decodeToString().contains("payload"))
             assertFails { decrypt(encrypted, "wrong") }
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 val restored = Store(staging)
                 backup.restoreToStaging(staging, decrypt(encrypted))
                 assertEquals(store.records(), restored.records())
@@ -80,12 +80,12 @@ class BackupTest {
     }
 
     @Test fun restoreRejectsDataAfterTheEndOfTheBody() {
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             source.execute("CREATE TABLE item (id TEXT PRIMARY KEY)")
             source.execute("INSERT INTO item VALUES ('one')")
             val backup = PortableBackup.discover(source)
             val body = backup.export(source) + byteArrayOf(0)
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 staging.execute("CREATE TABLE item (id TEXT PRIMARY KEY)")
                 assertFails { backup.restoreToStaging(staging, body) }
                 assertEquals(0, staging.query("SELECT * FROM item").size)
@@ -94,7 +94,7 @@ class BackupTest {
     }
 
     @Test fun scanWorkingTablesAreExcludedFromBackups() {
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             val store = Store(source)
             store.ingest(
                 RawObservation("id", "btc", "tx", "main", "provider", "2026-10-28T00:00:00Z", "payload", "1", sha256("payload"), "{}"),
@@ -111,7 +111,7 @@ class BackupTest {
             val archiveWithScratch = PortableBackup.discover(source).export(source)
             assertTrue(oldArchive.contentEquals(archiveWithScratch))
             assertTrue(!archiveWithScratch.decodeToString().contains("scratch-sensitive"))
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 val target = Store(staging)
                 io.valroot.core.bitcoin
                     .BitcoinScanStage(
@@ -132,7 +132,7 @@ class BackupTest {
     }
 
     @Test fun importPreviewJournalAndRollback() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             db.execute("CREATE TABLE imported (id TEXT PRIMARY KEY, value TEXT NOT NULL)")
             val journal = ImportJournal(db)
             val importer =
@@ -161,13 +161,13 @@ class BackupTest {
     }
 
     @Test fun interruptedRestoreRollsBackAndCorruptionIsRejected() {
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             source.execute("CREATE TABLE item (id TEXT PRIMARY KEY)")
             source.execute("INSERT INTO item VALUES ('one')")
             source.execute("INSERT INTO item VALUES ('two')")
             val backup = PortableBackup.discover(source)
             val archive = backup.export(source)
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 staging.execute("CREATE TABLE item (id TEXT PRIMARY KEY)")
                 var inserts = 0
                 val interrupted =
@@ -189,7 +189,7 @@ class BackupTest {
     }
 
     @Test fun secretTablesRequireExplicitPolicy() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             db.execute("CREATE TABLE credentials (id TEXT)")
             assertFails { PortableBackup.discover(db) }
         }
@@ -206,7 +206,7 @@ class BackupTest {
                 .TreatmentRepository(db)
             ImportJournal(db)
         }
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             setup(source)
             source.execute("INSERT INTO owners VALUES ('owner','Alice')")
             source.execute("INSERT INTO accounts VALUES ('account','owner','Wallet','WALLET',NULL)")
@@ -223,7 +223,7 @@ class BackupTest {
             source.execute("INSERT INTO accounting_treatments VALUES ('activity',0,'ACQUIRE','event',NULL,NULL,NULL,0,NULL)")
             val backup = PortableBackup.discover(source)
             val archive = backup.export(source)
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 setup(staging)
                 backup.restoreToStaging(staging, archive)
                 assertTrue(archive.contentEquals(backup.export(staging)))
@@ -272,14 +272,14 @@ class BackupTest {
     }
 
     @Test fun restoreRejectsSchemaVersionMismatchWithoutChangingStaging() {
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             source.execute("CREATE TABLE example_schema (version INTEGER NOT NULL)")
             source.execute("INSERT INTO example_schema VALUES (1)")
             source.execute("CREATE TABLE data (id TEXT)")
             source.execute("INSERT INTO data VALUES ('saved')")
             val backup = PortableBackup.discover(source)
             val archive = backup.export(source)
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 staging.execute("CREATE TABLE example_schema (version INTEGER NOT NULL)")
                 staging.execute("INSERT INTO example_schema VALUES (2)")
                 staging.execute("CREATE TABLE data (id TEXT)")
@@ -291,7 +291,7 @@ class BackupTest {
     }
 
     @Test fun olderSchemaArchiveRestoresIntoNewerStagingAndNewerArchiveIsRejected() {
-        JvmSqliteDatabase(":memory:").use { source ->
+        BundledSqliteDatabase(":memory:").use { source ->
             Store(source)
             source.execute("INSERT INTO owners VALUES ('owner','Alice')")
             source.execute("INSERT INTO accounts VALUES ('account','owner','Wallet','WALLET',NULL)")
@@ -306,7 +306,7 @@ class BackupTest {
             source.execute("PRAGMA user_version = 3")
             val archive = PortableBackup.discover(source).export(source)
             assertTrue(!archive.decodeToString().contains("ledger_unallocated_fees"))
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 Store(staging)
                 val backup = PortableBackup.discover(staging)
                 backup.restoreToStaging(staging, archive)
@@ -317,7 +317,7 @@ class BackupTest {
             }
             source.execute("PRAGMA user_version = 7")
             val newer = PortableBackup.discover(source).export(source)
-            JvmSqliteDatabase(":memory:").use { staging ->
+            BundledSqliteDatabase(":memory:").use { staging ->
                 Store(staging)
                 assertFails { PortableBackup.discover(staging).restoreToStaging(staging, newer) }
                 assertEquals("0", staging.query("SELECT COUNT(*) FROM owners").single().single())

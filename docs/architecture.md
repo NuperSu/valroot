@@ -23,7 +23,7 @@ Five modules separate platform entry points from shared UI and core; `uiModel` i
   - Sources implement `SourceConnector` and run through a `SourceRegistry` (`app.sources.refresh`). They write only through their service, never into holdings or accounting.
   - `exchange/` is the layer shared by exchanges: `ExchangeProvider` and the `ExchangeProviders` registry, `ExchangeConnector` (refresh loop, windowed stream reader, request budget), `ExchangeHistory` (decoding saved rows plus an `ExchangeSnapshot`), `TradeSymbols`, `ExchangeLedgerBuilder` and `HmacQuery`. `exchange/bybit`, `exchange/binance` and `exchange/mexc` hold each exchange's client, parsers, connector with its provider, and decoder.
 - **`core/src/jvmSharedMain`**: code for both JVM hosts (desktop and Android). It holds the `HttpURLConnection` transports next to their features, platform cryptography, `JvmExchanges` (each provider bound to its transport) and `HostRefresh` (consent gates, connectors, progress text and the summary both hosts show).
-- **`core/src/jvmMain`, `androidMain`**: the SQLite driver and other platform-only code.
+- **`core/src/jvmMain`, `androidMain`**: platform-only code such as device keys. The SQLite connection (`BundledSqliteDatabase`) is common code.
 - **`sharedUi`**: the Compose UI. `PlatformActions` is everything the UI asks of a host.
 - **`desktopApp`, `androidApp`**: entry points, storage locations, scheduling, locking and notifications. Neither holds source logic.
 - **`uiModel`**: deterministic Compose fixture host (`./gradlew :uiModel:run`) for the shared presentation layer. It renders illustrative crypto-only data and preview actions, and makes no database or provider requests.

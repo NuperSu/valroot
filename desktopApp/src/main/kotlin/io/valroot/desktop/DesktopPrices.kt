@@ -2,7 +2,7 @@ package io.valroot.desktop
 
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.KrakenPriceTransport
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.ui.OrderBookResult
 import io.valroot.ui.loadOrderBook
 import io.valroot.ui.marketRefreshMessage
@@ -47,7 +47,7 @@ internal class DesktopPrices(
                             "Market refresh is paused while data is restored."
                         } else {
                             runCatching {
-                                JvmSqliteDatabase(state.file.toString()).use { connection ->
+                                BundledSqliteDatabase(state.file.toString()).use { connection ->
                                     val application = PortfolioApplication(connection, System::currentTimeMillis)
                                     val message =
                                         marketRefreshMessage(application.market.refreshFeeds(state.priceTransport::feed, maxAgeMillis))
@@ -77,7 +77,7 @@ internal class DesktopPrices(
                             OrderBookResult.Failed(MARKET_PAUSED_MESSAGE)
                         } else {
                             runCatching {
-                                JvmSqliteDatabase(state.file.toString()).use { connection ->
+                                BundledSqliteDatabase(state.file.toString()).use { connection ->
                                     loadOrderBook(
                                         PortfolioApplication(connection, System::currentTimeMillis),
                                         coinId,
@@ -112,7 +112,7 @@ internal class DesktopPrices(
                                 .Unavailable(MARKET_PAUSED_MESSAGE)
                         } else {
                             runCatching {
-                                JvmSqliteDatabase(state.file.toString()).use { connection ->
+                                BundledSqliteDatabase(state.file.toString()).use { connection ->
                                     io.valroot.ui.loadCandles(
                                         PortfolioApplication(connection, System::currentTimeMillis),
                                         coinId,
@@ -204,7 +204,7 @@ internal class DesktopPrices(
                 try {
                     synchronized(state.priceGate) {
                         if (state.closing.get() || state.priceRestorePaused) return changed
-                        JvmSqliteDatabase(state.file.toString()).use { connection ->
+                        BundledSqliteDatabase(state.file.toString()).use { connection ->
                             val application = PortfolioApplication(connection, System::currentTimeMillis)
                             if (!application.market.consent()) return changed
                             step(application)

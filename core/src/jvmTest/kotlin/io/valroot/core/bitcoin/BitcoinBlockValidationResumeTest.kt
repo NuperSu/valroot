@@ -1,7 +1,7 @@
 package io.valroot.core.bitcoin
 
 import io.valroot.core.ledger.ActivityRepository
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -17,7 +17,7 @@ class BitcoinBlockValidationResumeTest {
     fun rateLimitResumesPersistedChecksAfterReopen() {
         val path = Files.createTempFile("bitcoin-validation-resume", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val stage = stage(db)
                 seed(db, stage)
                 val requested = mutableListOf<String>()
@@ -36,7 +36,7 @@ class BitcoinBlockValidationResumeTest {
                 assertEquals(1, requested.count { it == "/block-height/42" })
                 assertEquals("1", db.query("SELECT COUNT(*) FROM bitcoin_scan_validated_blocks").single().single())
             }
-            JvmSqliteDatabase(path.toString()).use { db ->
+            BundledSqliteDatabase(path.toString()).use { db ->
                 val requests = mutableListOf<String>()
                 val progress = mutableListOf<Pair<Int, Int>>()
                 stage(db).validateBlocks(
@@ -156,7 +156,7 @@ class BitcoinBlockValidationResumeTest {
         }
 
     private fun seed(
-        db: JvmSqliteDatabase,
+        db: BundledSqliteDatabase,
         stage: BitcoinScanStage,
     ) {
         stage.createSession(BitcoinScanSession(1, "provider-and-scope", tip.hash, tip.height), emptyList())
@@ -172,12 +172,12 @@ class BitcoinBlockValidationResumeTest {
             else -> error("Unexpected endpoint: $endpoint")
         }
 
-    private fun stage(db: JvmSqliteDatabase): BitcoinScanStage = BitcoinScanStage(db, Store(db), ActivityRepository(db))
+    private fun stage(db: BundledSqliteDatabase): BitcoinScanStage = BitcoinScanStage(db, Store(db), ActivityRepository(db))
 
-    private fun withStage(block: (JvmSqliteDatabase, BitcoinScanStage) -> Unit) {
+    private fun withStage(block: (BundledSqliteDatabase, BitcoinScanStage) -> Unit) {
         val path = Files.createTempFile("bitcoin-validation-resume", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use { db -> block(db, stage(db)) }
+            BundledSqliteDatabase(path.toString()).use { db -> block(db, stage(db)) }
         } finally {
             Files.deleteIfExists(path)
         }

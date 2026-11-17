@@ -1,7 +1,7 @@
 package io.valroot.ui
 
 import io.valroot.core.application.PortfolioApplication
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import java.awt.image.BufferedImage
@@ -20,7 +20,7 @@ class CoinLogoLoaderTest {
 
     @Test fun downloadsOnceCachesOnTheDeviceAndNeverFetchesOtherHosts() {
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.market.setConsent(true)
                 val requested = mutableListOf<String>()
@@ -38,7 +38,7 @@ class CoinLogoLoaderTest {
 
     @Test fun aFailedLogoIsNotRetriedInTheSameSession() {
         runBlocking {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.market.setConsent(true)
                 var calls = 0

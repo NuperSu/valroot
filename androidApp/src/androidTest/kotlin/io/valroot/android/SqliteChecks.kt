@@ -2,7 +2,7 @@ package io.valroot.android
 
 import android.content.Context
 import io.valroot.core.backup.PortableBackup
-import io.valroot.core.storage.AndroidSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.RawObservation
 import io.valroot.core.storage.Store
 import io.valroot.core.storage.sha256
@@ -13,7 +13,7 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
         // A restore closes the live connection; a screen still using it must stop as a cancellation, not crash.
         "closedConnectionIsACancellation" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                val db = AndroidSqliteDatabase(file.path)
+                val db = BundledSqliteDatabase(file.path)
                 db.execute("CREATE TABLE t (v TEXT)")
                 db.close()
                 val refused = runCatching { db.query("SELECT v FROM t") }.exceptionOrNull()
@@ -24,7 +24,7 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
         // A worker's long write transaction must make the screen's connection wait, not fail to open (SQLITE_BUSY).
         "openWaitsForAnotherConnectionsWrite" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { writer ->
+                BundledSqliteDatabase(file.path).use { writer ->
                     writer.query("PRAGMA journal_mode = DELETE")
                     writer.execute("CREATE TABLE t (v TEXT)")
                     val started = java.util.concurrent.CountDownLatch(1)
@@ -38,7 +38,7 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
                         }
                     holder.start()
                     check(started.await(10, java.util.concurrent.TimeUnit.SECONDS))
-                    AndroidSqliteDatabase(file.path).use { reader ->
+                    BundledSqliteDatabase(file.path).use { reader ->
                         check(reader.query("SELECT COUNT(*) FROM t").single().single() == "1")
                     }
                     holder.join()
@@ -46,11 +46,11 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
             }
         },
         "boundedDuplicateProjection" to {
-            withTemporaryDatabase(context.cacheDir) { file -> AndroidSqliteDatabase(file.path).use(::verifyBoundedDuplicateNative) }
+            withTemporaryDatabase(context.cacheDir) { file -> BundledSqliteDatabase(file.path).use(::verifyBoundedDuplicateNative) }
         },
         "batchedClassificationRollback" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     Store(db)
                     val overlays =
                         io.valroot.core.reconcile
@@ -113,7 +113,7 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
         },
         "streamedHoldingsRollback" to {
             withTemporaryDatabase(context.cacheDir) { file ->
-                AndroidSqliteDatabase(file.path).use { db ->
+                BundledSqliteDatabase(file.path).use { db ->
                     Store(db)
                     val repo =
                         io.valroot.core.holdings
@@ -184,8 +184,8 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
                         sha256(payload),
                         "fixture",
                     )
-                Store(AndroidSqliteDatabase(file.path)).use { it.ingest(record) }
-                AndroidSqliteDatabase(file.path).use { db ->
+                Store(BundledSqliteDatabase(file.path)).use { it.ingest(record) }
+                BundledSqliteDatabase(file.path).use { db ->
                     Store(db).use { store ->
                         store.ingest(record)
                         store.ingest(record.copy(sourceId = "provider-b"))
@@ -214,7 +214,7 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
                         val backup = PortableBackup.discover(db)
                         val archive = backup.export(db)
                         withTemporaryDatabase(context.cacheDir) { restoredFile ->
-                            AndroidSqliteDatabase(restoredFile.path).use { restoredDb ->
+                            BundledSqliteDatabase(restoredFile.path).use { restoredDb ->
                                 Store(restoredDb).use { restored ->
                                     backup.restoreToStaging(restoredDb, archive)
                                     check(restored.revisions() == store.revisions())

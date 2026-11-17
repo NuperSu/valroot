@@ -17,7 +17,7 @@ import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.TargetIdentity
 import io.valroot.core.ownership.TargetRole
 import io.valroot.core.ownership.TrackingTarget
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -31,7 +31,7 @@ class BinanceImportTest {
     /** 2026-01-01 12:00:00 at UTC+4, the time zone in Binance's file names. */
     private val noonUtc4 = 1_767_254_400_000L
 
-    private fun setUp(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { now }
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
@@ -122,7 +122,7 @@ class BinanceImportTest {
 
     @Test fun apiThenFileAndFileThenApiGiveTheSameHistory() {
         val first =
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setUp(db)
                 api(app, apiTrade(1, noonUtc4), apiTrade(2, noonUtc4 + 300))
                 val preview = app.exchangeImports.preview(listOf(fills(fill, fill, earlierFill)), chosen)
@@ -136,7 +136,7 @@ class BinanceImportTest {
                 activities(app).map { it.id.value }.sorted() to holdings(app)
             }
         val second =
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 val app = setUp(db)
                 val preview = app.exchangeImports.preview(listOf(fills(fill, fill, earlierFill)), chosen)
                 assertEquals(mapOf(ImportStatus.NEW to 3), preview.counts)
@@ -151,7 +151,7 @@ class BinanceImportTest {
     }
 
     @Test fun moreIdenticalFillsThanTheApiHasWaitForADecision() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             api(app, apiTrade(1, noonUtc4), apiTrade(2, noonUtc4 + 300))
             val preview = app.exchangeImports.preview(listOf(fills(fill, fill, fill)), chosen)
@@ -178,7 +178,7 @@ class BinanceImportTest {
     }
 
     @Test fun undoKeepsWhatTheApiSupports() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             api(app, apiTrade(1, noonUtc4))
             val receipt = app.exchangeImports.commit(app.exchangeImports.preview(listOf(fills(fill, earlierFill)), chosen))
@@ -194,7 +194,7 @@ class BinanceImportTest {
     private val statementFile = "Binance-Transaction-History-202610201950(UTC+4)_2044b610.zip"
 
     @Test fun theStatementSettlesAgainstDetailedRecordsAndRecordsFuturesTransfers() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             // 2500 deposited, 1000 spent on the trade, 500 to futures and 300 back.
             api(app, apiTrade(1, noonUtc4), usdt = "1300")
@@ -249,7 +249,7 @@ class BinanceImportTest {
     }
 
     @Test fun timesWithoutAZoneNeedAChoiceAndAccountsCanComeFromExports() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { now }
             app.snapshot()
             val noZone =

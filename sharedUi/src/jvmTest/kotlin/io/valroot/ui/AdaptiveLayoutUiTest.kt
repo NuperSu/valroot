@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.TrackingTargetId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.Executors
@@ -39,7 +39,7 @@ import kotlin.test.assertTrue
 class AdaptiveLayoutUiTest {
     @Test
     fun resizingAcrossNavigationBreakpointsPreservesActivitySearchAndDestination() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             LayoutHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()
@@ -88,7 +88,7 @@ class AdaptiveLayoutUiTest {
 
     @Test
     fun enlargedTextInCompactLandscapeKeepsNavigationSettingsAndExportReachable() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             LayoutHost().use { host ->
                 val app = PortfolioApplication(db) { System.currentTimeMillis() }
                 app.demo.seed()

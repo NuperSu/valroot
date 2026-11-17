@@ -33,7 +33,7 @@ import io.valroot.core.model.OwnerId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import java.io.File
 import javax.imageio.ImageIO
 import kotlin.test.Test
@@ -61,7 +61,7 @@ class PhaseThreeTransactionsTest {
     ) = TransactionDraft(ActivityId(id), type, btc, account, ExactDecimal.parse(amount), time, usd, ExactDecimal.parse(price))
 
     @Test fun timelineUsesWeightedGrossExecutionsAndExportsAllMatchingPages() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 10000L }
             setup(app)
             app.transactions.saveTransaction(
@@ -127,7 +127,7 @@ class PhaseThreeTransactionsTest {
             Triple(1440, 900, 1f),
             Triple(390, 844, 1.5f),
         )) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                     val app = PortfolioApplication(db) { 10000L }
                     setup(app)
@@ -172,7 +172,7 @@ class PhaseThreeTransactionsTest {
     }
 
     @Test fun productionCoinJourneySavesEditsAndReversesWithRetainedIds() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.settings.updateOnboarding(io.valroot.core.onboarding.OnboardingAction.Skip)
@@ -234,7 +234,7 @@ class PhaseThreeTransactionsTest {
     }
 
     @Test fun reviewAndDraftSurviveRecreationWithoutPrematureSubmission() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { host ->
                 val app = PortfolioApplication(db) { 10000L }
                 setup(app)

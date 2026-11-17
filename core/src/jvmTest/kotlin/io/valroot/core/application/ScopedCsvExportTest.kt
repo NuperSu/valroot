@@ -18,7 +18,7 @@ import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
 import io.valroot.core.ownership.Portfolio
 import io.valroot.core.reconcile.ActivityOverlay
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
 
 class ScopedCsvExportTest {
     @Test fun networkFilterUsesCurrentRawSourceEvidenceNotAssetOrManualInput() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             val store =
                 io.valroot.core.storage
@@ -99,7 +99,7 @@ class ScopedCsvExportTest {
     }
 
     @Test fun statusFilterMatchesSnapshotAndExportAcrossPages() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             app.transactions.saveManualActivity(activity("confirmed", ActivityKind.DEPOSIT, listOf(movement("confirmed", first, btc, "5"))))
             app.transactions.saveManualActivity(
@@ -140,7 +140,7 @@ class ScopedCsvExportTest {
     private val otherAsset = AssetId("token:other")
 
     @Test fun selectedPortfolioExportsOnlyItsLegOfCrossScopeTransfer() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             app.transactions.saveManualActivity(
                 activity(
@@ -170,7 +170,7 @@ class ScopedCsvExportTest {
     }
 
     @Test fun accountAssetKindAndSearchFiltersSelectMatchingMovements() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             app.transactions.saveManualActivity(
                 activity(
@@ -207,7 +207,7 @@ class ScopedCsvExportTest {
     }
 
     @Test fun exportOmitsArchivedAccountsAndIncludesEveryMatchDespitePagination() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             repeat(60) { index ->
                 val id = "match-$index"
@@ -229,7 +229,7 @@ class ScopedCsvExportTest {
     }
 
     @Test fun scopedExportEscapesFormulaTextAndPreservesSignedAmounts() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = fixture(db)
             app.transactions.saveManualActivity(activity("formula", ActivityKind.PAYMENT, listOf(movement("formula", first, btc, "-7"))))
             app.transactions.saveOverlay(ActivityOverlay(ActivityId("formula"), label = "  =2+2", note = "@formula,\"quoted\""))
@@ -242,7 +242,7 @@ class ScopedCsvExportTest {
         }
     }
 
-    private fun fixture(db: JvmSqliteDatabase): PortfolioApplication {
+    private fun fixture(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { 1000L }
         val owner = OwnerId("first-owner")
         val otherOwner = OwnerId("other-owner")

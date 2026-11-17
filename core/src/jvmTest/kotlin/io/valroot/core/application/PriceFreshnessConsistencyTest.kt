@@ -28,13 +28,13 @@ import io.valroot.core.model.ProviderId
 import io.valroot.core.ownership.Account
 import io.valroot.core.ownership.AccountKind
 import io.valroot.core.ownership.Owner
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class PriceFreshnessConsistencyTest {
     @Test fun oneQuoteHasTheSameFreshnessOnEveryCurrentView() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val now = 10 * 3_600_000L
             val app = PortfolioApplication(db) { now }
             val owner = OwnerId("owner")

@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.Density
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.onboarding.OnboardingAction
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 import javax.imageio.ImageIO
@@ -44,7 +44,7 @@ class PhaseFourAccountsTest {
             Triple(1440, 900, 1f),
             Triple(390, 844, 1.5f),
         )) {
-            JvmSqliteDatabase(":memory:").use { db ->
+            BundledSqliteDatabase(":memory:").use { db ->
                 ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                     val app = PortfolioApplication(db) { 1_800_000_000_000L }
                     val host = Host(delegate)
@@ -95,7 +95,7 @@ class PhaseFourAccountsTest {
     }
 
     @Test fun accountsArchiveRestoreAndDirectHistoryRecoveryRemainReachable() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.demo.seed()
@@ -164,7 +164,7 @@ class PhaseFourAccountsTest {
     }
 
     @Test fun historyRetryDraftAndConsentSurviveRecreation() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 db.execute("INSERT OR REPLACE INTO application_settings VALUES ('source_error', 'Fixture interruption')")
@@ -202,13 +202,13 @@ class PhaseFourAccountsTest {
     }
 
     @Test fun schedulingConsentAndPreferencesSurviveBackupAndReopen() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 1000L }
             app.settings.setRefreshPreferences(true, true)
             app.sources.setConsent(true)
             app.prices.setAutomaticConsent(true)
             val backup = app.backup.export("schedule-password".toCharArray())
-            JvmSqliteDatabase(":memory:").use { restored ->
+            BundledSqliteDatabase(":memory:").use { restored ->
                 app.backup.restoreToStaging(restored, backup, "schedule-password".toCharArray())
                 val copy = PortfolioApplication(restored) { 1000L }
                 val preferences = RefreshPreferences(copy.settings.automaticRefresh() == true, copy.settings.wifiOnlyRefresh())
@@ -226,7 +226,7 @@ class PhaseFourAccountsTest {
     }
 
     @Test fun connectDialogReportsDiscoveryFailureAndRetriesWithoutSavingAgain() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             ModelWorkspaceRestorationTest.RestorationHost().use { delegate ->
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 val host = Host(delegate)

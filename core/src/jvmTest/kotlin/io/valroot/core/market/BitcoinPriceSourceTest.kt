@@ -6,7 +6,7 @@ import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.Price
 import io.valroot.core.model.ProviderId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,7 +25,7 @@ class BitcoinPriceSourceTest {
             ?.value
 
     @Test fun walletBitcoinIsPricedByCoingeckoFirstAndKrakenWhenCoingeckoHasNothingFresh() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             var at = 1_800_000_000_000L
             val app = PortfolioApplication(db) { at }
             app.demo.seed()

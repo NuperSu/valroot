@@ -12,7 +12,7 @@ import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.Store
 import java.nio.file.Files
 import kotlin.test.Test
@@ -49,7 +49,7 @@ class TransferLinkReplayTest {
         val inputs = listOf(outgoing, incoming)
         val expected = TransferLink(outgoing.id, EventId("out-leg"), incoming.id, EventId("in-leg"))
         try {
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 Store(db)
                 val repo = OverlayRepository(db)
                 repo.setDecision(incoming.id, outgoing.id, LinkState.ACCEPTED)
@@ -61,7 +61,7 @@ class TransferLinkReplayTest {
                 assertTrue(result.suppressed.isEmpty())
                 assertEquals(result, repo.replayForLedger(inputs))
             }
-            JvmSqliteDatabase(file.toString()).use { db ->
+            BundledSqliteDatabase(file.toString()).use { db ->
                 val repo = OverlayRepository(db)
                 assertEquals(listOf(expected), repo.replayForLedger(inputs).transferLinks)
                 repo.setDecision(outgoing.id, incoming.id, LinkState.REJECTED)
@@ -74,7 +74,7 @@ class TransferLinkReplayTest {
 
     @Test
     fun missingInactiveAmbiguousAndStaleCorrectionsRemainConflicts() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = OverlayRepository(db)
             val outgoing = activity("out", movement("out-leg", "-100", "a"))
@@ -112,7 +112,7 @@ class TransferLinkReplayTest {
 
     @Test
     fun competingLinksConflictTogetherAndResolveAfterRejection() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = OverlayRepository(db)
             val outgoing = activity("out", movement("out-leg", "-100", "a"))
@@ -141,7 +141,7 @@ class TransferLinkReplayTest {
 
     @Test
     fun duplicateSuppressionAndCorrectionsAreAppliedBeforeResolvingLinks() {
-        JvmSqliteDatabase(":memory:").use { db ->
+        BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repo = OverlayRepository(db)
             val outgoing = activity("out", movement("out-leg", "-100", "a"))

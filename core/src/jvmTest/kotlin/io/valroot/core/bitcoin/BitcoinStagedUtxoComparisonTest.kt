@@ -1,7 +1,7 @@
 package io.valroot.core.bitcoin
 
 import io.valroot.core.model.AccountId
-import io.valroot.core.storage.JvmSqliteDatabase
+import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.storage.SqliteDatabase
 import io.valroot.core.storage.sha256
 import java.nio.file.Files
@@ -167,7 +167,7 @@ class BitcoinStagedUtxoComparisonTest {
     private fun withDatabase(block: (SqliteDatabase) -> Unit) {
         val path = Files.createTempFile("bitcoin-staged-utxo", ".sqlite")
         try {
-            JvmSqliteDatabase(path.toString()).use(block)
+            BundledSqliteDatabase(path.toString()).use(block)
         } finally {
             Files.deleteIfExists(path)
         }
