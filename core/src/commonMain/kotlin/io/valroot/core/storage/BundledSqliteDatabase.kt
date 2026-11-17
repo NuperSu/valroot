@@ -12,6 +12,7 @@ import kotlinx.atomicfu.locks.synchronized
  * driver), so Android, desktop and iOS run the same SQLite version with the same settings:
  * - write-ahead logging, so readers continue while another connection writes; the last connection to close checkpoints
  *   and removes the `-wal` file, so a closed database is one self-contained file;
+ * - `synchronous = FULL`, so a committed transaction survives power loss;
  * - a [LOCK_WAIT_MILLIS] wait for another connection's lock (the screen, workers and refreshers each hold their own
  *   connection to the same file) instead of failing at once;
  * - transactions that take the write lock when they begin (`BEGIN IMMEDIATE`), so two writers queue instead of
@@ -33,7 +34,9 @@ class BundledSqliteDatabase(
             connection.execSQL("PRAGMA busy_timeout = $LOCK_WAIT_MILLIS")
             if (path != ":memory:") {
                 useWriteAheadLog()
-                connection.execSQL("PRAGMA synchronous = NORMAL")
+                // Every commit reaches storage before it returns: manual entries and reviewed decisions cannot be
+                // downloaded again, so WAL's weaker NORMAL setting (which can lose recent commits on power loss) is not used.
+                connection.execSQL("PRAGMA synchronous = FULL")
             }
         } catch (failure: Throwable) {
             connection.close()

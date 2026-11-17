@@ -6,6 +6,24 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class SqliteBusyTimeoutTest {
+    /** Commits must survive power loss: WAL with FULL synchronization (2), not NORMAL (1). */
+    @Test fun aFileDatabaseSyncsEveryCommit() {
+        val file = Files.createTempFile("valroot-durable", ".sqlite")
+        try {
+            BundledSqliteDatabase(file.toString()).use { db ->
+                assertEquals("wal", db.query("PRAGMA journal_mode").single().single())
+                assertEquals("2", db.query("PRAGMA synchronous").single().single())
+            }
+        } finally {
+            listOf("", "-wal", "-shm").forEach {
+                Files.deleteIfExists(
+                    java.nio.file.Path
+                        .of(file.toString() + it),
+                )
+            }
+        }
+    }
+
     /** A file from an earlier version is in rollback-journal mode; opening it beside a writer must wait, not fail. */
     @Test fun openingARollbackJournalFileBesideAWriterWaitsToSwitchItToWal() {
         val file = Files.createTempFile("valroot-journal", ".sqlite")
