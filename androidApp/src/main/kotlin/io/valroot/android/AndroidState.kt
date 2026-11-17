@@ -22,6 +22,21 @@ internal class AndroidState(
     /** Database and workflow work runs here; a long Bitcoin scan uses [RefreshWorker.syncExecutor] instead. */
     val executor = RefreshWorker.executor
     val main = Handler(Looper.getMainLooper())
+
+    /** Lock-verifier work, kept off [executor] so unlocking never waits behind database work. */
+    val secretExecutor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Shared workflows' threads: database work on [executor], verifier work on [secretExecutor], results on [main]. */
+    val threads =
+        object : io.valroot.ui.host.HostThreads {
+            override fun data(block: () -> Unit) = executor.execute(block)
+
+            override fun secret(block: () -> Unit) = secretExecutor.execute(block)
+
+            override fun main(block: () -> Unit) {
+                this@AndroidState.main.post(block)
+            }
+        }
     val file = activity.getDatabasePath("portfolio.sqlite").toPath()
     val preferences = activity.getSharedPreferences("privacy", 0)
     val dataRevision = RefreshWorker.dataRevision

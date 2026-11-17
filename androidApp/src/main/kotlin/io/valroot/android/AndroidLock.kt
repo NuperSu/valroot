@@ -1,31 +1,41 @@
 package io.valroot.android
 
-import android.annotation.SuppressLint
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
-import io.valroot.core.backup.LockPassword
 import io.valroot.ui.BiometricUnlock
 import io.valroot.ui.UnlockResult
+import io.valroot.ui.host.PrivacyLock
 import kotlinx.coroutines.flow.update
 
 /**
- * The privacy lock: the password verifier, fingerprint unlock, the lock delay and the moments the app locks. Verifier
- * reads and writes run on [AndroidState.executor]; state changes return to the main thread.
+ * The shared [PrivacyLock] with Android's verifier storage (an Android Keystore key) and fingerprint unlock, which only
+ * Android has. The lock delay counts time asleep, so a phone left locked overnight locks the app on return.
  */
 internal class AndroidLock(
     private val state: AndroidState,
-    private val sync: AndroidSync,
+    sync: AndroidSync,
 ) {
     private val lockStore = SecureLockStore(state.preferences)
     private val biometrics = BiometricLock(state.activity, state.preferences)
-    private var leftAt: Long? = null
+    private val shared =
+        PrivacyLock(
+            store = lockStore,
+            threads = state.threads,
+            elapsedMillis = android.os.SystemClock::elapsedRealtime,
+            application = { state.app.value },
+            storeName = "Secure storage",
+            afterErase = { sync.reconcileRefreshPreferences(it) },
+            onErased = { state.dataRevision.update { it + 1 } },
+            onRemoved = { biometrics.disable() },
+        )
 
-    val locked: MutableState<Boolean> = mutableStateOf(lockStore.hasLock)
+    val locked: MutableState<Boolean> get() = shared.locked
+    val hasLock: Boolean get() = shared.hasLock
 
-    /** Kept in memory so leaving and returning to the app never waits on the database. */
-    @Volatile var delayMillis = io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
-
-    val hasLock: Boolean get() = lockStore.hasLock
+    var delayMillis: Long
+        get() = shared.delayMillis
+        set(value) {
+            shared.delayMillis = value
+        }
 
     /** True while the fingerprint prompt is showing, so the app does not lock behind it. */
     val isPrompting: Boolean get() = biometrics.prompting
@@ -54,117 +64,36 @@ internal class AndroidLock(
             return
         }
         biometrics.unlock { error ->
-            if (error == null) locked.value = false
+            if (error == null) shared.unlocked()
             // An empty message means the user chose the password instead; nothing to report.
             onResult(UnlockResult(error == null, error?.ifEmpty { null }))
         }
     }
 
-    fun setLockDelay(millis: Long) {
-        delayMillis = millis
-        state.executor.execute { runCatching { state.app.value?.settings?.setLockDelay(millis) } }
-    }
+    fun setLockDelay(millis: Long) = shared.setLockDelay(millis)
 
     /**
      * The app went to the background: lock now, or remember when, depending on the delay. While [choosing] a file the
-     * picker covers the app, so it only remembers when, and [returned] applies the delay; with no delay that locks on
-     * every return from a picker, since leaving the app through it cannot be told apart.
+     * picker covers the app; with no delay that locks on every return from a picker, since leaving the app through it
+     * cannot be told apart.
      */
-    fun left(choosing: Boolean = false) {
-        if (delayMillis == 0L && !choosing) lock() else leftAt = android.os.SystemClock.elapsedRealtime()
-    }
+    fun left(choosing: Boolean = false) = shared.left(choosing)
 
-    /** The app came back: lock if it was away at least as long as the delay. */
-    fun returned() {
-        val away = leftAt?.let { android.os.SystemClock.elapsedRealtime() - it }
-        leftAt = null
-        if (away != null && away >= delayMillis) lock()
-    }
+    fun returned() = shared.returned()
 
-    fun lock() {
-        if (lockStore.hasLock) locked.value = true
-    }
+    fun lock() = shared.lock()
 
-    fun removeLockPassword(onResult: (String) -> Unit) {
-        if (locked.value) {
-            onResult("Unlock first")
-            return
-        }
-        val success = runCatching { lockStore.remove() }.isSuccess
-        if (success) biometrics.disable()
-        onResult(if (success) "Privacy lock removed" else "Could not remove privacy lock")
-    }
+    fun removeLockPassword(onResult: (String) -> Unit) = shared.removeLockPassword(onResult)
 
-    /**
-     * Recovery for a forgotten lock password or a lost lock key: erases this device's Valroot data, turns automatic refresh
-     * off and removes the lock.
-     */
-    fun eraseAndRemoveLock(onResult: (String) -> Unit) {
-        state.executor.execute {
-            val success =
-                runCatching {
-                    state.app.value?.let { application ->
-                        application.backup.wipe()
-                        application.prices.setAutomaticRefresh(false)
-                        sync.reconcileRefreshPreferences(application)
-                    }
-                    lockStore.remove()
-                }.isSuccess
-            state.main.post {
-                if (success) {
-                    biometrics.disable()
-                    locked.value = false
-                    state.dataRevision.update { it + 1 }
-                }
-                onResult(if (success) "Local data erased and privacy lock removed" else "Could not finish erasing; retry")
-            }
-        }
-    }
+    fun eraseAndRemoveLock(onResult: (String) -> Unit) = shared.eraseAndRemoveLock(onResult)
 
     fun unlock(
         password: String,
         onResult: (UnlockResult) -> Unit,
-    ) {
-        state.executor.execute {
-            val result =
-                runCatching {
-                    val verifier = lockStore.read()
-                    if (LockPassword.verify(password, verifier)) {
-                        lockStore.migrate(verifier)
-                        UnlockResult(true)
-                    } else {
-                        UnlockResult(false, "Incorrect password")
-                    }
-                }.getOrElse { UnlockResult(false, "Secure privacy lock storage is unavailable or damaged") }
-            state.main.post {
-                if (result.success) locked.value = false
-                onResult(result)
-            }
-        }
-    }
+    ) = shared.unlock(password, onResult)
 
-    @SuppressLint("UseKtx") // The commit result is needed to report persistence failure.
     fun setLockPassword(
         password: String,
         onResult: (String) -> Unit,
-    ) {
-        state.executor.execute {
-            val success =
-                runCatching {
-                    check(!lockStore.hasLock)
-                    lockStore.write(LockPassword.create(password))
-                }.isSuccess
-            state.main.post {
-                onResult(
-                    if (success) {
-                        "Privacy lock enabled"
-                    } else if (password.length < 8) {
-                        "Use a password of at least 8 characters"
-                    } else {
-                        "Secure storage unavailable; privacy lock was not changed"
-                    },
-                )
-            }
-        }
-    }
+    ) = shared.setLockPassword(password, onResult)
 }

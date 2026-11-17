@@ -45,6 +45,16 @@ internal class DesktopState(
     /** True from the start of a restore until its file swap is finished; background price work skips while it is set. */
     @Volatile var priceRestorePaused = false
 
+    /** Shared workflows' threads: database work on [executor], verifier work on [unlockExecutor], results on Swing's thread. */
+    val threads =
+        object : io.valroot.ui.host.HostThreads {
+            override fun data(block: () -> Unit) = this@DesktopState.executor.execute(block)
+
+            override fun secret(block: () -> Unit) = this@DesktopState.unlockExecutor.execute(block)
+
+            override fun main(block: () -> Unit) = javax.swing.SwingUtilities.invokeLater(block)
+        }
+
     /** Guards the sync connection and the notification schedule. */
     val hostLock = Any()
 

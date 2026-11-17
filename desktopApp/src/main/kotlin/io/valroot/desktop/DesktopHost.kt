@@ -16,9 +16,11 @@ import io.valroot.ui.SyncStatus
 import io.valroot.ui.UnlockResult
 import io.valroot.ui.WALLET_REFRESH_INTERVAL_MILLIS
 import io.valroot.ui.cooldownDelayMillis
+import io.valroot.ui.host.PrivacyLock
 import io.valroot.ui.refreshSchedulePlan
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.update
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
@@ -41,7 +43,16 @@ internal class DesktopHost(
     private val notifications =
         DesktopNotificationRunner(state, prices, automaticPriceTransport) { refreshPreferences().automaticRefresh }
     private val sync = DesktopSync(state, prices)
-    private val privacyLock = DesktopLock(state) { reconcileRefreshPreferences() }
+    private val privacyLock =
+        PrivacyLock(
+            store = SecureLockStore(state.directory.resolve("lock-verifier")),
+            threads = state.threads,
+            elapsedMillis = { System.nanoTime() / 1_000_000L },
+            application = { state.app.value },
+            storeName = "Secret Service",
+            afterErase = { reconcileRefreshPreferences() },
+            onErased = { state.dataRevision.update { it + 1 } },
+        )
     private val backups = DesktopBackups(state, { reconcileRefreshPreferences() }, { notifications.reconcileChecks() })
     private var refreshTask: ScheduledFuture<*>? = null
     private val refreshPreference = directory.resolve("background-refresh")

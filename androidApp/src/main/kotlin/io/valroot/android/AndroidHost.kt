@@ -249,6 +249,7 @@ internal class AndroidHost(
      */
     fun close() {
         state.closed = true
+        state.secretExecutor.shutdown()
         state.executor.execute { if (state.dbOpen) runCatching { state.db.close() } }
     }
 }

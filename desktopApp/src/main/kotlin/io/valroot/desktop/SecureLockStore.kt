@@ -1,5 +1,6 @@
 package io.valroot.desktop
 
+import io.valroot.ui.host.LockVerifierStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -41,11 +42,11 @@ internal class SecretToolCommand : SecretCommand {
 internal class SecureLockStore(
     private val marker: Path,
     private val command: SecretCommand = SecretToolCommand(),
-) {
+) : LockVerifierStore {
     private val attributes = listOf("application", "valroot", "profile", profileId(marker.parent))
-    val hasLock: Boolean get() = Files.exists(marker)
+    override val hasLock: Boolean get() = Files.exists(marker)
 
-    fun read(): String {
+    override fun read(): String {
         val value = Files.readString(marker)
         return if (value == MARKER) {
             command.run(listOf("lookup") + attributes, null).also { check(it.isNotEmpty()) }
@@ -54,7 +55,7 @@ internal class SecureLockStore(
         }
     }
 
-    fun write(verifier: String) {
+    override fun write(verifier: String) {
         command.run(listOf("store", "--label=Valroot privacy lock") + attributes, verifier)
         val temporary = Files.createTempFile(marker.parent, "lock-", ".tmp")
         try {
@@ -66,11 +67,11 @@ internal class SecureLockStore(
         }
     }
 
-    fun migrate(verifier: String) {
+    override fun migrate(verifier: String) {
         if (Files.readString(marker) != MARKER) write(verifier)
     }
 
-    fun remove() {
+    override fun remove() {
         if (Files.readString(marker) == MARKER) command.run(listOf("clear") + attributes, null)
         Files.delete(marker)
     }

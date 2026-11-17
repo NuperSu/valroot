@@ -15,10 +15,10 @@ import javax.crypto.spec.GCMParameterSpec
 internal class SecureLockStore(
     private val preferences: SharedPreferences,
     private val alias: String = "io.valroot.privacy-lock.v1",
-) {
-    val hasLock: Boolean get() = preferences.contains(SECURE) || preferences.contains(LEGACY)
+) : io.valroot.ui.host.LockVerifierStore {
+    override val hasLock: Boolean get() = preferences.contains(SECURE) || preferences.contains(LEGACY)
 
-    fun read(): String {
+    override fun read(): String {
         val encoded = preferences.getString(SECURE, null)
         if (encoded == null) return preferences.getString(LEGACY, null) ?: error("Missing privacy lock")
         val data = Base64.getDecoder().decode(encoded)
@@ -29,7 +29,7 @@ internal class SecureLockStore(
     }
 
     @SuppressLint("UseKtx") // The commit result confirms the verifier was persisted.
-    fun write(verifier: String) {
+    override fun write(verifier: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key(true))
         val encoded = Base64.getEncoder().encodeToString(cipher.iv + cipher.doFinal(verifier.toByteArray(Charsets.UTF_8)))
@@ -42,12 +42,12 @@ internal class SecureLockStore(
         )
     }
 
-    fun migrate(verifier: String) {
+    override fun migrate(verifier: String) {
         if (!preferences.contains(SECURE)) write(verifier)
     }
 
     @SuppressLint("UseKtx") // The commit result confirms the verifier was removed.
-    fun remove() {
+    override fun remove() {
         check(
             preferences
                 .edit()
