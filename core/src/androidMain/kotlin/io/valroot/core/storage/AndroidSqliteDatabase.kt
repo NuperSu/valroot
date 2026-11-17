@@ -2,12 +2,18 @@ package io.valroot.core.storage
 
 import android.database.sqlite.SQLiteBlobTooBigException
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteDatabaseLockedException
 import java.io.ByteArrayOutputStream
 
+/**
+ * One connection to an Android SQLite file. The app's screen, workers and refreshers each hold their own connection to
+ * the same file, so a connection waits up to [LOCK_WAIT_MILLIS] for another one's lock: while opening (Android's own
+ * open runs locale setup under a fixed 2.5-second limit, so a busy open is retried) and for every statement after it.
+ */
 class AndroidSqliteDatabase(
     path: String,
 ) : SqliteDatabase {
-    private val database = SQLiteDatabase.openOrCreateDatabase(path, null)
+    private val database = openWaiting(path)
     private val lock = Any()
     private var oversizedQueryId = 0L
     private var closed = false
@@ -125,4 +131,28 @@ class AndroidSqliteDatabase(
             closed = true
             database.close()
         }
+
+    companion object {
+        /** How long opening, reading or writing waits for another connection's lock before failing. */
+        const val LOCK_WAIT_MILLIS = 30_000L
+
+        private fun openWaiting(path: String): SQLiteDatabase {
+            val deadline = System.nanoTime() + LOCK_WAIT_MILLIS * 1_000_000
+            while (true) {
+                try {
+                    val database = SQLiteDatabase.openOrCreateDatabase(path, null)
+                    try {
+                        database.rawQuery("PRAGMA busy_timeout = $LOCK_WAIT_MILLIS", null).use { it.moveToFirst() }
+                    } catch (failure: Exception) {
+                        database.close()
+                        throw failure
+                    }
+                    return database
+                } catch (busy: SQLiteDatabaseLockedException) {
+                    if (System.nanoTime() >= deadline) throw busy
+                    Thread.sleep(100)
+                }
+            }
+        }
+    }
 }

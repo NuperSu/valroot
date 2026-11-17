@@ -21,6 +21,30 @@ internal fun sqliteChecks(context: Context): List<ReliabilityCheck> =
                 check(runCatching { db.execute("INSERT INTO t VALUES ('x')") }.exceptionOrNull() is io.valroot.core.storage.DatabaseClosed)
             }
         },
+        // A worker's long write transaction must make the screen's connection wait, not fail to open (SQLITE_BUSY).
+        "openWaitsForAnotherConnectionsWrite" to {
+            withTemporaryDatabase(context.cacheDir) { file ->
+                AndroidSqliteDatabase(file.path).use { writer ->
+                    writer.query("PRAGMA journal_mode = DELETE")
+                    writer.execute("CREATE TABLE t (v TEXT)")
+                    val started = java.util.concurrent.CountDownLatch(1)
+                    val holder =
+                        Thread {
+                            writer.transaction {
+                                writer.execute("INSERT INTO t VALUES ('x')")
+                                started.countDown()
+                                Thread.sleep(4_000)
+                            }
+                        }
+                    holder.start()
+                    check(started.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    AndroidSqliteDatabase(file.path).use { reader ->
+                        check(reader.query("SELECT COUNT(*) FROM t").single().single() == "1")
+                    }
+                    holder.join()
+                }
+            }
+        },
         "boundedDuplicateProjection" to {
             withTemporaryDatabase(context.cacheDir) { file -> AndroidSqliteDatabase(file.path).use(::verifyBoundedDuplicateNative) }
         },
