@@ -422,6 +422,8 @@ internal fun EvmConnectDialog(
                 withContext(host.dispatcher) {
                     app.evm.setConsent(true)
                     app.evm.addChains(address, selected)
+                    // The first history source may have just been added: reschedule from the saved switch.
+                    host.updateRefreshPreferences(host.refreshPreferences())
                 }
                 onSaved()
                 requestRefresh()

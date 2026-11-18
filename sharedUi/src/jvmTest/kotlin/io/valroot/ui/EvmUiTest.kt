@@ -94,6 +94,8 @@ class EvmUiTest {
                     )
                     assertTrue(app.evm.consent())
                     waitUntil(timeoutMillis = 10_000) { host.refreshRequests > 0 }
+                    // Connecting the first source reschedules automatic refresh, which may now have something to fetch.
+                    assertTrue(host.rescheduled > 0)
                 }
             } finally {
                 executor.shutdown()
@@ -285,6 +287,14 @@ class EvmUiTest {
         override val dispatcher: CoroutineDispatcher,
     ) : PlatformActions {
         var refreshRequests = 0
+
+        /** Times the UI asked the host to reschedule automatic refresh. */
+        @Volatile var rescheduled = 0
+
+        override fun updateRefreshPreferences(preferences: RefreshPreferences) {
+            rescheduled++
+        }
+
         override val dataRevision = MutableStateFlow(0L)
         override val syncStatus = MutableStateFlow(SyncStatus())
         override val hasLock = false

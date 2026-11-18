@@ -181,6 +181,8 @@ internal fun ExchangeConnectDialog(
                         selectedPortfolio
                             ?.takeIf { it.accountIds.isNotEmpty() }
                             ?.let { app.accounts.savePortfolio(it.copy(accountIds = it.accountIds + accountId)) }
+                        // The first history source may have just been added: reschedule from the saved switch.
+                        host.updateRefreshPreferences(host.refreshPreferences())
                         null
                     }
                 if (problem != null) {

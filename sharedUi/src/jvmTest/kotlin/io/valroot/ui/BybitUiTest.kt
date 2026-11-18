@@ -64,6 +64,8 @@ class BybitUiTest {
                     assertEquals("1001", uid)
                     assertEquals("KEYKEYKEYKEY" to "SECRETSECRETSECRET", app.exchanges.key(ExchangeKind.BYBIT, account))
                     waitUntil(timeoutMillis = 10_000) { host.refreshRequests > 0 }
+                    // Connecting the first source reschedules automatic refresh, which may now have something to fetch.
+                    assertTrue(host.rescheduled > 0)
                     assertEquals(listOf("KEYKEYKEYKEY" to "SECRETSECRETSECRET"), host.checked.distinct())
                 }
             } finally {
@@ -165,6 +167,14 @@ class BybitUiTest {
         override val dispatcher: CoroutineDispatcher,
     ) : PlatformActions {
         var refreshRequests = 0
+
+        /** Times the UI asked the host to reschedule automatic refresh. */
+        @Volatile var rescheduled = 0
+
+        override fun updateRefreshPreferences(preferences: RefreshPreferences) {
+            rescheduled++
+        }
+
         var info: ExchangeKeyInfo? = null
         val checked = mutableListOf<Pair<String, String>>()
         override val dataRevision = MutableStateFlow(0L)
