@@ -473,9 +473,9 @@ object MexcExports : ExchangeExportAdapter {
                 }
             }.values
             .map { group ->
+                // Legs in a fixed order, so where the rows sit in the file does not change the record.
                 group.first().copy(
                     legs =
-                        // In a fixed order, so where the rows sit in the file does not change the record.
                         group
                             .flatMap { it.legs }
                             .groupBy { it.coin to it.role }
