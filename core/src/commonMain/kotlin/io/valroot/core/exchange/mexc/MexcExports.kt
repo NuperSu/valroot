@@ -475,15 +475,22 @@ object MexcExports : ExchangeExportAdapter {
             .map { group ->
                 group.first().copy(
                     legs =
-                        group.flatMap { it.legs }.groupBy { it.coin to it.role }.map { (_, legs) ->
-                            legs.first().copy(
-                                amount =
-                                    legs.map { it.amount }.reduce { a, b ->
-                                        a +
-                                            b
-                                    },
-                            )
-                        },
+                        // In a fixed order, so where the rows sit in the file does not change the record.
+                        group
+                            .flatMap { it.legs }
+                            .groupBy { it.coin to it.role }
+                            .toList()
+                            .sortedBy { (key, _) ->
+                                "${key.first}|${key.second}"
+                            }.map { (_, legs) ->
+                                legs.first().copy(
+                                    amount =
+                                        legs.map { it.amount }.reduce { a, b ->
+                                            a +
+                                                b
+                                        },
+                                )
+                            },
                     details = group.first().details + ("rows" to group.joinToString(",") { it.source.row.toString() }),
                 )
             }

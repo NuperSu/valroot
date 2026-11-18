@@ -346,6 +346,10 @@ class ExchangeImportService internal constructor(
         return result.distinctBy { it.first }
     }
 
+    /**
+     * What identifies a record: its economic content only. The source rows a grouped statement record came from do not
+     * count (its legs are in a fixed order), so the same rows moved to other lines, or exported twice, are one record.
+     */
     private fun content(record: ImportedRecord): String =
         listOf(
             record.uid.orEmpty(),
@@ -357,6 +361,7 @@ class ExchangeImportService internal constructor(
             record.namespace.orEmpty(),
             record.nativeId.orEmpty(),
             record.details
+                .filterKeys { it != PROVENANCE_ROWS }
                 .sortedByKeys()
                 .entries
                 .joinToString(";") { "${it.key}=${it.value}" },
@@ -535,7 +540,7 @@ class ExchangeImportService internal constructor(
                             planned.record.source.file,
                             planned.record.source.member,
                             planned.record.source.sheet,
-                            planned.record.details["rows"]
+                            planned.record.details[PROVENANCE_ROWS]
                                 ?.split(
                                     ',',
                                 )?.mapNotNull { it.toIntOrNull() } ?: listOf(planned.record.source.row),
@@ -595,6 +600,9 @@ class ExchangeImportService internal constructor(
     private fun magnitude(value: ExactDecimal) = if (value.coefficient.sign < 0) ExactDecimal(-value.coefficient, value.scale) else value
 
     private companion object {
+        /** Detail naming the source rows of a grouped statement record: provenance, not identity. */
+        const val PROVENANCE_ROWS = "rows"
+
         val ZERO = ExactDecimal.parse("0")
     }
 }

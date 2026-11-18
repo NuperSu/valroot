@@ -379,6 +379,9 @@ object BinanceExports : ExchangeExportAdapter {
             val legs =
                 parts
                     .groupBy { it.second.coin to it.second.role }
+                    // In a fixed order, so where the rows sit in the file does not change the record.
+                    .toList()
+                    .sortedBy { (coinRole, _) -> "${coinRole.first}|${coinRole.second}" }
                     .map { (coinRole, list) ->
                         RecordLeg(
                             coinRole.first,

@@ -219,4 +219,31 @@ class MexcImportTest {
         val detected = ExportReports.detect(original.copy(rows = listOf(original.rows.first(), row.copy(cells = cells))))!!
         assertFailsWith<ImportFileException> { MexcExports.interpret(detected, mapOf("Time" to ImportOffset(240))) }
     }
+
+    @Test fun statementRowsOnOtherLinesAreTheSameTrade() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { at + 100_000 }
+            app.snapshot()
+            val buy = "$uid,2026-01-01 12:00:00,BTC,Spot Trading,Inflow,0.1"
+            val pay = "$uid,2026-01-01 12:00:00,USDT,Spot Trading,Outflow,1000"
+            val deposit = "$uid,2026-01-02 09:00:00,USDT,Deposit,Inflow,50"
+            val first = table(MexcExports.STATEMENT, buy, pay, file = "first.xlsx")
+            // The same trade rows below another row and in the other order: other line numbers, same record.
+            val second = table(MexcExports.STATEMENT, deposit, pay, buy, file = "second.xlsx")
+            val choices = ImportChoices(offset = ImportOffset(240), accounts = mapOf("mexc:$uid" to AccountChoice.New("MEXC export", uid)))
+            val together = app.exchangeImports.preview(listOf(first, second), choices)
+            assertEquals(mapOf(ImportStatus.NEW to 2), together.counts)
+            app.exchangeImports.commit(app.exchangeImports.preview(listOf(first), choices))
+            val again = app.exchangeImports.preview(listOf(second), choices.copy(accounts = emptyMap()))
+            assertEquals(1, again.counts[ImportStatus.ALREADY_IMPORTED], again.counts.toString())
+            app.exchangeImports.commit(again)
+            assertEquals(
+                1,
+                app
+                    .snapshot()
+                    .activities
+                    .count { it.activity.kind == ActivityKind.TRADE },
+            )
+        }
+    }
 }
