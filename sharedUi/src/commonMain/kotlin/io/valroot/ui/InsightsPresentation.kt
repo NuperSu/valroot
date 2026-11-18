@@ -92,6 +92,7 @@ internal fun insightsState(
     hidden: Boolean,
     worthSelected: String?,
     loading: Boolean,
+    historyError: Boolean = false,
 ): ModelInsightsState {
     val currency = data.currency
     val summary = pricingSummary(data.valuations)
@@ -242,7 +243,12 @@ internal fun insightsState(
         range = range,
         ranges = ranges,
         history = portfolioChartData(chart, currency, hidden),
-        performance = returnState(insights?.performance, hidden),
+        performance =
+            if (historyError) {
+                ModelReturnState(status = "Historical values could not be loaded for this period.")
+            } else {
+                returnState(insights?.performance, hidden)
+            },
         diversity = diversity,
         diversityNote = if (summary.missing > 0) "${summary.missing} unpriced asset(s) are not in the total." else null,
         gains = gains,

@@ -100,9 +100,9 @@ internal fun ModelWorkspace(
     val transactionScope = rememberCoroutineScope()
     val amountsHidden = LocalAmountsHidden.current
     // Asset IDs that make up the selected coin, and chain names for its per-chain breakdown.
-    val coinAssetsState = remember(app) { mutableStateOf<Set<AssetId>>(emptySet()) }
+    val coinAssetsState = remember(app, selectedAsset?.asset) { mutableStateOf<Set<AssetId>>(emptySet()) }
     var coinAssets by coinAssetsState
-    val chainChoicesState = remember(app) { mutableStateOf<List<EvmPlatform>>(emptyList()) }
+    val chainChoicesState = remember(app, selectedAsset?.asset) { mutableStateOf<List<EvmPlatform>>(emptyList()) }
     var chainChoices by chainChoicesState
     val hiddenReviewState = rememberSaveable { mutableStateOf(false) }
     var hiddenReview by hiddenReviewState
@@ -112,7 +112,7 @@ internal fun ModelWorkspace(
             coinAssets = emptySet()
             return@LaunchedEffect
         }
-        // Without them the coin shows only its own asset, as before they load.
+        // Until linked identities load, the coin shows only its selected asset.
         val (ids, choices) =
             host.loadOrNull {
                 val coinId = app.market.coinId(coin)
@@ -371,12 +371,14 @@ internal fun ModelWorkspace(
     if (explain && snapshot != null) {
         AlertDialog(onDismissRequest = { explain = false }, title = { Text("Portfolio value") }, text = {
             Text(
-                portfolioValueChange(chart, snapshot.currency, "Selected period") +
+                portfolioValueChange(chart, snapshot.currency, "Selected period").hiddenIf(amountsHidden) +
                     "\nValue changes include contributions, withdrawals and price movements; they are not investment returns." +
                     "\n${pricingSummary(
                         snapshot.valuations,
                     ).missing} unpriced positions are excluded. Saved history gaps remain unavailable." +
-                    "\n$movementSummary\nAccepted local records · history coverage ${snapshot.coverage.name.lowercase()}",
+                    "\n${movementSummary.hiddenIf(
+                        amountsHidden,
+                    )}\nAccepted local records · history coverage ${snapshot.coverage.name.lowercase()}",
             )
         }, confirmButton = { TextButton(onClick = { explain = false }) { Text("Close") } })
     }
@@ -405,13 +407,16 @@ internal fun ModelWorkspace(
         }
     }
     val worthAssetState = rememberSaveable { mutableStateOf<String?>(null) }
-    val insightsDataState = remember(app, selectedPortfolio) { mutableStateOf<InsightsData?>(null) }
-    var insightsData by insightsDataState
     val rangeStart = chart.firstOrNull()?.atMillis
     val rangeEnd = chart.lastOrNull()?.atMillis
+    val insightsDataState =
+        remember(app, selectedPortfolio, snapshot?.currency, period, rangeStart, rangeEnd, chartLoading, chartError) {
+            mutableStateOf<InsightsData?>(null)
+        }
+    var insightsData by insightsDataState
     // Insights calculations follow the history range on screen, so every section covers the same period.
-    LaunchedEffect(app, page, selectedPortfolio, rangeStart, rangeEnd, dataRevision) {
-        if (page == Page.REPORTS && rangeStart != null && rangeEnd != null && rangeEnd > rangeStart) {
+    LaunchedEffect(app, page, selectedPortfolio, snapshot?.currency, period, rangeStart, rangeEnd, chartLoading, chartError, dataRevision) {
+        if (!chartLoading && !chartError && page == Page.REPORTS && rangeStart != null && rangeEnd != null && rangeEnd > rangeStart) {
             insightsData =
                 withContext(host.dispatcher) {
                     InsightsData(
@@ -575,6 +580,7 @@ internal fun ModelWorkspace(
                     onChartStyle = onChartStyle,
                     onAdvanced = onAdvanced,
                     onManual = onManual,
+                    onAsset = onAsset,
                     onTransaction = onTransaction,
                     changeCoin = ::changeCoin,
                     updateEditor = ::updateEditor,

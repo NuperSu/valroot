@@ -58,6 +58,7 @@ internal fun ColumnScope.ModelCoinBranch(
     onChartStyle: (ChartStyle) -> Unit,
     onAdvanced: (Page) -> Unit,
     onManual: (AssetValuation?) -> Unit,
+    onAsset: (AssetValuation?) -> Unit,
     onTransaction: (EffectiveActivity) -> Unit,
     changeCoin: (onDone: () -> Unit, onFailure: (Exception) -> Unit, change: () -> Unit) -> Unit,
     updateEditor: ((ModelAlertEditorState) -> ModelAlertEditorState) -> Unit,
@@ -167,6 +168,13 @@ internal fun ColumnScope.ModelCoinBranch(
             emptyList()
         }
     val coinSummary = if (coinHoldings.size > 1) coinTotals(coinHoldings, data.currency, chainChoices) else null
+
+    fun transactionHoldingLabel(holding: AssetValuation): String {
+        val name = holding.metadata?.name ?: holding.asset.value
+        val chain = assetChainName(holding.asset, chainChoices)
+        return if (chain == "Other") name else "$name on $chain"
+    }
+    val transactionHolding = transactionHoldingLabel(asset)
     val listing =
         marketOverview?.let { overview -> overview.markets?.items?.find { overview.assetKeys[it.coinId] == asset.asset } }
     // Without two saved observations, the CoinGecko 7-day sparkline draws the chart.
@@ -326,12 +334,16 @@ internal fun ColumnScope.ModelCoinBranch(
                     observed.filterNotNull().minOrNull()?.let { quotePrice(it, data.currency) } ?: "—"
                 },
             transactionMetrics =
-                timeline?.metrics
-                    ?: listOf(
-                        ModelMetric("Avg. Buy Price", "—"),
-                        ModelMetric("Avg. Sell Price", "—"),
-                        ModelMetric("Transactions", "—"),
-                    ),
+                (
+                    timeline?.metrics
+                        ?: listOf(
+                            ModelMetric("Avg. Buy Price", "—"),
+                            ModelMetric("Avg. Sell Price", "—"),
+                            ModelMetric("Transactions", "—"),
+                        )
+                ).map { metric ->
+                    if (metric.label == "Transactions") metric else metric.copy(value = metric.value.hiddenIf(amountsHidden))
+                },
             transactions =
                 timeline?.cards.orEmpty().map { card ->
                     if (!amountsHidden) {
@@ -416,6 +428,15 @@ internal fun ColumnScope.ModelCoinBranch(
             onOrderRetry = orderBook.retry,
         ),
         transactionControls = {
+            Text("Transactions and CSV cover $transactionHolding only.", modifier = Modifier.testTag("coin-transaction-scope"))
+            if (coinHoldings.size > 1) {
+                Text("Choose a holding to view its transactions:")
+                coinHoldings.forEach { holding ->
+                    TextButton(onClick = { onAsset(holding) }, enabled = holding.asset != asset.asset) {
+                        Text("${transactionHoldingLabel(holding)}")
+                    }
+                }
+            }
             OutlinedTextField(
                 transactionSearch,
                 {
@@ -481,7 +502,7 @@ internal fun ColumnScope.ModelCoinBranch(
                         exportMessage = "Could not export transactions. Try again."
                     }
                 }
-            }) { Text("Export matching transactions") }
+            }) { Text("Export matching transactions for $transactionHolding") }
             exportMessage?.let { Text(it) }
         },
         transactionFooter = {

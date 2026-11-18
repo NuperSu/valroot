@@ -6,7 +6,9 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import io.valroot.core.application.LandingPage
 import io.valroot.core.application.PortfolioApplication
@@ -42,6 +44,20 @@ class AmountPrivacyTest {
                                     ?.joinToString()
                             }
                     assertTrue(dollars.all { it.contains("·") || it.contains("<$") }, dollars.toString())
+                    onNodeWithText("✧  What's going on?").performScrollTo().performClick()
+                    waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Portfolio value").fetchSemanticsNodes().isNotEmpty() }
+                    val explanation =
+                        onAllNodesWithText("Value changes include", substring = true)
+                            .fetchSemanticsNodes()
+                            .single()
+                            .config
+                            .getOrNull(SemanticsProperties.Text)
+                            ?.joinToString()
+                            .orEmpty()
+                    assertTrue(explanation.contains(HIDDEN_AMOUNT), explanation)
+                    assertTrue(!explanation.contains("$"), explanation)
+                    assertTrue(!explanation.contains("Native movements include"), explanation)
+                    onNodeWithText("Close").performClick()
                     onNodeWithTag("balance-visibility").performClick()
                     waitUntil(timeoutMillis = 10_000) { !app.settings.general().hideAmounts }
                     waitUntil(timeoutMillis = 10_000) { onAllNodesWithText(HIDDEN_AMOUNT).fetchSemanticsNodes().isEmpty() }

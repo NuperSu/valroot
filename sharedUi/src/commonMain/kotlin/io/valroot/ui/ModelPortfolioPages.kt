@@ -386,7 +386,7 @@ internal fun ColumnScope.ModelPortfolioPages(
             ModelInsights(
                 insightsState(
                     data,
-                    chart,
+                    chart.takeUnless { chartLoading || chartError }.orEmpty(),
                     labels[period] ?: "",
                     labels.values.toList(),
                     data.ownership.portfolios
@@ -397,6 +397,7 @@ internal fun ColumnScope.ModelPortfolioPages(
                     amountsHidden,
                     worthAsset,
                     chartLoading,
+                    historyError = chartError,
                 ),
                 wide,
             ) { action ->
