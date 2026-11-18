@@ -52,8 +52,8 @@ sealed interface MatchOutcome {
  *   is a different event in the same transaction (for example two deposits paid by one transaction).
  * - Otherwise records and events of the same kind with the same principal amounts, within the kind's [tolerance] of
  *   each other, form a group; an event whose identifiers contradict a record's ([conflicts]) never pairs with it.
- *   When the group has at least as many existing events as records, records pair with events
- *   in time order. With more records than events the file holds something the account does not, and either could be
+ *   When the group has at least as many existing events as records, records pair with events in time order, as many
+ *   as identifiers allow ([pairs]). With more records than events the file holds something the account does not, and either could be
  *   true (a repeated identical fill, or an export of the same event twice), so the group waits for a decision.
  * - Records without candidates are new; identical records stay distinct events.
  */
@@ -97,11 +97,10 @@ object EventMatcher {
                         decision == GroupDecision.EXCLUDED -> group.forEach { outcomes[it.id] = MatchOutcome.Excluded(key) }
                         decision == GroupDecision.DISTINCT || events.isEmpty() -> group.forEach { outcomes[it.id] = MatchOutcome.New }
                         events.size >= group.size || decision == GroupDecision.SAME -> {
-                            val free = events.sortedBy { it.atMillis }.toMutableList()
-                            group.sortedBy { it.atMillis }.forEach { record ->
-                                val event = free.firstOrNull { !conflicts(record, it) }
-                                if (event != null) free -= event
-                                outcomes[record.id] = event?.let { MatchOutcome.Same(it.id) } ?: MatchOutcome.New
+                            val pairs = pairs(group, events)
+                            group.forEach { record ->
+                                outcomes[record.id] =
+                                    pairs[record.id]?.let { MatchOutcome.Same(it) } ?: MatchOutcome.New
                             }
                         }
                         else -> group.forEach { outcomes[it.id] = MatchOutcome.Ambiguous(key, group.size, events.size) }
@@ -109,6 +108,41 @@ object EventMatcher {
                 }
             }
         return outcomes
+    }
+
+    /**
+     * Pairs [records] with [events] of one group, by record ID to event ID. Without contradicting identifiers they pair in
+     * time order. Otherwise as many pair as possible: a record first takes the earliest free event it does not
+     * contradict, and when none is free an earlier pairing moves to another event to make room (an augmenting path).
+     */
+    private fun pairs(
+        records: List<EventShape>,
+        events: List<EventShape>,
+    ): Map<String, String> {
+        val inOrder = records.sortedBy { it.atMillis }
+        val candidates = events.sortedBy { it.atMillis }
+        val owner = arrayOfNulls<Int>(candidates.size)
+
+        fun place(
+            record: Int,
+            seen: MutableSet<Int>,
+        ): Boolean {
+            val allowed = candidates.indices.filter { !conflicts(inOrder[record], candidates[it]) && it !in seen }
+            allowed.firstOrNull { owner[it] == null }?.let {
+                owner[it] = record
+                return true
+            }
+            allowed.forEach { event ->
+                seen += event
+                if (place(owner[event]!!, seen)) {
+                    owner[event] = record
+                    return true
+                }
+            }
+            return false
+        }
+        inOrder.indices.forEach { place(it, mutableSetOf()) }
+        return owner.withIndex().mapNotNull { (event, record) -> record?.let { inOrder[it].id to candidates[event].id } }.toMap()
     }
 
     /**

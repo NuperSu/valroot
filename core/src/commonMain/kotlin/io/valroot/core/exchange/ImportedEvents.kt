@@ -412,7 +412,15 @@ object ImportedEvents {
                 }
                 activityKind(record.kind)
             }
-        if (id != null) ledger.importedKinds[id] = matchKind(record)
+        if (id != null) {
+            ledger.importedKinds[id] = matchKind(record)
+            // Like a deposit or withdrawal from the exchange's API, an on-chain one from a file keeps its transaction ID,
+            // so later records match it by that ID and wallet activities in the same transaction can link to it.
+            val txid = record.details["txid"]?.trim()?.takeIf { it.isNotEmpty() }
+            if (txid != null && record.kind in setOf(RecordKind.DEPOSIT, RecordKind.WITHDRAWAL)) {
+                ledger.transfers[id] = ExchangeTransfer(record.details["network"].orEmpty(), txid)
+            }
+        }
         ledger.imports[row.key] = id?.let { ImportOutcome.New(it) } ?: ImportOutcome.CoinPending
     }
 

@@ -116,4 +116,17 @@ class EventMatcherTest {
         assertEquals(MatchOutcome.Same("api-2"), outcomes["f-3"])
         assertEquals(MatchOutcome.Same("api-1"), outcomes["f-5"])
     }
+
+    @Test fun aRecordWithoutAnIdLeavesTheOnlyCompatibleEventToTheRecordThatNeedsIt() {
+        fun deposit(
+            id: String,
+            txid: String?,
+            at: Long,
+        ) = EventShape(id, MatchKind.IN, at, mapOf("ETH" to d("1")), setOfNotNull(txid?.let { "txid:$it" }))
+        // f-2 (0xccc) contradicts api-2 (0xaaa), so it can only be api-1; f-1 without an ID can be either.
+        val events = listOf(deposit("api-1", null, 1_000), deposit("api-2", "0xaaa", 2_000))
+        val outcomes = EventMatcher.match(listOf(deposit("f-1", null, 900), deposit("f-2", "0xccc", 950)), events, tolerance)
+        assertEquals(MatchOutcome.Same("api-2"), outcomes["f-1"])
+        assertEquals(MatchOutcome.Same("api-1"), outcomes["f-2"])
+    }
 }

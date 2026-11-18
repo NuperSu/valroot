@@ -331,4 +331,23 @@ class MexcImportTest {
         val rows = records.mapIndexed { index, record -> saved(record, "statement:h$index:0") }
         assertEquals(2, MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null).activities.size)
     }
+
+    @Test fun aFileDepositKeepsItsTransactionIdForLaterReports() {
+        val deposits =
+            interpret(
+                MexcExports.DEPOSITS,
+                "$uid,Completed,2026-01-02 09:00:00,USDT,TRC20,50,0xaaa,1/1",
+                "$uid,Completed,2026-01-02 09:00:00,USDT,TRC20,50,0xbbb,1/1",
+            )
+        // The second deposit reaches the account through another report: equal amount and time, but its own transaction.
+        val rows = listOf(saved(deposits[0], "deposits:a:0"), saved(deposits[1].copy(report = "deposits-other"), "other:b:0"))
+        val decoded = MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null)
+        assertEquals(2, decoded.activities.size)
+        assertEquals(
+            setOf("0xaaa", "0xbbb"),
+            decoded.transfers.values
+                .map { it.txId }
+                .toSet(),
+        )
+    }
 }
