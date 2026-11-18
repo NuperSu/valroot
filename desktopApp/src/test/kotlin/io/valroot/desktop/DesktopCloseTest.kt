@@ -97,4 +97,25 @@ class DesktopCloseTest {
             host.close()
         }
     }
+
+    @Test
+    fun aSecondWindowCannotOpenTheSameDataFolderUntilTheFirstCloses() {
+        val directory = Files.createTempDirectory("valroot-single-instance-")
+        val first = DesktopHost(directory, false)
+        try {
+            kotlin.test.assertFailsWith<DataFolderInUse> { DesktopHost(directory, false) }
+        } finally {
+            first.close()
+        }
+        // The lock is released once the first host's connections have closed on its worker.
+        val deadline = System.currentTimeMillis() + 10_000
+        var second: DesktopHost? = null
+        while (second == null && System.currentTimeMillis() < deadline) {
+            second = runCatching { DesktopHost(directory, false) }.getOrNull() ?: run {
+                Thread.sleep(50)
+                null
+            }
+        }
+        kotlin.test.assertNotNull(second, "the folder opens again after the first window closes").close()
+    }
 }

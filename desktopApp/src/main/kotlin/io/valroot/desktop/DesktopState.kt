@@ -21,6 +21,15 @@ internal class DesktopState(
 ) {
     val file: Path = directory.resolve("portfolio.sqlite")
 
+    /** Taken before any connection opens and released after the last one closes. */
+    val instanceLock: DesktopInstanceLock =
+        DesktopInstanceLock.acquire(
+            directory.also {
+                java.nio.file.Files
+                    .createDirectories(it)
+            },
+        )
+
     /** Main background worker: backup and lock-file work, the wallet-history schedule and close. */
     val executor = Executors.newSingleThreadScheduledExecutor()
     val unlockExecutor = Executors.newSingleThreadExecutor()

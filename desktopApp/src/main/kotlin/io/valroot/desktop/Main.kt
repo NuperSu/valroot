@@ -34,7 +34,9 @@ fun main(args: Array<String>) {
             ?.coerceIn(320, 4096) ?: fallback
     // API secrets in the database are sealed with a key kept outside the data folder; the demo keeps it in memory.
     if (!demo) DeviceSecretKeyFile.use(deviceSecretKeyFile(Path.of(System.getProperty("user.home"))))
-    val host = runCatching { DesktopHost(directory, demo) }.getOrNull()
+    val opened = runCatching { DesktopHost(directory, demo) }
+    val host = opened.getOrNull()
+    val inUse = opened.exceptionOrNull() is DataFolderInUse
     val appIcon =
         runCatching {
             androidx.compose.ui.graphics.painter
@@ -51,7 +53,13 @@ fun main(args: Array<String>) {
             state = WindowState(width = dimension("--width", 1100).dp, height = dimension("--height", 800).dp),
         ) {
             if (host == null) {
-                Text("Could not open local data. Check available storage and database compatibility.")
+                Text(
+                    if (inUse) {
+                        DataFolderInUse().message!!
+                    } else {
+                        "Could not open local data. Check available storage and database compatibility."
+                    },
+                )
             } else {
                 androidx.compose.runtime.DisposableEffect(window) {
                     val listener =

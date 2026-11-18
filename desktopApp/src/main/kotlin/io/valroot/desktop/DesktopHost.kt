@@ -89,12 +89,19 @@ internal class DesktopHost(
                 setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
             )
         }
-        state.db = BundledSqliteDatabase(state.file.toString())
+        state.db =
+            try {
+                BundledSqliteDatabase(state.file.toString())
+            } catch (failure: Exception) {
+                state.instanceLock.close()
+                throw failure
+            }
         state.app =
             try {
                 mutableStateOf(PortfolioApplication(state.db, System::currentTimeMillis))
             } catch (failure: Exception) {
                 runCatching { state.db.close() }
+                state.instanceLock.close()
                 throw failure
             }
         if (demo) app.value.demo.seed()
@@ -288,6 +295,7 @@ internal class DesktopHost(
             while (!state.syncQueue.awaitTermination(1_000)) { }
             state.closeSyncConnection()
             state.db.close()
+            state.instanceLock.close()
         }
         state.executor.shutdown()
         state.unlockExecutor.shutdown()
