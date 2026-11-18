@@ -17,6 +17,7 @@ data class EventShape(
     val atMillis: Long,
     val principal: Map<String, ExactDecimal>,
     val ids: Set<String> = emptySet(),
+    val chain: String? = null,
 )
 
 /** What the user decided for an ambiguous group. */
@@ -138,7 +139,10 @@ object EventMatcher {
         val window: Long,
     ) {
         private val recordKinds = records.flatMap { it.ids }.map { it.substringBefore(':') }.toSet()
-        val unrestricted = events.none { event -> event.ids.any { it.substringBefore(':') in recordKinds } }
+        val unrestricted =
+            records.none { it.chain != null } &&
+                events.none { it.chain != null } &&
+                events.none { event -> event.ids.any { it.substringBefore(':') in recordKinds } }
         val ranges = records.map { range(it.atMillis, events) }
 
         fun events(record: Int): Sequence<Int> =
@@ -280,6 +284,8 @@ object EventMatcher {
         a: EventShape,
         b: EventShape,
     ): Boolean {
+        if (a.chain != null && b.chain != null && a.chain != b.chain) return true
+
         fun byKind(ids: Set<String>) = ids.groupBy { it.substringBefore(':') }
         val left = byKind(a.ids)
         val right = byKind(b.ids)

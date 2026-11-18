@@ -41,6 +41,25 @@ class TransferLinkReplayTest {
         "1",
     )
 
+    @Test fun knownDifferentChainsRejectAutomaticSuggestionsAndStaleReviewedLinks() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            Store(db)
+            val repo = OverlayRepository(db)
+            val outgoing = activity("out", movement("out-leg", "-100", "exchange"))
+            val incoming = activity("in", movement("in-leg", "100", "wallet"))
+            val inputs = listOf(outgoing, incoming)
+            val identities: (Activity) -> String? = { if (it.id == outgoing.id) "eip155:1|0xabc" else "eip155:56|0xabc" }
+            assertTrue(repo.replayForLedger(inputs, transaction = identities).transferLinks.isEmpty())
+            assertTrue(Reconciliation.suggest(inputs, 1000, transaction = identities).isEmpty())
+            repo.setDecision(outgoing.id, incoming.id, LinkState.ACCEPTED)
+            val replay = repo.replayForLedger(inputs, transaction = identities)
+            assertTrue(replay.transferLinks.isEmpty())
+            assertEquals("different transaction chains", replay.transferLinkConflicts.single().reason)
+            val bridge: (Activity) -> String = { if (it.id == outgoing.id) "eip155:1|0xabc" else "eip155:56|0xdef" }
+            assertEquals(1, repo.replayForLedger(inputs, transaction = bridge).transferLinks.size)
+        }
+    }
+
     /** Two activities of one on-chain transaction link without review, unless a decision or a third activity says otherwise. */
     @Test
     fun aSharedTransactionLinksAutomaticallyUnlessRejectedOrAmbiguous() {

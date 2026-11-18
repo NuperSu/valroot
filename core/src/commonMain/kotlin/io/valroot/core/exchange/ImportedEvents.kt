@@ -273,6 +273,7 @@ object ImportedEvents {
                     activity.occurredAtEpochMillis,
                     totals(activity, net),
                     ids,
+                    ledger.transfers[activity.id]?.chain?.let(io.valroot.core.model.TransactionChains::matchingBoundary),
                 )
             }
         val shapes =
@@ -290,7 +291,14 @@ object ImportedEvents {
                             )}"
                         },
                     )
-                EventShape(row.key, matchKind(record), record.atMillis, principal, ids)
+                EventShape(
+                    row.key,
+                    matchKind(record),
+                    record.atMillis,
+                    principal,
+                    ids,
+                    record.details["network"]?.let(io.valroot.core.model.TransactionChains::matchingBoundary),
+                )
             }
         val outcomes = EventMatcher.match(shapes, existing, ::tolerance, decisions)
         records.forEach { (row, record) ->

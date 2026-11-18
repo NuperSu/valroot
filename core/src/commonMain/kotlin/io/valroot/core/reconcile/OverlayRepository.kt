@@ -314,6 +314,12 @@ class OverlayRepository(
             val first = byId[decision.first]
             val second = byId[decision.second]
 
+            if (io.valroot.core.model.TransactionChains
+                    .conflict(first?.activity?.let(transaction), second?.activity?.let(transaction))
+            ) {
+                conflicts.add(TransferLinkConflict(decision.first, decision.second, "different transaction chains"))
+                continue
+            }
             when (val resolution = resolveTransfer(first, second, decision.first in originalIds, decision.second in originalIds, scale)) {
                 is TransferResolution.Conflict -> conflicts.add(TransferLinkConflict(decision.first, decision.second, resolution.reason))
                 is TransferResolution.Match -> candidates.add(decision to resolution.link)

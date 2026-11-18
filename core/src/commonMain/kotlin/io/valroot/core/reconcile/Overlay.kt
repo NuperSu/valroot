@@ -112,7 +112,14 @@ object Reconciliation {
                         }
                     }
                 if (pairs == 0) continue
-                val shared = transaction(first)?.let { it == transaction(second) } == true
+                val firstTransaction = transaction(first)
+                val secondTransaction = transaction(second)
+                if (io.valroot.core.model.TransactionChains
+                        .conflict(firstTransaction, secondTransaction)
+                ) {
+                    continue
+                }
+                val shared = firstTransaction?.let { it == secondTransaction } == true
                 val score =
                     if (shared) {
                         100

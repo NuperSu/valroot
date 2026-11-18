@@ -76,7 +76,7 @@ No activity needs a classification before it counts in cost basis, on exchanges 
 
 A value without a saved historical price within 24 hours stays unknown; the movement is still classified. Values are calculated by each report and never stored, so they follow newer prices and history.
 
-A transfer link turns a departure and its arrival in another of the owner's accounts into a transfer that keeps each lot's cost and age. Links are reviewed decisions, or automatic when two activities share an on-chain transaction (an exchange withdrawal's transaction ID and a wallet's transaction) and resolve to exactly one departure and its arrival, with no decision on the pair (a rejected decision keeps them apart). Automatic links are derived with the ledger, so a withdrawal that arrives in newer exchange history re-links and every report recalculates. Pairs matched only by amount and time, such as bridges, stay suggestions. A saved classification always replaces the defaults.
+A transfer link carries each lot's cost and age between accounts of one owner. Automatic links require two activities on the same resolved chain with the same transaction ID and exactly one matching departure and arrival. A rejected decision keeps the activities apart. A matching hash on different chains cannot establish a link. Transfers matched only by amount and time, such as bridges, remain review suggestions. A saved classification always replaces the defaults.
 
 ## Coins
 

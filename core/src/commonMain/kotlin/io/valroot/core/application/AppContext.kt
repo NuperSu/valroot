@@ -71,7 +71,7 @@ internal class AppContext(
 
     /**
      * The on-chain transaction behind an activity: its own for Bitcoin, EVM and Solana, the exchange's record for
-     * exchanges. IDs are normalized by [io.valroot.core.model.TransactionIds], so hex compares in any case and Solana's
+     * exchanges. IDs include a resolved chain and are normalized by [io.valroot.core.model.TransactionIds], so hex compares in any case and Solana's
      * Base58 signatures keep theirs.
      */
     fun transactionOf(
@@ -79,17 +79,32 @@ internal class AppContext(
         exchange: Map<io.valroot.core.model.ActivityId, io.valroot.core.exchange.ExchangeTransfer>,
     ): String? {
         val id = activity.id.value
-        val raw =
-            when {
-                activity.id in exchange -> exchange.getValue(activity.id).txId
-                id.startsWith("bitcoin:") -> id.removePrefix("bitcoin:")
-                id.startsWith("eip155:") -> id.split(':').getOrNull(2)?.takeIf { it.startsWith("0x") }
-                id.startsWith(io.valroot.core.solana.SolanaIds.TRANSACTION_PREFIX) ->
-                    io.valroot.core.solana.SolanaIds
-                        .signatureOf(id)
-                else -> null
+        val transfer = exchange[activity.id]
+        if (transfer != null) {
+            return io.valroot.core.model.TransactionChains
+                .identity(transfer.chain, transfer.txId)
+        }
+        return when {
+            id.startsWith("bitcoin:") ->
+                io.valroot.core.model.TransactionChains
+                    .identity("bitcoin:mainnet", id.removePrefix("bitcoin:"))
+            id.startsWith("eip155:") -> {
+                val parts = id.split(':')
+                parts.getOrNull(2)?.takeIf { it.startsWith("0x") }?.let {
+                    io.valroot.core.model.TransactionChains
+                        .identity(parts.take(2).joinToString(":"), it)
+                }
             }
-        return raw?.takeIf { it.isNotBlank() }?.let(io.valroot.core.model.TransactionIds::normalize)
+            id.startsWith(io.valroot.core.solana.SolanaIds.TRANSACTION_PREFIX) ->
+                io.valroot.core.solana.SolanaIds
+                    .signatureOf(
+                        id,
+                    )?.let {
+                        io.valroot.core.model.TransactionChains
+                            .identity("solana:mainnet", it)
+                    }
+            else -> null
+        }
     }
 
     /**

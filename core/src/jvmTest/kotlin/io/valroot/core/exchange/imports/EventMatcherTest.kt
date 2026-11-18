@@ -7,6 +7,25 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class EventMatcherTest {
+    @Test fun differentChainsRejectSharedHashAndSavedDecisions() {
+        val imported = EventShape("import", MatchKind.IN, 1000, mapOf("USDT" to ExactDecimal.parse("1")), setOf("txid:0xabc"), "eip155:1")
+        val api = imported.copy(id = "api", chain = "eip155:56")
+        val decisions = mapOf(EventMatcher.groupKey(listOf(imported)) to GroupDecision.SAME)
+        assertEquals(MatchOutcome.New, EventMatcher.match(listOf(imported), listOf(api), { 1000 }, decisions)[imported.id])
+        assertEquals(
+            MatchOutcome.Same(api.id),
+            EventMatcher.match(listOf(imported), listOf(api.copy(chain = imported.chain)), {
+                1000
+            })[imported.id],
+        )
+    }
+
+    @Test fun differentChainsRejectTimeFallbackWithoutIdentifiers() {
+        val imported = EventShape("import", MatchKind.IN, 1000, mapOf("USDT" to ExactDecimal.parse("1")), chain = "eip155:1")
+        val api = imported.copy(id = "api", chain = "eip155:56")
+        assertEquals(MatchOutcome.New, EventMatcher.match(listOf(imported), listOf(api), { 1000 })[imported.id])
+    }
+
     private fun d(text: String) = ExactDecimal.parse(text)
 
     @Test fun numbersAndAmountsWithCoinsAreExact() {
