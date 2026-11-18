@@ -50,6 +50,7 @@ jobs:
           :core:testAndroidHostTest
           :sharedUi:jvmTest
           :desktopApp:test
+          :uiModel:test
           :androidApp:lintDebug
           :androidApp:assembleDebug
           :androidApp:assembleDebugAndroidTest

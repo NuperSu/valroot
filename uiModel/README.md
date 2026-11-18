@@ -11,7 +11,7 @@ A deterministic Compose fixture host for the shared production presentation laye
 - **Add:** the Portfolio + opens method selection (wallet, exchange, manual entry and CSV). Manual entry opens a buy/sell/transfer form. New Transaction inside a coin opens the form directly.
 - **Menu:** Accounts and Settings. Settings demonstrate Automatic refresh and Wi-Fi-only background refresh.
 
-All financial figures, charts, transactions, alerts and order-book rows are fixed samples. Navigation, scrolling, tabs, breakdown visibility, text fields, switches and range-chip selection work locally for reviewing the design. The form's Done action closes the preview without saving. Disabled connection and import choices are shown in gray. The alert editor is inline; system notification delivery belongs to a later phase.
+All financial figures, charts, transactions, alerts and order-book rows are fixed samples. Navigation, scrolling, tabs, breakdown visibility, text fields, switches and range-chip selection work locally for reviewing the design. The form's Done action closes the preview without saving. Disabled connection and import choices are shown in gray. The alert editor uses a dialog; system notification delivery belongs to a later phase.
 
 Pull down at the top of a page or use the header refresh button to simulate refresh progress. No database or provider requests occur. The sample text about incremental refresh is illustrative and is not a claim about production synchronization.
 
@@ -32,6 +32,6 @@ JAVA_HOME=/usr/lib/jvm/java-25-openjdk SKIKO_RENDER_API=SOFTWARE \
   xvfb-run -a ./gradlew :uiModel:test
 ```
 
-PNG previews are generated in `uiModel/build/previews/` at **390×844**, **360×800**, and **1440×900**. Lower sections have separate `scrolled` captures at the same viewport sizes. The harness removes obsolete PNGs from that output directory when regenerating previews. It checks navigation, detail tabs, transaction form and settings. Use `:uiModel:ktlintCheck` for formatting checks.
+PNG previews are generated in `uiModel/build/previews/` at **390×844**, **360×800**, and **1440×900**, plus **390×844** at 1.5× font scale. Lower sections have separate `scrolled` captures at the same viewport sizes. The harness removes obsolete PNGs from that output directory when regenerating previews. It checks navigation, detail tabs, transaction form and settings. CI runs `:uiModel:test` with software rendering under Xvfb. Use `:uiModel:ktlintCheck` for formatting checks.
 
-The fixture depends on `sharedUi`, which transitively depends on `core`, but does not read a real ledger or call a provider. Coin marks and charts are drawn in Compose. Production adapters supply actual state and actions to the shared renderers; unsupported data and operations remain unavailable. Visual comparison with the frozen reference remains pending.
+The fixture depends on `sharedUi` and uses `core` alert condition types, but does not read a real ledger or call a provider. Coin marks and charts are drawn in Compose. Production adapters supply actual state and actions to the shared renderers; unsupported data and operations remain unavailable. Visual comparison with the frozen reference remains pending.

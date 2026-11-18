@@ -17,6 +17,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.valroot.core.alerts.AlertCondition
+import io.valroot.ui.model.ChartData
 import io.valroot.ui.model.ModelAccountRow
 import io.valroot.ui.model.ModelAccounts
 import io.valroot.ui.model.ModelAccountsState
@@ -31,8 +33,8 @@ import io.valroot.ui.model.ModelCoinDetailActions
 import io.valroot.ui.model.ModelCoinDetailState
 import io.valroot.ui.model.ModelCoinIdentity
 import io.valroot.ui.model.ModelCoinTab
-import io.valroot.ui.model.ModelDonutState
 import io.valroot.ui.model.ModelDraftField
+import io.valroot.ui.model.ModelFeeRow
 import io.valroot.ui.model.ModelGainRow
 import io.valroot.ui.model.ModelHoldingRow
 import io.valroot.ui.model.ModelInsights
@@ -43,15 +45,16 @@ import io.valroot.ui.model.ModelMainState
 import io.valroot.ui.model.ModelMarketCoin
 import io.valroot.ui.model.ModelMetric
 import io.valroot.ui.model.ModelOrderRow
-import io.valroot.ui.model.ModelPerformanceGroup
 import io.valroot.ui.model.ModelPortfolioHoldings
 import io.valroot.ui.model.ModelPortfolioHoldingsState
 import io.valroot.ui.model.ModelPortfolioSummary
 import io.valroot.ui.model.ModelPortfolioSummaryState
+import io.valroot.ui.model.ModelReturnState
 import io.valroot.ui.model.ModelSettings
 import io.valroot.ui.model.ModelSettingsState
 import io.valroot.ui.model.ModelShell
 import io.valroot.ui.model.ModelShellState
+import io.valroot.ui.model.ModelSlice
 import io.valroot.ui.model.ModelTheme
 import io.valroot.ui.model.ModelTransactionCard
 import io.valroot.ui.model.ModelTransactionDialog
@@ -60,7 +63,6 @@ import io.valroot.ui.model.ModelTransactionDialogState
 import io.valroot.ui.model.ModelTransactionType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.sin
 
 private val White = Color(0xFFF5F5F5)
 private val Muted = Color(0xFF969696)
@@ -286,54 +288,43 @@ private fun MainContent(wide: Boolean) {
         when (action) {
             is ModelMainAction.OpenCoin -> coins.find { it.ticker == action.identity.ticker }?.let(open)
             is ModelMainAction.ToggleFavorite -> Unit
+            ModelMainAction.LoadMarkets -> Unit
         }
     }
 }
 
 @Composable
 private fun InsightsContent(wide: Boolean) {
-    val groups =
-        listOf(-.22f, -.13f, .48f, -.07f).mapIndexed { index, value ->
-            ModelPerformanceGroup(
-                "Q${index + 1} '26",
-                listOf(
-                    value * .25f,
-                    value,
-                    value,
-                ),
-            )
-        }
+    val bitcoin = ModelSlice("BTC", "Bitcoin", 1f, "$77.52", Gold)
+    val history =
+        ChartData(
+            values = fixtureChart.map { 70.0 + it * 8.0 },
+            times = fixtureChart.indices.map { 1_788_220_800_000L + it * 86_400_000L },
+            formatValue = { "$%.2f".format(it) },
+            formatTime = { "Day ${(it - 1_788_220_800_000L) / 86_400_000L + 1}" },
+        )
     ModelInsights(
         ModelInsightsState(
             balance = "77.52 $",
-            smoothChart = true,
-            history =
-                List(65) { i ->
-                    if (i <
-                        48
-                    ) {
-                        .03f
-                    } else {
-                        .8f + sin(i * 2.4f) * .025f
-                    }
-                },
-            historyTopLabel = "$86.00",
-            historyBottomLabel = "$0.00",
-            performance = groups,
-            performanceLegend = "● Main Portfolio    ● BTC    ● Crypto market",
-            decisionsAvailable = true,
+            history = history,
+            performance =
+                ModelReturnState(
+                    periodReturn = "+10.74%",
+                    tone = ModelChangeTone.POSITIVE,
+                    rows = listOf(ModelMetric("Value at start", "$70.00"), ModelMetric("Value at end", "$77.52")),
+                ),
             portfolio = "Main Portfolio",
-            diversity = ModelDonutState("BTC", "100%", 1f, "● Currency"),
-            gains = listOf(ModelGainRow("₿ BTC", "0.0009934", "$0.00", "+$7.52")),
-            exchange = "Self-custody",
-            location = ModelDonutState("Wallet", "100%", 1f),
-            tradeCount = "12",
-            assetCount = "3",
-            fees = "$0.84",
-            assetWorth = fixtureChart,
-            assetWorthTopLabel = "$77.53",
-            assetWorthBottomLabel = "$76.70",
-            assetWorthLegend = "● BTC",
+            diversity = listOf(bitcoin),
+            gains = listOf(ModelGainRow("BTC", "₿ BTC", "0.0009934", "$0.00", "+$7.52", ModelChangeTone.POSITIVE)),
+            location = listOf(ModelSlice("wallet", "My Wallet", 1f, "$77.52", Purple)),
+            accountUse = listOf(ModelMetric("My Wallet", "3 transactions")),
+            trades = "12",
+            tradedAssets = "3",
+            fees = listOf(ModelFeeRow("0.000010 BTC", "$0.84")),
+            feesTotal = "$0.84",
+            worthAssets = listOf(bitcoin),
+            worthSelected = "BTC",
+            worth = history,
         ),
         wide,
     ) {}
@@ -387,6 +378,7 @@ private fun ColumnScope.CoinDetail(
     var range by rememberSaveable { mutableStateOf("1D") }
     var enabled by rememberSaveable { mutableStateOf(true) }
     var editingAlert by rememberSaveable { mutableStateOf(false) }
+    var condition by rememberSaveable { mutableStateOf(AlertCondition.MOVE) }
     var threshold by rememberSaveable { mutableStateOf("5") }
     var savedThreshold by rememberSaveable { mutableStateOf("5") }
     val transactions =
@@ -471,7 +463,9 @@ private fun ColumnScope.CoinDetail(
     )
     if (editingAlert && tab == ModelCoinTab.ALERTS) {
         ModelAlertEditor(
-            state = ModelAlertEditorState(threshold),
+            state = ModelAlertEditorState(null, "USD", coin.price, condition, threshold),
+            onCondition = { condition = it },
+            onDelete = { editingAlert = false },
             onThreshold = { threshold = it },
             onSave = {
                 savedThreshold = threshold

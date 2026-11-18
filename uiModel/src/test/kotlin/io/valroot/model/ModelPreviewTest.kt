@@ -66,7 +66,6 @@ class ModelPreviewTest {
                     if (page == ModelPage.INSIGHTS) {
                         for (heading in listOf(
                             "Portfolio Performance",
-                            "Decisions",
                             "Portfolio Diversity",
                             "Gains Reporting",
                             "Asset Location",
@@ -106,9 +105,9 @@ class ModelPreviewTest {
                             }
                             if (tab == "Alerts") {
                                 onNodeWithText("＋  Add New Alert").performScrollTo().performClick()
-                                onNodeWithText("New price alert").performScrollTo()
+                                onNodeWithText("New price alert").assertIsDisplayed()
                                 capture("coin-alert-editor")
-                                onNodeWithText("Done").performScrollTo().performClick()
+                                onNodeWithTag("alert-save").performClick()
                             }
                         }
                         onNodeWithTag("model-back").performClick()
