@@ -38,7 +38,7 @@ internal class AndroidSync(
     fun reconcileRefreshPreferences(application: PortfolioApplication) {
         val preference = readRefreshPreferences(application)
         application.settings.setRefreshPreferences(preference.automaticRefresh, preference.wifiOnly)
-        val plan = refreshSchedulePlan(preference, application.sources.consent(), application.prices.automaticConsent())
+        val plan = refreshSchedulePlan(preference, application.sources.anyHistorySource(), application.prices.automaticConsent())
         val now = System.currentTimeMillis()
         scheduleWalletRefresh(
             plan.walletHistory,

@@ -35,7 +35,7 @@ class HostRefresh(
     val evmOn: Boolean = app.evm.consent() && app.evm.targets().isNotEmpty()
     val exchanges: List<ExchangeKind> = ExchangeKind.entries.filter { app.exchanges.targets(it).isNotEmpty() }
 
-    /** Whether any source may refresh; with none, nothing is fetched. */
+    /** Whether any source may refresh; with none, nothing is fetched. Matches [SourceService.anyHistorySource] with Bitcoin. */
     val anySource: Boolean get() = bitcoinOn || evmOn || exchanges.isNotEmpty()
 
     /**

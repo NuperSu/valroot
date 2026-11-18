@@ -36,10 +36,10 @@ data class RefreshSchedulePlan(
 
 fun refreshSchedulePlan(
     preferences: RefreshPreferences,
-    historyConsent: Boolean,
+    historySources: Boolean,
     priceConsent: Boolean,
 ) = RefreshSchedulePlan(
-    preferences.automaticRefresh && historyConsent,
+    preferences.automaticRefresh && historySources,
     preferences.automaticRefresh && priceConsent,
     preferences.wifiOnly,
 )

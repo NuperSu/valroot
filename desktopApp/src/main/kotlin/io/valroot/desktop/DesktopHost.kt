@@ -202,7 +202,7 @@ internal class DesktopHost(
     private fun reconcileRefreshPreferences() {
         val preference = refreshPreferences()
         app.value.settings.setRefreshPreferences(preference.automaticRefresh, preference.wifiOnly)
-        val plan = refreshSchedulePlan(preference, app.value.sources.consent(), app.value.prices.automaticConsent())
+        val plan = refreshSchedulePlan(preference, app.value.sources.anyHistorySource(), app.value.prices.automaticConsent())
         scheduleWalletRefresh(plan.walletHistory)
         notifications.schedulePrices(plan.prices)
     }

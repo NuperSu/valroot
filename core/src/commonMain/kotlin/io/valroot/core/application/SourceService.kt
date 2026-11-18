@@ -179,7 +179,18 @@ class SourceService internal constructor(
         db.execute("DELETE FROM application_settings WHERE key IN ('source_last_success','bitcoin_accepted_scan')")
     }
 
+    /** Consent to the Bitcoin provider; other sources have their own consent or need only a tracked account. */
     fun consent(): Boolean = setting("source_consent") == "true"
+
+    /**
+     * Whether any history source can refresh now: Bitcoin with its consent, EVM addresses with theirs, or a tracked
+     * exchange account. Automatic history refresh is scheduled when this holds, not only for Bitcoin.
+     */
+    fun anyHistorySource(): Boolean =
+        consent() ||
+            (app.evm.consent() && app.evm.targets().isNotEmpty()) ||
+            io.valroot.core.exchange.ExchangeKind.entries
+                .any { app.exchanges.targets(it).isNotEmpty() }
 
     fun setConsent(accepted: Boolean) = putSetting("source_consent", accepted.toString())
 

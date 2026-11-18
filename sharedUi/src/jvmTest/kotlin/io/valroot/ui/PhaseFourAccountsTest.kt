@@ -214,7 +214,7 @@ class PhaseFourAccountsTest {
                 val preferences = RefreshPreferences(copy.settings.automaticRefresh() == true, copy.settings.wifiOnlyRefresh())
                 assertEquals(
                     RefreshSchedulePlan(true, true, true),
-                    refreshSchedulePlan(preferences, copy.sources.consent(), copy.prices.automaticConsent()),
+                    refreshSchedulePlan(preferences, copy.sources.anyHistorySource(), copy.prices.automaticConsent()),
                 )
                 assertEquals(RefreshSchedulePlan(false, true, true), refreshSchedulePlan(preferences, false, true))
                 assertEquals(
