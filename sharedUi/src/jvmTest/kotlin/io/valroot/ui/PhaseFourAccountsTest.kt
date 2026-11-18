@@ -25,8 +25,13 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
 import io.valroot.core.application.PortfolioApplication
+import io.valroot.core.bitcoin.BITCOIN_MAINNET
+import io.valroot.core.model.AccountId
 import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.onboarding.OnboardingAction
+import io.valroot.core.ownership.TargetIdentity
+import io.valroot.core.ownership.TargetRole
+import io.valroot.core.ownership.TrackingTarget
 import io.valroot.core.storage.BundledSqliteDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
@@ -101,6 +106,15 @@ class PhaseFourAccountsTest {
                 app.demo.seed()
                 app.settings.updateOnboarding(OnboardingAction.Skip)
                 app.sources.setConsent(true)
+                app.accounts.saveTarget(
+                    TrackingTarget(
+                        TrackingTargetId("fixture-address"),
+                        AccountId("demo-wallet"),
+                        TargetIdentity(BITCOIN_MAINNET, "address", "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"),
+                        TargetRole.LEAF,
+                        "Fixture Bitcoin address",
+                    ),
+                )
                 val host = Host(delegate)
                 val before = app.csv.export()
                 runDesktopComposeUiTest(width = 390, height = 844) {

@@ -192,6 +192,14 @@ interface PlatformActions {
 
     fun refresh(onResult: (String) -> Unit)
 
+    /** Refreshes only this connection's public sources. */
+    fun refreshAccount(
+        account: io.valroot.core.model.AccountId,
+        onResult: (String) -> Unit,
+    ) {
+        onResult("Connection sync is unavailable on this host.")
+    }
+
     fun recoverBitcoinHistory(onResult: (String) -> Unit)
 
     /**

@@ -18,6 +18,24 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class EvmConnectorTest : EvmConnectorTestFixture() {
+    @Test fun unrelatedConnectionDoesNotRequestEvmProvider() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val connector = EvmConnector({ _, _ -> error("Unselected account must not request Alchemy") })
+            assertTrue(connector.refresh(app, SourceRefreshOptions(accounts = emptySet())).jobs.isEmpty())
+            assertTrue(
+                io.valroot.core.application
+                    .HostRefresh(
+                        app,
+                        account =
+                            io.valroot.core.model
+                                .AccountId("other"),
+                    ).evmOn
+                    .not(),
+            )
+        }
+    }
+
     @Test fun historyFeesGapsAndSkipping() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)

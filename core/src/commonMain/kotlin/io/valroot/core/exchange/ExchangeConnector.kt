@@ -73,7 +73,7 @@ abstract class ExchangeConnector(
     ): SourceRefreshOutcome {
         val jobs = mutableListOf<JobState>()
         val notes = mutableListOf<String>()
-        app.exchanges.targets(kind).forEach { (account, uid) ->
+        app.exchanges.targets(kind).filter { options.accounts == null || it.first in options.accounts }.forEach { (account, uid) ->
             if (!app.exchanges.hasKey(kind, account)) {
                 // An account known only from its export files never had a key; any other account needs it again.
                 val fileOnly =

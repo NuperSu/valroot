@@ -330,7 +330,6 @@ internal fun ModelLayout(
                                 )
                             },
                             compact = true,
-                            onSync = { host.refresh { presenter.notify(it) } },
                         )
                     }
                 }

@@ -69,6 +69,9 @@ internal class AndroidSync(
 
     fun refresh(onResult: (String) -> Unit) = refresh(false, onResult)
 
+    fun refreshAccount(account: io.valroot.core.model.AccountId, onResult: (String) -> Unit) =
+        refresh(false, onResult, account = account)
+
     fun recoverBitcoinHistory(onResult: (String) -> Unit) = refresh(true, onResult)
 
     fun refreshWithoutBitcoin(onResult: (String) -> Unit) = refresh(false, onResult, withoutBitcoin = true)
@@ -77,6 +80,7 @@ internal class AndroidSync(
         recoverHistory: Boolean,
         onResult: (String) -> Unit,
         withoutBitcoin: Boolean = false,
+        account: io.valroot.core.model.AccountId? = null,
     ) {
         state.main.post {
             try {
@@ -88,7 +92,8 @@ internal class AndroidSync(
                 state.activity.startForegroundService(
                     Intent(state.activity, BitcoinRefreshService::class.java)
                         .putExtra("recover_history", recoverHistory)
-                        .putExtra("without_bitcoin", withoutBitcoin),
+                        .putExtra("without_bitcoin", withoutBitcoin)
+                        .putExtra("account_id", account?.value),
                 )
                 onResult("Sync continues when you switch apps. Progress appears in the notification.")
             } catch (_: Exception) {

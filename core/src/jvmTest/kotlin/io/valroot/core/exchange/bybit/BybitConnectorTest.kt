@@ -28,6 +28,20 @@ import kotlin.test.assertTrue
 
 /** A Bybit account replayed by a fake API: every response is filtered by the request's window and paged. */
 class BybitConnectorTest {
+    @Test fun unrelatedConnectionDoesNotRequestExchangeProvider() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val connector = BybitConnector { _, _ -> error("Unselected account must not request Bybit") }
+            assertTrue(connector.refresh(app, SourceRefreshOptions(accounts = emptySet())).jobs.isEmpty())
+            assertTrue(
+                io.valroot.core.application
+                    .HostRefresh(app, account = AccountId("other"))
+                    .exchanges
+                    .isEmpty(),
+            )
+        }
+    }
+
     private var now = 1_800_000_000_000L
     private val hour = 3_600_000L
     private val start = now - 3 * Bybit.DAY_MILLIS

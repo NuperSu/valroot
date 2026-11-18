@@ -29,11 +29,21 @@ data class RefreshSummary(
 class HostRefresh(
     private val app: PortfolioApplication,
     private val withoutBitcoin: Boolean = false,
+    private val account: io.valroot.core.model.AccountId? = null,
     private val beforeRequest: (source: String) -> Unit = {},
 ) {
-    val bitcoinOn: Boolean = app.sources.consent() && !withoutBitcoin
-    val evmOn: Boolean = app.evm.consent() && app.evm.targets().isNotEmpty()
-    val exchanges: List<ExchangeKind> = ExchangeKind.entries.filter { app.exchanges.targets(it).isNotEmpty() }
+    val bitcoinOn: Boolean =
+        app.sources.consent() &&
+            !withoutBitcoin &&
+            (account == null || app.accounts.targets(account).any { it.enabled && it.identity.networkId == BITCOIN_MAINNET })
+    val evmOn: Boolean = app.evm.consent() && app.evm.targets().any { account == null || it.first == account }
+    val exchanges: List<ExchangeKind> =
+        ExchangeKind.entries.filter {
+            app.exchanges.targets(it).any { target ->
+                account == null ||
+                    target.first == account
+            }
+        }
 
     /** Whether any source may refresh; with none, nothing is fetched. Matches [SourceService.anyHistorySource] with Bitcoin. */
     val anySource: Boolean get() = bitcoinOn || evmOn || exchanges.isNotEmpty()
@@ -82,6 +92,7 @@ class HostRefresh(
             SourceRegistry(connectors),
             SourceRefreshOptions(
                 recoverHistory = recoverHistory,
+                accounts = account?.let { setOf(it) },
                 onProgress = { detail ->
                     onProgress(if (ExchangeKind.entries.any { detail.startsWith(it.label) }) detail else "EVM · $detail")
                 },

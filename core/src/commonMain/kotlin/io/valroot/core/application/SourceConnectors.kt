@@ -31,6 +31,8 @@ data class SourceRefreshOptions(
     val onProgress: (String) -> Unit = {},
     /** Tracked networks whose provider the user has not allowed; they are skipped without a "no connector" note. */
     val withoutConsent: Set<NetworkId> = emptySet(),
+    /** Limit provider requests to these accounts; null refreshes every eligible account. */
+    val accounts: Set<io.valroot.core.model.AccountId>? = null,
 )
 
 data class SourceRefreshOutcome(
@@ -69,8 +71,8 @@ class SourceRegistry(
 }
 
 /**
- * Refreshes Bitcoin through [transport]: wallets that still need address discovery first, then the history of every
- * tracked address. [providerEndpoint] binds the transport to the endpoint it was created for.
+ * Refreshes Bitcoin through [transport]: wallets that still need address discovery first, then the history of the
+ * selected accounts' tracked addresses. [providerEndpoint] binds the transport to the endpoint it was created for.
  */
 class BitcoinConnector(
     private val transport: EsploraTransport,
@@ -83,13 +85,14 @@ class BitcoinConnector(
         app: PortfolioApplication,
         options: SourceRefreshOptions,
     ): SourceRefreshOutcome {
-        val notes = app.bitcoinWallets.discoverPending(transport, providerEndpoint)
+        val notes = app.bitcoinWallets.discoverPending(transport, providerEndpoint, accounts = options.accounts)
         val jobs =
             app.bitcoin.refresh(
                 transport,
                 recoverHistory = options.recoverHistory,
                 providerEndpoint = providerEndpoint,
                 onProgress = onScanProgress,
+                accounts = options.accounts,
             )
         return SourceRefreshOutcome(manifest.id, jobs, notes)
     }

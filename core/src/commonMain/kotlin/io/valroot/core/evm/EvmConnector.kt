@@ -56,7 +56,7 @@ class EvmConnector(
         app: PortfolioApplication,
         options: SourceRefreshOptions,
     ): SourceRefreshOutcome {
-        val targets = app.evm.targets()
+        val targets = app.evm.targets().filter { options.accounts == null || it.first in options.accounts }
         if (targets.isEmpty()) return SourceRefreshOutcome(manifest.id, emptyList())
         require(app.evm.consent()) { "EVM consent required" }
         val jobs = mutableListOf<JobState>()

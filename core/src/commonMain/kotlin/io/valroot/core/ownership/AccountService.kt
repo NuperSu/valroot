@@ -12,6 +12,9 @@ import io.valroot.core.storage.OwnershipSnapshot
 class AccountService internal constructor(
     ctx: AppContext,
 ) : AppService(ctx) {
+    /** Public tracking sources belonging to one saved account. */
+    fun targets(account: AccountId): List<TrackingTarget> = ownership.load().targets.filter { it.accountId == account }
+
     fun saveOwner(value: Owner) = updateOwnership { it.copy(owners = it.owners.filterNot { old -> old.id == value.id } + value) }
 
     fun saveAccount(value: Account) = updateOwnership { it.copy(accounts = it.accounts.filterNot { old -> old.id == value.id } + value) }

@@ -365,12 +365,16 @@ class BitcoinWalletService internal constructor(
         transport: EsploraTransport,
         providerEndpoint: String = app.sources.endpoint(),
         gapLimit: Int = 20,
+        accounts: Set<io.valroot.core.model.AccountId>? = null,
     ): List<String> =
-        needingDiscovery(gapLimit).mapNotNull { walletId ->
-            try {
-                discover(walletId, transport, gapLimit, providerEndpoint = providerEndpoint).notice
-            } catch (failure: IllegalArgumentException) {
-                failure.message ?: "A wallet could not be discovered; retry from its connection."
+        needingDiscovery(gapLimit)
+            .filter { id ->
+                accounts == null || ownership.load().targets.any { it.id == id && it.accountId in accounts }
+            }.mapNotNull { walletId ->
+                try {
+                    discover(walletId, transport, gapLimit, providerEndpoint = providerEndpoint).notice
+                } catch (failure: IllegalArgumentException) {
+                    failure.message ?: "A wallet could not be discovered; retry from its connection."
+                }
             }
-        }
 }

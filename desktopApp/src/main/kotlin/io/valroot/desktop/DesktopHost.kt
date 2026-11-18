@@ -176,6 +176,11 @@ internal class DesktopHost(
 
     override fun refresh(onResult: (String) -> Unit) = sync.refresh(onResult)
 
+    override fun refreshAccount(
+        account: io.valroot.core.model.AccountId,
+        onResult: (String) -> Unit,
+    ) = sync.refreshAccount(account, onResult)
+
     override fun recoverBitcoinHistory(onResult: (String) -> Unit) = sync.recoverBitcoinHistory(onResult)
 
     override fun refreshWithoutBitcoin(onResult: (String) -> Unit) = sync.refreshWithoutBitcoin(onResult)

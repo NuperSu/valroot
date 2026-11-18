@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import io.valroot.core.application.AccountOverview
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.application.PortfolioSnapshot
+import io.valroot.core.bitcoin.BITCOIN_MAINNET
 import io.valroot.core.evm.EVM_FAMILY
 import io.valroot.core.exchange.ExchangeKind
 import io.valroot.core.model.PortfolioId
@@ -64,7 +65,6 @@ internal fun AccountsWorkspace(
     onChanged: () -> Unit,
     onTool: (AccountTool) -> Unit,
     compact: Boolean = false,
-    onSync: () -> Unit = {},
 ) {
     var importing by rememberSaveable { mutableStateOf(false) }
     if (importing) ExchangeImportDialog(app, host, data, { importing = false }) { onChanged() }
@@ -93,7 +93,12 @@ internal fun AccountsWorkspace(
         }
     }
     if (compact) {
-        ConnectionList(accounts, sync.phase == SyncPhase.SYNCING, { selected = it }, onSync)
+        ConnectionList(accounts, sync.phase == SyncPhase.SYNCING, { selected = it }) { id ->
+            host.refreshAccount(
+                io.valroot.core.model
+                    .AccountId(id),
+            ) { onChanged() }
+        }
     } else {
         Column {
             if (shouldShowSyncBanner(sync, data.sourceStatus)) {
@@ -168,7 +173,7 @@ internal fun AccountsWorkspace(
         AlertDialog(onDismissRequest = { if (!busy) selected = null }, title = { Text(detail.account.label) }, text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Portfolios: " + detail.portfolios.joinToString().ifEmpty { "All portfolios only" })
-                Text("Source provider: ${data.sourceEndpoint}")
+                accountProviderLabels(detail, data.sourceEndpoint).forEach { Text("Source provider: $it") }
                 detail.accepted?.let { accepted ->
                     val endpoint = detail.acceptedProviderEndpoint ?: "Saved provider identity ${accepted.providerSourceId}"
                     Text("Last accepted: ${accepted.observedAt}\nAccepted provider: $endpoint")
@@ -212,11 +217,22 @@ internal fun AccountsWorkspace(
                     )
                 }
                 if (!archived) {
-                    TextButton(
-                        enabled = sync.phase != SyncPhase.SYNCING,
-                        onClick = onHistory,
-                        modifier = Modifier.testTag("account-refresh-history"),
-                    ) { Text("Refresh wallet history") }
+                    if (detail.sources.any { it.enabled }) {
+                        TextButton(
+                            enabled = sync.phase != SyncPhase.SYNCING,
+                            onClick = {
+                                host.refreshAccount(detail.account.id) {
+                                    request = it
+                                    onChanged()
+                                }
+                            },
+                        ) { Text("Refresh this connection") }
+                    }
+                    if (detail.sources.any { it.identity.networkId == BITCOIN_MAINNET }) {
+                        TextButton(onClick = onHistory, modifier = Modifier.testTag("account-refresh-history")) {
+                            Text("Bitcoin history tools")
+                        }
+                    }
                     detail.sources.filter { it.role == TargetRole.WALLET }.forEach { wallet ->
                         TextButton(enabled = !busy && sync.phase != SyncPhase.SYNCING, onClick = {
                             request = "Discovery requested; progress is shown in Accounts."
@@ -306,7 +322,7 @@ private fun ConnectionList(
     accounts: List<AccountOverview>?,
     syncing: Boolean,
     onOpen: (String) -> Unit,
-    onSync: () -> Unit,
+    onSync: (String) -> Unit,
 ) {
     val visible = accounts.orEmpty().sortedBy { "valroot:archived" in it.account.tags }
     if (accounts == null) {
@@ -377,7 +393,7 @@ private fun ConnectionList(
                 }
                 if (summary.sources.isNotEmpty() && !archived) {
                     TextButton(
-                        onClick = onSync,
+                        onClick = { onSync(summary.account.id.value) },
                         enabled = !syncing,
                         modifier =
                             Modifier
@@ -390,3 +406,17 @@ private fun ConnectionList(
         }
     }
 }
+
+/** Provider identities for the sources attached to a connection; manual accounts have none. */
+internal fun accountProviderLabels(
+    detail: AccountOverview,
+    bitcoinEndpoint: String,
+): List<String> =
+    detail.sources
+        .map { target ->
+            when (target.identity.networkId) {
+                BITCOIN_MAINNET -> bitcoinEndpoint
+                EVM_FAMILY -> "Alchemy"
+                else -> ExchangeKind.ofNetwork(target.identity.networkId)?.label ?: target.identity.networkId.value
+            }
+        }.distinct()

@@ -57,7 +57,8 @@ class BitcoinService internal constructor(
     }
 
     /**
-     * Fetches tracked mainnet addresses after consent and applies only a complete, consistent scan.
+     * Fetches tracked mainnet addresses for [accounts] after consent and applies only a complete, consistent scan.
+     * Null [accounts] includes every eligible account.
      * Explicit [recoverHistory] starts fresh history and establishes a new continuity baseline on successful apply.
      * [providerEndpoint] binds a pre-created transport to its captured endpoint throughout the scan.
      */
@@ -67,6 +68,7 @@ class BitcoinService internal constructor(
         verifyBlockPositions: Boolean = false,
         recoverHistory: Boolean = false,
         providerEndpoint: String = app.sources.endpoint(),
+        accounts: Set<io.valroot.core.model.AccountId>? = null,
         onProgress: (BitcoinScanProgress) -> Unit = {},
     ): List<JobState> {
         require(app.sources.consent()) { "Source consent required" }
@@ -83,7 +85,7 @@ class BitcoinService internal constructor(
                     requireEndpoint()
                     transport.get(path).also { requireEndpoint() }
                 }
-            refreshScan(boundTransport, verifyBlockPositions, recoverHistory, providerEndpoint, onProgress)
+            refreshScan(boundTransport, verifyBlockPositions, recoverHistory, providerEndpoint, onProgress, accounts)
         } catch (failure: Exception) {
             if (failure is BitcoinProviderException &&
                 (failure.reason == BitcoinProviderFailure.REORGANIZED || failure.reason == BitcoinProviderFailure.HISTORY_CHANGED)
@@ -108,6 +110,7 @@ class BitcoinService internal constructor(
         recoverHistory: Boolean,
         providerEndpoint: String,
         onProgress: (BitcoinScanProgress) -> Unit,
+        accounts: Set<io.valroot.core.model.AccountId>?,
     ): List<JobState> {
         require(app.sources.consent()) { "Source consent required" }
         val bitcoinTargets =
@@ -116,7 +119,7 @@ class BitcoinService internal constructor(
                     it.identity.networkId == BITCOIN_MAINNET &&
                     it.identity.kind == "address"
             }
-        val targets = bitcoinTargets.filter { it.enabled }
+        val targets = bitcoinTargets.filter { it.enabled && (accounts == null || it.accountId in accounts) }
         val ownedClaims = bitcoinTargets.groupBy { bitcoinMainnetAddress(it.identity.canonicalKey) }
         require(
             ownedClaims.values.all { group ->
@@ -124,14 +127,28 @@ class BitcoinService internal constructor(
             },
         ) { "Address assigned to multiple accounts" }
         val ownedAddresses = ownedClaims.mapValues { it.value.first().accountId }
-        val reconciledAccounts = bitcoinTargets.groupBy { it.accountId }.filterValues { group -> group.all { it.enabled } }.keys
+        val reconciledAccounts =
+            bitcoinTargets
+                .groupBy { it.accountId }
+                .filter { (id, group) -> (accounts == null || id in accounts) && group.all { it.enabled } }
+                .keys
         val claims = targets.groupBy { bitcoinMainnetAddress(it.identity.canonicalKey) }
         require(claims.values.all { group -> group.map { it.accountId }.distinct().size == 1 }) { "Address assigned to multiple accounts" }
         val addresses = claims.mapValues { it.value.first().accountId }
         if (addresses.isEmpty()) {
-            bitcoinStage.clear()
+            if (accounts == null) bitcoinStage.clear()
             return emptyList()
         }
+        val providerSource = SourceId("esplora:" + sha256(providerEndpoint))
+        val fingerprint =
+            sha256(
+                "${providerSource.value}|" + addresses.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value.value}" },
+            )
+        if (accounts != null && bitcoinStage.session()?.let { it.fingerprint != fingerprint } == true) {
+            throw BitcoinProviderException(BitcoinProviderFailure.SCAN_SCOPE_PENDING)
+        }
+        val acceptedScanKey = if (accounts == null) "bitcoin_accepted_scan" else "bitcoin_accepted_scan:scoped:$fingerprint"
+        putSetting("provider_endpoint:${providerSource.value}", providerEndpoint)
         if (market.asset(BITCOIN_ASSET) == null) {
             app.assets.register(
                 AssetDefinition(
@@ -166,12 +183,6 @@ class BitcoinService internal constructor(
             require(chain >= 0 && mempool >= 0)
             return chain to mempool
         }
-        val providerSource = SourceId("esplora:" + sha256(providerEndpoint))
-        putSetting("provider_endpoint:${providerSource.value}", providerEndpoint)
-        val fingerprint =
-            sha256(
-                "${providerSource.value}|" + addresses.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value.value}" },
-            )
         // A new address set (an address added or removed) has no accepted scan of its own yet; the chain accepted for
         // the earlier set still bounds it, so a lagging or reorganised provider cannot reverse history it confirmed.
         val acceptedAnchors = bitcoinGraph.anchors(addresses).ifEmpty { bitcoinGraph.anchors() }
@@ -207,11 +218,13 @@ class BitcoinService internal constructor(
             !recoverHistory &&
             checkpointCanonical &&
             previousCheckpoint != null &&
-            acceptedScanUnchanged(fingerprint, addresses.keys, verifyBlockPositions) { address -> summary(address) }
+            acceptedScanUnchanged(acceptedScanKey, fingerprint, addresses.keys, verifyBlockPositions, ::summary)
         ) {
             db.transaction {
-                putSetting("source_last_refresh_skipped", "true")
-                putSetting("source_last_success", now().toString())
+                if (accounts == null) {
+                    putSetting("source_last_refresh_skipped", "true")
+                    putSetting("source_last_success", now().toString())
+                }
                 db.execute("DELETE FROM application_settings WHERE key='source_error'")
             }
             invalidate()
@@ -418,13 +431,15 @@ class BitcoinService internal constructor(
                     graphState = stagedGraph::state,
                     pendingCappedAccounts = cappedAddresses.mapNotNull { ownedAddresses[it] }.toSet(),
                 )
-                putSetting("utxo_comparison_available", (mismatchCount != null).toString())
-                putSetting("pending_capped", pendingCapped.toString())
-                mismatchCount?.let { putSetting("utxo_mismatch_count", it.toString()) }
+                if (accounts == null) {
+                    putSetting("utxo_comparison_available", (mismatchCount != null).toString())
+                    putSetting("pending_capped", pendingCapped.toString())
+                    mismatchCount?.let { putSetting("utxo_mismatch_count", it.toString()) }
+                    putSetting("source_last_refresh_skipped", "false")
+                    putSetting("source_last_success", now().toString())
+                }
                 bitcoinStage.clearInTransaction()
-                putSetting("bitcoin_accepted_scan", acceptedScanJson(fingerprint, acceptedCounts, verifyBlockPositions))
-                putSetting("source_last_refresh_skipped", "false")
-                putSetting("source_last_success", now().toString())
+                putSetting(acceptedScanKey, acceptedScanJson(fingerprint, acceptedCounts, verifyBlockPositions))
                 db.execute("DELETE FROM application_settings WHERE key='source_error'")
             }
             invalidate()
@@ -528,8 +543,8 @@ class BitcoinService internal constructor(
         val blockPositionsVerified: Boolean,
     )
 
-    internal fun acceptedScan(): AcceptedScan? {
-        val text = setting("bitcoin_accepted_scan") ?: return null
+    internal fun acceptedScan(key: String = "bitcoin_accepted_scan"): AcceptedScan? {
+        val text = setting(key) ?: return null
         return runCatching {
             val root = Json.parseToJsonElement(text).jsonObject
             AcceptedScan(
@@ -568,12 +583,13 @@ class BitcoinService internal constructor(
      * A refresh that asks for block-position verification is never skipped by a scan that did not verify them.
      */
     private fun acceptedScanUnchanged(
+        key: String,
         fingerprint: String,
         addresses: Set<String>,
         verifyBlockPositions: Boolean,
         liveCounts: (String) -> Pair<Long, Long>,
     ): Boolean {
-        val accepted = acceptedScan() ?: return false
+        val accepted = acceptedScan(key) ?: return false
         if (accepted.fingerprint != fingerprint || accepted.counts.keys != addresses) return false
         if (verifyBlockPositions && !accepted.blockPositionsVerified) return false
         if (accepted.counts.values.any { it.second != 0L }) return false

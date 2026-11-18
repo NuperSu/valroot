@@ -18,6 +18,7 @@ import io.valroot.core.sync.JobState
 import io.valroot.testing.utxoResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class BitcoinMultiAddressAccountTest {
@@ -90,6 +91,60 @@ class BitcoinMultiAddressAccountTest {
                     else -> error("Unexpected request $path")
                 }
             }
+    }
+
+    @Test
+    fun connectionRefreshRequestsOnlySelectedAccountAndRetainsOtherHoldings() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = application(db)
+            val other = AccountId("other")
+            app.accounts.saveAccount(Account(other, OwnerId("owner"), "Other", AccountKind.WALLET))
+            val second = app.accounts.targets(account).single { it.identity.canonicalKey == addresses[1] }
+            app.accounts.saveTarget(second.copy(accountId = other))
+            val provider = Provider(1)
+            assertEquals(listOf(JobState.COMPLETED, JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+            val globallyAccepted = app.bitcoin.acceptedScan()
+            val holdings = app.snapshot().balances.quantities
+            provider.historyCalls.clear()
+            val plan = HostRefresh(app, account = account)
+            val connectors =
+                plan.connectors(
+                    bitcoin = { BitcoinConnector(provider.transport, app.sources.endpoint()) },
+                    refreshCatalog = { error("No exchange catalog request expected") },
+                )
+            assertEquals(listOf(JobState.COMPLETED), plan.run(connectors, false) {}.single().jobs)
+            assertTrue(provider.historyCalls.all { addresses[0] in it })
+            assertTrue(provider.historyCalls.isNotEmpty())
+            assertEquals(globallyAccepted, app.bitcoin.acceptedScan())
+            assertEquals(holdings, app.snapshot().balances.quantities)
+            assertTrue(
+                app.analytics
+                    .accountOverview(null)
+                    .single { it.account.id == other }
+                    .accepted != null,
+            )
+        }
+    }
+
+    @Test fun connectionRefreshPreservesAnUnfinishedGlobalScan() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = application(db)
+            val other = AccountId("other")
+            app.accounts.saveAccount(Account(other, OwnerId("owner"), "Other", AccountKind.WALLET))
+            val second = app.accounts.targets(account).single { it.identity.canonicalKey == addresses[1] }
+            app.accounts.saveTarget(second.copy(accountId = other))
+            val provider = Provider(26)
+            provider.failAddress = addresses[1]
+            assertEquals(listOf(JobState.COMPLETED, JobState.READY), app.bitcoin.refresh(provider.transport))
+            val failure =
+                assertFailsWith<BitcoinProviderException> {
+                    app.bitcoin.refresh(EsploraTransport { error("Unexpected request") }, accounts = setOf(account))
+                }
+            assertEquals(BitcoinProviderFailure.SCAN_SCOPE_PENDING, failure.reason)
+            provider.failAddress = null
+            assertEquals(listOf(JobState.COMPLETED, JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+            assertEquals(1, provider.historyCalls.count { it == "/address/${addresses[0]}/txs/chain" })
+        }
     }
 
     private fun assertComplete(

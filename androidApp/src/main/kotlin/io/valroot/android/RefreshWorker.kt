@@ -99,6 +99,7 @@ class RefreshWorker(
             ensureActive: () -> Unit = {},
             onProgress: (String) -> Unit = {},
             withoutBitcoin: Boolean = false,
+            account: io.valroot.core.model.AccountId? = null,
             shouldStart: (PortfolioApplication) -> Boolean = { true },
         ): SyncStatus {
             // The stage and exception class name the failing step without revealing addresses or provider payloads.
@@ -110,7 +111,7 @@ class RefreshWorker(
                     val app = PortfolioApplication(db, System::currentTimeMillis)
                     if (!shouldStart(app)) return SyncStatus()
                     // Each source needs its own consent. Wallet discovery and order verification are Bitcoin-only.
-                    val plan = HostRefresh(app, withoutBitcoin) { ensureActive() }
+                    val plan = HostRefresh(app, withoutBitcoin, account) { ensureActive() }
                     if (!plan.bitcoinOn && (!plan.anySource || walletId != null || verifyOrder)) {
                         SyncStatus(SyncPhase.IDLE, HostRefresh.NO_PROVIDER)
                     } else {

@@ -104,7 +104,14 @@ class SourceService internal constructor(
         registry: SourceRegistry,
         options: SourceRefreshOptions = SourceRefreshOptions(),
     ): List<SourceRefreshOutcome> {
-        val missing = trackedNetworks().filter { registry.forNetwork(it) == null && it !in options.withoutConsent }
+        val networks =
+            ownership
+                .load()
+                .targets
+                .filter { it.enabled && (options.accounts == null || it.accountId in options.accounts) }
+                .map { it.identity.networkId }
+                .toSet()
+        val missing = networks.filter { registry.forNetwork(it) == null && it !in options.withoutConsent }
         return registry.connectors.map { it.refresh(app, options) } +
             missing.map { SourceRefreshOutcome("none", emptyList(), listOf("No connector is available for ${it.value}.")) }
     }

@@ -209,6 +209,11 @@ internal class DesktopSync(
 
     fun refresh(onResult: (String) -> Unit) = refresh(false, onResult)
 
+    fun refreshAccount(
+        account: io.valroot.core.model.AccountId,
+        onResult: (String) -> Unit,
+    ) = refresh(false, onResult, account = account)
+
     fun recoverBitcoinHistory(onResult: (String) -> Unit) = refresh(true, onResult)
 
     fun refreshWithoutBitcoin(onResult: (String) -> Unit) = refresh(false, onResult, withoutBitcoin = true)
@@ -217,6 +222,7 @@ internal class DesktopSync(
         recoverHistory: Boolean,
         onResult: (String) -> Unit,
         withoutBitcoin: Boolean = false,
+        account: io.valroot.core.model.AccountId? = null,
     ) {
         runSync(
             SyncStatus(SyncPhase.SYNCING, if (recoverHistory) "Recovering full Bitcoin history…" else "Fetching public history…"),
@@ -224,7 +230,7 @@ internal class DesktopSync(
         ) { application ->
             runCatching {
                 val plan =
-                    HostRefresh(application, withoutBitcoin) { source ->
+                    HostRefresh(application, withoutBitcoin, account) { source ->
                         if (state.closing.get()) throw RefreshCancelled("$source refresh was cancelled. Retry if needed.")
                     }
                 if (!plan.anySource) return@runCatching SyncStatus(SyncPhase.IDLE, HostRefresh.NO_PROVIDER)

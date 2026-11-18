@@ -16,6 +16,7 @@ enum class BitcoinProviderFailure(
     HISTORY_CHANGED("Public history changed during the scan. Saved data is unchanged; retry."),
     REORGANIZED("The Bitcoin chain reorganized during the scan. Saved data is unchanged; retry."),
     LAGGING_CHAIN("The provider is behind the saved Bitcoin checkpoint. Saved data is unchanged; retry with an up-to-date provider."),
+    SCAN_SCOPE_PENDING("A different Bitcoin scan is unfinished. Resume it from its original refresh action first."),
     REORG_RECOVERY_REQUIRED(
         "The saved Bitcoin chain has no verified ancestor within the automatic rewind bound. Saved data is unchanged; a full history recovery is required.",
     ),

@@ -56,9 +56,10 @@ class SyncServiceProbe : BitcoinRefreshService() {
         verifyOrder: Boolean,
         recoverHistory: Boolean,
         withoutBitcoin: Boolean,
+        account: io.valroot.core.model.AccountId?,
         onProgress: (String) -> Unit,
     ): SyncStatus {
-        check(!verifyOrder && !recoverHistory && !withoutBitcoin)
+        check(!verifyOrder && !recoverHistory && !withoutBitcoin && account == null)
         val key = walletId ?: "history"
         scenario.started += key
         val (started, release) =
