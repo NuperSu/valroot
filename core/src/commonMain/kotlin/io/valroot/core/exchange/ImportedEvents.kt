@@ -182,9 +182,10 @@ object ImportedEvents {
         ledger: ExchangeLedgerBuilder,
         rows: List<ExchangeRow>,
     ) {
-        val imported = rows.filter { it.stream == STREAM }.map { it to parse(it.payload) }.filter { it.second.moves }
-        if (imported.isEmpty()) return
+        val all = rows.filter { it.stream == STREAM }.map { it to parse(it.payload) }.filter { it.second.moves }
+        if (all.isEmpty()) return
         val decisions = decisions(rows)
+        val (imported, copies) = withoutCopies(all)
         val (statement, detailed) = imported.partition { it.second.details["statement"] == "1" }
         // One report at a time, so a report's records also settle against those of reports settled before it.
         detailed
@@ -195,6 +196,66 @@ object ImportedEvents {
         val (trades, others) = statement.partition { it.second.kind == RecordKind.TRADE || it.second.kind == RecordKind.CONVERT }
         settleTradeSeconds(ledger, trades)
         settle(ledger, others, decisions, net = true)
+        // A copy is further evidence for whatever its original became.
+        copies.forEach { (copy, original) ->
+            val outcome = ledger.imports[original.key]
+            val activity =
+                when (outcome) {
+                    is ImportOutcome.New -> outcome.activity
+                    is ImportOutcome.Same -> outcome.activity
+                    else -> null
+                }
+            activity?.let { ledger.addSource(it, SourceRecordId(copy.source)) }
+            ledger.imports[copy.key] = activity?.let { ImportOutcome.Same(it) } ?: outcome ?: ImportOutcome.CoinPending
+        }
+    }
+
+    /**
+     * Separates stored copies of one record from the records themselves. A record's key is its content hash and its
+     * place among equal rows of one file (`report:hash:ordinal`), so two equal rows of one file share a hash and stay two
+     * records. The same record saved under another hash is a copy: a file imported again after its key changed, or
+     * statement rows moved to other lines. Records are compared by their economic content; for statement records the
+     * source rows and the operation of the first row are provenance, not content. Of each content, the largest family
+     * of one hash is kept, and every further record is a copy of a kept one.
+     */
+    private fun withoutCopies(
+        records: List<Pair<ExchangeRow, Stored>>,
+    ): Pair<List<Pair<ExchangeRow, Stored>>, List<Pair<ExchangeRow, ExchangeRow>>> {
+        val kept = mutableListOf<Pair<ExchangeRow, Stored>>()
+        val copies = mutableListOf<Pair<ExchangeRow, ExchangeRow>>()
+        records.groupBy { (_, record) -> economicContent(record) }.values.forEach { same ->
+            val families = same.groupBy { (row, _) -> row.key.substringBeforeLast(':') }.values.map { it.sortedBy { (row, _) -> row.key } }
+            val largest = families.maxOf { it.size }
+            val originals = families.sortedBy { it.first().first.key }.first { it.size == largest }
+            kept += originals
+            (same - originals.toSet()).sortedBy { (row, _) -> row.key }.forEachIndexed { index, (row, _) ->
+                copies += row to originals[index % originals.size].first
+            }
+        }
+        val order = records.withIndex().associate { it.value.first.key to it.index }
+        return kept.sortedBy { order.getValue(it.first.key) } to copies
+    }
+
+    private fun economicContent(record: Stored): String {
+        val provenance = if (record.details["statement"] == "1") setOf("rows", "operation") else setOf("rows")
+        return listOf(
+            record.report,
+            record.kind.name,
+            record.status.name,
+            record.atMillis.toString(),
+            record.legs
+                .map { "${it.coin}=${it.amount}/${it.role}" }
+                .sorted()
+                .joinToString(";"),
+            record.wallet.orEmpty(),
+            record.namespace.orEmpty(),
+            record.nativeId.orEmpty(),
+            record.details
+                .filterKeys { it !in provenance }
+                .entries
+                .sortedBy { it.key }
+                .joinToString(";") { "${it.key}=${it.value}" },
+        ).joinToString("|")
     }
 
     /** One movement total per asset, in atomic units; fees count when [net]. */

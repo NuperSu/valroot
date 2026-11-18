@@ -491,7 +491,18 @@ object MexcExports : ExchangeExportAdapter {
                                         },
                                 )
                             },
-                    details = group.first().details + ("rows" to group.joinToString(",") { it.source.row.toString() }),
+                    // The operations of all the rows, not the first one's, so the record does not depend on row order.
+                    details =
+                        group.first().details +
+                            (
+                                "operation" to
+                                    group
+                                        .mapNotNull { it.details["operation"] }
+                                        .distinct()
+                                        .sorted()
+                                        .joinToString("+")
+                            ) +
+                            ("rows" to group.joinToString(",") { it.source.row.toString() }),
                 )
             }
     }

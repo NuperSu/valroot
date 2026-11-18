@@ -246,4 +246,74 @@ class MexcImportTest {
             )
         }
     }
+
+    @Test fun aFeeRowBeforeTheTradeRowsIsTheSameRecord() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { at + 100_000 }
+            app.snapshot()
+            val buy = "$uid,2026-01-01 12:00:00,BTC,Spot Trading,Inflow,0.1"
+            val pay = "$uid,2026-01-01 12:00:00,USDT,Spot Trading,Outflow,1000"
+            val fee = "$uid,2026-01-01 12:00:00,BTC,Spot Trading Fees,Outflow,0.0001"
+            val choices = ImportChoices(offset = ImportOffset(240), accounts = mapOf("mexc:$uid" to AccountChoice.New("MEXC export", uid)))
+            app.exchangeImports.commit(
+                app.exchangeImports.preview(listOf(table(MexcExports.STATEMENT, buy, pay, fee, file = "a.xlsx")), choices),
+            )
+            val again =
+                app.exchangeImports.preview(
+                    listOf(table(MexcExports.STATEMENT, fee, buy, pay, file = "b.xlsx")),
+                    choices.copy(accounts = emptyMap()),
+                )
+            assertEquals(mapOf(ImportStatus.ALREADY_IMPORTED to 1), again.counts)
+        }
+    }
+
+    @Test fun aRecordSavedUnderAnEarlierKeyIsNotImportedTwice() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { at + 100_000 }
+            app.snapshot()
+            val buy = "$uid,2026-01-01 12:00:00,BTC,Spot Trading,Inflow,0.1"
+            val pay = "$uid,2026-01-01 12:00:00,USDT,Spot Trading,Outflow,1000"
+            val deposit = "$uid,2026-01-02 09:00:00,USDT,Deposit,Inflow,50"
+            val file = table(MexcExports.STATEMENT, buy, pay, deposit)
+            val choices = ImportChoices(offset = ImportOffset(240), accounts = mapOf("mexc:$uid" to AccountChoice.New("MEXC export", uid)))
+            app.exchangeImports.commit(app.exchangeImports.preview(listOf(file), choices))
+            // Records an earlier version saved under keys that included their row numbers.
+            db.execute("UPDATE exchange_rows SET key=replace(key, ':', ':legacy') WHERE stream='file'")
+
+            fun counts() =
+                app
+                    .snapshot()
+                    .activities
+                    .filter { it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
+                    .groupingBy { it.activity.kind }
+                    .eachCount()
+            val before = counts()
+            app.exchangeImports.commit(app.exchangeImports.preview(listOf(file), choices.copy(accounts = emptyMap())))
+            assertEquals(before, counts())
+            assertEquals(1, before[ActivityKind.TRADE])
+            assertEquals(1, before[ActivityKind.DEPOSIT])
+        }
+    }
+
+    @Test fun equalRowsOfOneFileStayDistinctAndTheirCopiesDoNot() {
+        val deposit = "$uid,2026-01-02 09:00:00,USDT,Deposit,Inflow,50"
+        // Two equal deposits in one export: the same content hash, ordinals 0 and 1.
+        val records = interpret(MexcExports.STATEMENT, deposit, deposit)
+
+        fun row(
+            record: ImportedRecord,
+            key: String,
+        ) = ExchangeRow(ImportedEvents.STREAM, key, record.atMillis, ImportedEvents.payload(record), "source-$key")
+        val rows =
+            listOf(
+                row(records[0], "statement:aaaa:0"),
+                row(records[1], "statement:aaaa:1"),
+                // The same two saved again under another hash (a later version's key).
+                row(records[0], "statement:bbbb:0"),
+                row(records[1], "statement:bbbb:1"),
+            )
+        val decoded = MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null)
+        assertEquals(2, decoded.activities.size)
+        assertEquals(2, decoded.imports.values.count { it is ImportOutcome.Same })
+    }
 }
