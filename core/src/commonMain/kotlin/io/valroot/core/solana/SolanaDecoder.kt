@@ -6,11 +6,14 @@ import io.valroot.core.ledger.ActivityStatus
 import io.valroot.core.ledger.Movement
 import io.valroot.core.ledger.MovementRole
 import io.valroot.core.model.AccountId
+import io.valroot.core.model.ActivityId
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.AtomicAmount
 import io.valroot.core.model.EventId
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /** A token account as the ownership replay knows it: its owner and mint. */
 data class SolanaTokenAccount(
@@ -26,40 +29,79 @@ data class SolanaOwnership(
     val tokenAccounts: Map<String, SolanaTokenAccount> = emptyMap(),
 ) {
     /**
-     * This state after [transaction]: token-program instructions (initialize, owner change, close) in execution order,
-     * then the owners the node recorded after it. A failed transaction changes nothing.
+     * This state after [transaction]: first the owners the node recorded before it, then token-program instructions
+     * (initialize, owner change, close) in execution order, then the owners recorded after it. Recorded owners are
+     * evidence whenever present; a failed transaction applies no instructions.
      */
     fun after(transaction: SolanaTransaction): SolanaOwnership {
-        if (transaction.failed) return this
         val accounts = tokenAccounts.toMutableMap()
-        transaction.instructions.filter { it.program in TOKEN_PROGRAMS }.forEach { instruction ->
-            val account = instruction.text("account") ?: return@forEach
-            when (instruction.type) {
-                "initializeAccount", "initializeAccount2", "initializeAccount3" -> {
-                    val owner = instruction.text("owner")
-                    val mint = instruction.text("mint")
-                    if (owner != null && mint != null) accounts[account] = SolanaTokenAccount(owner, mint)
-                }
-                "setAuthority" ->
-                    if (instruction.text("authorityType") == "accountOwner") {
-                        val owner = instruction.text("newAuthority")
-                        val current = accounts[account]
-                        if (owner != null && current != null) accounts[account] = current.copy(owner = owner)
+        observe(transaction, transaction.preTokens, accounts)
+        if (!transaction.failed) {
+            transaction.instructions.filter { it.program in TOKEN_PROGRAMS }.forEach { instruction ->
+                val account = instruction.text("account") ?: return@forEach
+                when (instruction.type) {
+                    "initializeAccount", "initializeAccount2", "initializeAccount3" -> {
+                        val owner = instruction.text("owner")
+                        val mint = instruction.text("mint")
+                        if (owner != null && mint != null) accounts[account] = SolanaTokenAccount(owner, mint)
                     }
-                "closeAccount" -> accounts.remove(account)
+                    "setAuthority" ->
+                        if (instruction.text("authorityType") == "accountOwner") {
+                            val owner = instruction.text("newAuthority")
+                            val current = accounts[account]
+                            if (owner != null && current != null) accounts[account] = current.copy(owner = owner)
+                        }
+                    "closeAccount" -> accounts.remove(account)
+                }
             }
         }
-        transaction.postTokens.forEach { balance ->
-            val owner = balance.owner ?: return@forEach
-            accounts[transaction.accounts[balance.accountIndex]] = SolanaTokenAccount(owner, balance.mint)
-        }
+        observe(transaction, transaction.postTokens, accounts)
         return SolanaOwnership(accounts)
+    }
+
+    /** This state with the owners the node recorded before [transaction]: what was true when it started. */
+    fun before(transaction: SolanaTransaction): SolanaOwnership =
+        SolanaOwnership(tokenAccounts.toMutableMap().also { observe(transaction, transaction.preTokens, it) })
+
+    private fun observe(
+        transaction: SolanaTransaction,
+        balances: List<SolanaTokenBalance>,
+        accounts: MutableMap<String, SolanaTokenAccount>,
+    ) = balances.forEach { balance ->
+        val owner = balance.owner ?: return@forEach
+        accounts[transaction.accounts[balance.accountIndex]] = SolanaTokenAccount(owner, balance.mint)
     }
 
     companion object {
         val TOKEN_PROGRAMS = setOf("spl-token", "spl-token-2022")
+        val TOKEN_PROGRAM_IDS = setOf("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
     }
 }
+
+/** Why part of a transaction's effect on a wallet is not known. */
+enum class SolanaGapReason {
+    /** The node did not record token balances for a transaction that used a token program. */
+    TOKEN_BALANCES_UNAVAILABLE,
+
+    /** A Token-2022 transfer from the wallet whose withheld fee cannot be proven from the transaction. */
+    TRANSFER_FEE_UNKNOWN,
+
+    /** A Token-2022 extension whose amounts Valroot does not interpret (confidential, scaled, interest-bearing). */
+    UNSUPPORTED_EXTENSION,
+}
+
+/** Incomplete coverage from one transaction: for one token, or for all of its tokens when [asset] is null. */
+data class SolanaGap(
+    val signature: String,
+    val asset: AssetId?,
+    val reason: SolanaGapReason,
+)
+
+/** One transaction's effect on a wallet, with what it could not determine. */
+data class SolanaDecoded(
+    val activity: Activity?,
+    val gaps: List<SolanaGap>,
+)
 
 /**
  * Decodes what one transaction did to a watched wallet. Ownership is taken on each side separately: a balance counts
@@ -70,48 +112,85 @@ data class SolanaOwnership(
  *   stays SOL held. When the wallet pays the fee, the fee is a FEE movement and the rest a TRANSFER.
  * - Tokens: the amount change per mint over owned token accounts. Wrapped SOL (both native mints) counts by lamports
  *   only, so its token amount is ignored.
+ * - Token-2022 transfer fees on transfers from the wallet come only from evidence in the transaction: the fee stated
+ *   by `transferCheckedWithFee`, or the amount sent minus what its destination received. The fee is a FEE movement in
+ *   that token and the transfer is what arrived; a fee that cannot be proven is a [SolanaGapReason.TRANSFER_FEE_UNKNOWN].
  * - Changes of different assets in opposite directions are a swap: a TRADE whose movements are TRADE_LEG.
  * - A failed transaction carries only its fee.
  */
 object SolanaDecoder {
-    const val VERSION = "solana-1"
+    const val VERSION = "solana-2"
+    private val TRANSFERS = setOf("transfer", "transferChecked", "transferCheckedWithFee")
 
     fun decode(
         wallet: String,
         account: AccountId,
         transaction: SolanaTransaction,
-        before: SolanaOwnership,
+        known: SolanaOwnership,
         source: SourceRecordId,
-    ): Activity? {
-        val after = before.after(transaction)
-        val preOwner = transaction.preTokens.associate { transaction.accounts[it.accountIndex] to it.owner }
-        val postOwner = transaction.postTokens.associate { transaction.accounts[it.accountIndex] to it.owner }
+    ): SolanaDecoded {
+        val before = known.before(transaction)
+        val after = known.after(transaction)
 
-        fun ownedBefore(key: String) = key == wallet || (preOwner[key] ?: before.tokenAccounts[key]?.owner) == wallet
+        fun ownedBefore(key: String) = key == wallet || before.tokenAccounts[key]?.owner == wallet
 
-        fun ownedAfter(key: String) = key == wallet || (postOwner[key] ?: after.tokenAccounts[key]?.owner) == wallet
+        fun ownedAfter(key: String) = key == wallet || after.tokenAccounts[key]?.owner == wallet
         val deltas = linkedMapOf<AssetId, ExactInteger>()
+        val fees = linkedMapOf<AssetId, ExactInteger>()
+        val gaps = linkedSetOf<SolanaGap>()
 
         fun add(
+            to: MutableMap<AssetId, ExactInteger>,
             asset: AssetId,
             amount: ExactInteger,
         ) {
-            deltas[asset] = (deltas[asset] ?: ExactInteger.ZERO) + amount
+            to[asset] = (to[asset] ?: ExactInteger.ZERO) + amount
         }
         transaction.accounts.forEachIndexed { index, key ->
-            if (ownedAfter(key)) add(SolanaIds.NATIVE, transaction.postLamports[index])
-            if (ownedBefore(key)) add(SolanaIds.NATIVE, -transaction.preLamports[index])
+            if (ownedAfter(key)) add(deltas, SolanaIds.NATIVE, transaction.postLamports[index])
+            if (ownedBefore(key)) add(deltas, SolanaIds.NATIVE, -transaction.preLamports[index])
         }
+        val tokens = TokenView(transaction)
         transaction.postTokens.filter { it.mint !in SolanaIds.WRAPPED_SOL_MINTS }.forEach {
-            if (ownedAfter(transaction.accounts[it.accountIndex])) add(SolanaIds.token(it.mint), it.amount)
+            if (ownedAfter(transaction.accounts[it.accountIndex])) add(deltas, SolanaIds.token(it.mint), it.amount)
         }
         transaction.preTokens.filter { it.mint !in SolanaIds.WRAPPED_SOL_MINTS }.forEach {
-            if (ownedBefore(transaction.accounts[it.accountIndex])) add(SolanaIds.token(it.mint), -it.amount)
+            if (ownedBefore(transaction.accounts[it.accountIndex])) add(deltas, SolanaIds.token(it.mint), -it.amount)
+        }
+        if (!transaction.tokenBalancesKnown && transaction.accounts.any { it in SolanaOwnership.TOKEN_PROGRAM_IDS }) {
+            gaps += SolanaGap(transaction.signature, null, SolanaGapReason.TOKEN_BALANCES_UNAVAILABLE)
+        }
+        (transaction.preTokens + transaction.postTokens)
+            .filter { !it.plainAmount && it.mint !in SolanaIds.WRAPPED_SOL_MINTS }
+            .filter { transaction.accounts[it.accountIndex].let { key -> ownedBefore(key) || ownedAfter(key) } }
+            .forEach { gaps += SolanaGap(transaction.signature, SolanaIds.token(it.mint), SolanaGapReason.UNSUPPORTED_EXTENSION) }
+        if (!transaction.failed) {
+            transaction.instructions.filter { it.program == "spl-token-2022" }.forEach { instruction ->
+                val touched = instruction.info.values.mapNotNull { (it as? JsonPrimitive)?.content }
+                if (instruction.type?.contains("confidential", ignoreCase = true) == true &&
+                    touched.any { ownedBefore(it) || ownedAfter(it) }
+                ) {
+                    val mint = instruction.text("mint") ?: touched.firstNotNullOfOrNull(tokens::mintOf)
+                    gaps += SolanaGap(transaction.signature, mint?.let(SolanaIds::token), SolanaGapReason.UNSUPPORTED_EXTENSION)
+                }
+                if (instruction.type !in TRANSFERS) return@forEach
+                val from = instruction.text("source") ?: return@forEach
+                if (!ownedBefore(from)) return@forEach
+                val mint = instruction.text("mint") ?: tokens.mintOf(from)
+                if (mint in SolanaIds.WRAPPED_SOL_MINTS) return@forEach
+                val fee = tokens.transferFee(instruction)
+                when {
+                    mint == null -> gaps += SolanaGap(transaction.signature, null, SolanaGapReason.TRANSFER_FEE_UNKNOWN)
+                    fee == null -> gaps += SolanaGap(transaction.signature, SolanaIds.token(mint), SolanaGapReason.TRANSFER_FEE_UNKNOWN)
+                    fee.sign > 0 -> add(fees, SolanaIds.token(mint), fee)
+                }
+            }
         }
         val id = SolanaIds.transactionActivity(transaction.signature, wallet).value
-        val paysFee = transaction.feePayer == wallet && transaction.fee.sign > 0
-        // The fee left the wallet's SOL along with any transfer: the transfer is the rest.
-        if (paysFee) add(SolanaIds.NATIVE, transaction.fee)
+        // The network fee left the wallet's SOL along with any transfer, and a withheld token fee left with the tokens
+        // sent: the transfer is the rest.
+        if (transaction.feePayer == wallet && transaction.fee.sign > 0) add(fees, SolanaIds.NATIVE, transaction.fee)
+        fees.forEach { (asset, fee) -> add(deltas, asset, fee) }
         val values = deltas.filterValues { it.sign != 0 }
         val swap =
             values.values.any { it.sign > 0 } &&
@@ -126,19 +205,11 @@ object SolanaDecoder {
                     if (swap) MovementRole.TRADE_LEG else MovementRole.TRANSFER,
                 )
             } +
-                listOfNotNull(
-                    if (paysFee) {
-                        Movement(
-                            EventId("$id:fee"),
-                            account,
-                            AtomicAmount(SolanaIds.NATIVE, -transaction.fee),
-                            MovementRole.FEE,
-                        )
-                    } else {
-                        null
-                    },
-                )
-        if (movements.isEmpty()) return null
+                fees.map { (asset, fee) ->
+                    val key = if (asset == SolanaIds.NATIVE) "$id:fee" else "$id:fee:${asset.value}"
+                    Movement(EventId(key), account, AtomicAmount(asset, -fee), MovementRole.FEE)
+                }
+        if (movements.isEmpty()) return SolanaDecoded(null, gaps.toList())
         val timestamp = requireNotNull(transaction.blockTimeMillis) { "Transaction has no block time" }
         val kind =
             when {
@@ -147,23 +218,15 @@ object SolanaDecoder {
                 values.values.all { it.sign > 0 } -> ActivityKind.DEPOSIT
                 else -> ActivityKind.PAYMENT
             }
-        return Activity(
-            io.valroot.core.model
-                .ActivityId(id),
-            timestamp,
-            transaction.orderingKey,
-            kind,
-            ActivityStatus.CONFIRMED,
-            movements,
-            setOf(source),
-            VERSION,
-        )
+        val activity =
+            Activity(ActivityId(id), timestamp, transaction.orderingKey, kind, ActivityStatus.CONFIRMED, movements, setOf(source), VERSION)
+        return SolanaDecoded(activity, gaps.toList())
     }
 
     /**
      * Replays [transactions] (any order; sorted here into chain order) for [wallet] from an empty ownership state and
-     * returns each decoded activity with the ownership after the last one. Transactions whose order within their slot
-     * is unknown stop the replay there: ownership after them cannot be trusted, so the rest waits.
+     * returns each decoded activity and coverage gap with the ownership after the last one. Transactions whose order
+     * within their slot is unknown stop the replay there: ownership after them cannot be trusted, so the rest waits.
      */
     fun replay(
         wallet: String,
@@ -175,18 +238,87 @@ object SolanaDecoder {
         val ambiguous = ordered.groupBy { it.slot }.filterValues { group -> group.size > 1 && group.any { it.index == null } }.keys
         var ownership = SolanaOwnership()
         val activities = mutableListOf<Activity>()
+        val gaps = mutableListOf<SolanaGap>()
         for (transaction in ordered) {
-            if (transaction.slot in ambiguous) return Replay(activities, ownership, deferredFromSlot = transaction.slot)
-            decode(wallet, account, transaction, ownership, source(transaction))?.let(activities::add)
+            if (transaction.slot in ambiguous) return Replay(activities, gaps, ownership, deferredFromSlot = transaction.slot)
+            val decoded = decode(wallet, account, transaction, ownership, source(transaction))
+            decoded.activity?.let(activities::add)
+            gaps += decoded.gaps
             ownership = ownership.after(transaction)
         }
-        return Replay(activities, ownership, null)
+        return Replay(activities, gaps, ownership, null)
     }
 
     data class Replay(
         val activities: List<Activity>,
+        val gaps: List<SolanaGap>,
         val ownership: SolanaOwnership,
         /** The first slot whose transaction order is unknown; history from it on is not projected yet. */
         val deferredFromSlot: Long?,
     )
+
+    /** Token balances of one transaction by account, for mint lookups and transfer-fee evidence. */
+    private class TokenView(
+        private val transaction: SolanaTransaction,
+    ) {
+        private val pre = transaction.preTokens.associateBy { transaction.accounts[it.accountIndex] }
+        private val post = transaction.postTokens.associateBy { transaction.accounts[it.accountIndex] }
+
+        /** How many balance-changing token instructions name each account; set-up and approvals move no tokens. */
+        private val references =
+            transaction.instructions
+                .filter { it.program in SolanaOwnership.TOKEN_PROGRAMS && NEUTRAL.none { prefix -> it.type.orEmpty().startsWith(prefix) } }
+                .flatMap { instruction ->
+                    instruction.info.values
+                        .mapNotNull { (it as? JsonPrimitive)?.content }
+                        .distinct()
+                }.groupingBy { it }
+                .eachCount()
+
+        private companion object {
+            val NEUTRAL =
+                listOf(
+                    "initialize",
+                    "approve",
+                    "revoke",
+                    "setAuthority",
+                    "freeze",
+                    "thaw",
+                    "getAccountDataSize",
+                    "reallocate",
+                    "amountToUiAmount",
+                    "uiAmountToAmount",
+                )
+        }
+
+        fun mintOf(key: String): String? = (pre[key] ?: post[key])?.mint
+
+        /**
+         * The withheld fee of one Token-2022 transfer: as stated, or the amount sent minus what the destination received
+         * when no other token instruction touched the destination. Null when neither is available.
+         */
+        fun transferFee(instruction: SolanaInstruction): ExactInteger? {
+            if (instruction.type == "transferCheckedWithFee") return amount(instruction.info, "feeAmount")
+            val sent = amount(instruction.info, "tokenAmount") ?: amount(instruction.info, "amount") ?: return null
+            val to = instruction.text("destination") ?: return null
+            if (references[to] != 1 || to == instruction.text("source")) return null
+            if (!transaction.tokenBalancesKnown || (pre[to] == null && post[to] == null)) return null
+            val received = (post[to]?.amount ?: ExactInteger.ZERO) - (pre[to]?.amount ?: ExactInteger.ZERO)
+            val fee = sent - received
+            return fee.takeIf { it.sign >= 0 && it <= sent }
+        }
+
+        private fun amount(
+            info: JsonObject,
+            key: String,
+        ): ExactInteger? {
+            val text =
+                when (val value = info[key]) {
+                    is JsonObject -> (value["amount"] as? JsonPrimitive)?.content
+                    is JsonPrimitive -> value.content
+                    else -> null
+                }
+            return text?.let { runCatching { ExactInteger.parse(it) }.getOrNull() }
+        }
+    }
 }

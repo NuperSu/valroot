@@ -1,5 +1,6 @@
 package io.valroot.core.solana
 
+import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.ExactInteger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -19,6 +20,11 @@ data class SolanaTokenBalance(
     val owner: String?,
     val amount: ExactInteger,
     val decimals: Int,
+    /**
+     * False when the node's display amount is not the raw amount shifted by the decimals, as with Token-2022's scaled
+     * UI amount and interest-bearing extensions, whose amounts Valroot does not interpret.
+     */
+    val plainAmount: Boolean = true,
 )
 
 /** One executed instruction, by name when the node parses its program (`spl-token`, `system`, `stake`, …). */
@@ -49,6 +55,8 @@ data class SolanaTransaction(
     val preTokens: List<SolanaTokenBalance>,
     val postTokens: List<SolanaTokenBalance>,
     val instructions: List<SolanaInstruction>,
+    /** False when the node did not record token balances: then the token lists are unknown, not empty. */
+    val tokenBalancesKnown: Boolean = true,
 ) {
     /** The fee payer: always the first account. */
     val feePayer: String get() = accounts.first()
@@ -89,6 +97,13 @@ data class SolanaTransaction(
                     (meta[key] as? JsonArray).orEmpty().map { element ->
                         val balance = element.jsonObject
                         val amount = balance.getValue("uiTokenAmount").jsonObject
+                        val raw = ExactInteger.parse(amount.getValue("amount").jsonPrimitive.content)
+                        val decimals =
+                            amount
+                                .getValue("decimals")
+                                .jsonPrimitive.content
+                                .toInt()
+                        val display = (amount["uiAmountString"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
                         SolanaTokenBalance(
                             balance
                                 .getValue("accountIndex")
@@ -96,11 +111,10 @@ data class SolanaTransaction(
                                 .toInt(),
                             balance.getValue("mint").jsonPrimitive.content,
                             (balance["owner"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content,
-                            ExactInteger.parse(amount.getValue("amount").jsonPrimitive.content),
-                            amount
-                                .getValue("decimals")
-                                .jsonPrimitive.content
-                                .toInt(),
+                            raw,
+                            decimals,
+                            display == null ||
+                                runCatching { ExactDecimal.parse(display).compareTo(ExactDecimal(raw, decimals)) == 0 }.getOrDefault(false),
                         )
                     }
                 val signature =
@@ -130,6 +144,7 @@ data class SolanaTransaction(
                     tokens("preTokenBalances"),
                     tokens("postTokenBalances"),
                     instructions,
+                    meta["preTokenBalances"] is JsonArray && meta["postTokenBalances"] is JsonArray,
                 ).also {
                     require(
                         it.accounts.isNotEmpty() && it.preLamports.size == it.accounts.size && it.postLamports.size == it.accounts.size,

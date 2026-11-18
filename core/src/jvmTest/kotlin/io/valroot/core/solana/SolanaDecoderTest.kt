@@ -31,7 +31,14 @@ class SolanaDecoderTest {
         val mint: String,
         val owner: String?,
         val amount: Long,
+        val display: String? = null,
     )
+
+    private fun insJson(
+        program: String,
+        type: String,
+        info: String,
+    ) = """{"program":"$program","programId":"x","parsed":{"type":"$type","info":$info}}"""
 
     private fun ins(
         program: String,
@@ -54,12 +61,15 @@ class SolanaDecoderTest {
         failed: Boolean = false,
         slot: Long = 100L + seed,
         index: Int? = 0,
+        tokenBalances: Boolean = true,
     ): SolanaTransaction {
         fun tokens(list: List<Token>) =
             list.joinToString(",", "[", "]") {
                 """{"accountIndex":${it.index},"mint":"${it.mint}",${it.owner?.let { o ->
                     "\"owner\":\"$o\","
-                } ?: ""}"uiTokenAmount":{"amount":"${it.amount}","decimals":6}}"""
+                } ?: ""}"uiTokenAmount":{"amount":"${it.amount}","decimals":6${it.display?.let { d ->
+                    ",\"uiAmountString\":\"$d\""
+                } ?: ""}}}"""
             }
         val keys = accounts.joinToString(",", "[", "]") { """{"pubkey":"$it","signer":false,"writable":true,"source":"transaction"}""" }
         val innerJson = if (inner.isEmpty()) "[]" else """[{"index":0,"instructions":${inner.joinToString(",", "[", "]")}}]"""
@@ -69,7 +79,8 @@ class SolanaDecoderTest {
               "transaction":{"signatures":["${signature(seed)}"],"message":{"accountKeys":$keys,"instructions":$top}},
               "meta":{"err":${if (failed) "{\"InstructionError\":[0,\"Custom\"]}" else "null"},"fee":$fee,
                 "preBalances":${pre.joinToString(",", "[", "]")},"postBalances":${post.joinToString(",", "[", "]")},
-                "preTokenBalances":${tokens(preTokens)},"postTokenBalances":${tokens(postTokens)},"innerInstructions":$innerJson}}""",
+                "preTokenBalances":${if (tokenBalances) tokens(preTokens) else "null"},
+                "postTokenBalances":${if (tokenBalances) tokens(postTokens) else "null"},"innerInstructions":$innerJson}}""",
         )
     }
 
@@ -77,7 +88,7 @@ class SolanaDecoderTest {
         transaction: SolanaTransaction,
         before: SolanaOwnership = SolanaOwnership(),
         watched: String = wallet,
-    ) = SolanaDecoder.decode(watched, account, transaction, before, source)
+    ) = SolanaDecoder.decode(watched, account, transaction, before, source).activity
 
     private fun amounts(transaction: SolanaTransaction) =
         decode(transaction)!!.movements.associate {
@@ -304,5 +315,135 @@ class SolanaDecoderTest {
 
     @Test fun assetIdsAreTheSolanaOnes() {
         assertEquals(AssetId("solana:mainnet/native"), SolanaIds.NATIVE)
+    }
+
+    private fun gaps(
+        transaction: SolanaTransaction,
+        watched: String = wallet,
+    ) = SolanaDecoder.decode(watched, account, transaction, SolanaOwnership(), source).gaps.map { it.asset?.value to it.reason }
+
+    private val fromAccount = address(20)
+    private val toAccount = address(21)
+
+    private fun feeTransfer(
+        seed: Int,
+        toOwner: String,
+        sent: Long,
+        received: Long,
+        instruction: String =
+            insJson(
+                "spl-token-2022",
+                "transferChecked",
+                """{"source":"$fromAccount","destination":"$toAccount","mint":"$usdc","authority":"$wallet",""" +
+                    """"tokenAmount":{"amount":"$sent","decimals":6}}""",
+            ),
+        extra: List<String> = emptyList(),
+    ) = tx(
+        seed,
+        listOf(wallet, fromAccount, toAccount),
+        listOf(10_000, 2_039_280, 2_039_280),
+        listOf(5_000, 2_039_280, 2_039_280),
+        preTokens = listOf(Token(1, usdc, wallet, 1_000), Token(2, usdc, toOwner, 0)),
+        postTokens = listOf(Token(1, usdc, wallet, 1_000 - sent), Token(2, usdc, toOwner, received)),
+        instructions = extra + instruction,
+    )
+
+    @Test fun aToken2022FeeBetweenOwnAccountsIsAnExpenseNotAWithdrawal() {
+        assertEquals(mapOf("fee" to "-5000", "fee:${usdcAsset.value}" to "-1"), feeAmounts(feeTransfer(40, wallet, 100, 99)))
+        assertTrue(gaps(feeTransfer(40, wallet, 100, 99)).isEmpty())
+    }
+
+    @Test fun aToken2022FeeOnASendLeavesWhatArrivedAsTheTransfer() {
+        val send = feeTransfer(41, other, 100, 99)
+        assertEquals(mapOf(usdcAsset.value to "-99", "fee" to "-5000", "fee:${usdcAsset.value}" to "-1"), feeAmounts(send))
+        // The recipient, also watched, receives what arrived: the two sides match 99 to 99.
+        assertEquals(mapOf(usdcAsset.value to "99"), feeAmounts(send, other))
+        // The fee is stated explicitly by transferCheckedWithFee, even with the destination created in the same transaction.
+        val stated =
+            feeTransfer(
+                42,
+                other,
+                100,
+                98,
+                insJson(
+                    "spl-token-2022",
+                    "transferCheckedWithFee",
+                    """{"source":"$fromAccount","destination":"$toAccount","mint":"$usdc","authority":"$wallet",""" +
+                        """"tokenAmount":{"amount":"100","decimals":6},"feeAmount":{"amount":"2","decimals":6}}""",
+                ),
+            )
+        assertEquals(mapOf(usdcAsset.value to "-98", "fee" to "-5000", "fee:${usdcAsset.value}" to "-2"), feeAmounts(stated))
+        val created =
+            feeTransfer(
+                43,
+                other,
+                100,
+                99,
+                extra = listOf(ins("spl-token-2022", "initializeAccount3", "account" to toAccount, "mint" to usdc, "owner" to other)),
+            )
+        assertEquals("-1", feeAmounts(created)["fee:${usdcAsset.value}"])
+    }
+
+    @Test fun anUnprovableToken2022FeeIsIncompleteCoverage() {
+        // The destination is touched by a second balance-changing instruction, so what it received is not this transfer's.
+        val burn = ins("spl-token-2022", "burn", "account" to toAccount, "mint" to usdc, "amount" to "5")
+        val unclear = feeTransfer(44, other, 100, 94, extra = listOf(burn))
+        assertEquals(listOf(usdcAsset.value to SolanaGapReason.TRANSFER_FEE_UNKNOWN), gaps(unclear))
+        // Plain Token-program transfers never carry a fee.
+        val classic = ins("spl-token", "transfer", "source" to fromAccount, "destination" to toAccount, "amount" to "100")
+        assertTrue(gaps(feeTransfer(45, other, 100, 100, classic, extra = listOf(burn))).isEmpty())
+    }
+
+    @Test fun aPreOwnerIsEvidenceWhenThePostOwnerIsOmitted() {
+        val topUp =
+            tx(
+                46,
+                listOf(other, ata),
+                listOf(10_000, 2_039_280),
+                listOf(5_000, 2_039_280),
+                preTokens = listOf(Token(1, usdc, wallet, 100)),
+                postTokens = listOf(Token(1, usdc, null, 150)),
+            )
+        assertEquals(mapOf(usdcAsset.value to "50"), amounts(topUp))
+        assertEquals(wallet, SolanaOwnership().after(topUp).tokenAccounts[ata]?.owner)
+    }
+
+    @Test fun unrecordedTokenBalancesAreUnknownNotZero() {
+        val unrecorded =
+            tx(
+                47,
+                listOf(other, ata, SolanaOwnership.TOKEN_PROGRAM_IDS.first()),
+                listOf(10_000, 0, 1),
+                listOf(5_000, 0, 1),
+                tokenBalances = false,
+            )
+        assertEquals(listOf(null to SolanaGapReason.TOKEN_BALANCES_UNAVAILABLE), gaps(unrecorded))
+        assertTrue(SolanaDecoder.replay(wallet, account, listOf(unrecorded)) { source }.gaps.isNotEmpty())
+        // A plain SOL transfer has no token balances to miss.
+        assertTrue(gaps(tx(48, listOf(other, wallet), listOf(10_000, 0), listOf(4_000, 1_000), tokenBalances = false)).isEmpty())
+    }
+
+    @Test fun aScaledDisplayAmountMarksTheTokenUnsupported() {
+        val scaled =
+            tx(
+                49,
+                listOf(other, ata),
+                listOf(10_000, 2_039_280),
+                listOf(5_000, 2_039_280),
+                preTokens = listOf(Token(1, usdc, wallet, 0, "0")),
+                postTokens = listOf(Token(1, usdc, wallet, 1_000_000, "1.05")),
+            )
+        assertEquals(listOf(usdcAsset.value to SolanaGapReason.UNSUPPORTED_EXTENSION), gaps(scaled))
+        val plain = scaled.copy(postTokens = scaled.postTokens.map { it.copy(plainAmount = true) })
+        assertTrue(gaps(plain).isEmpty())
+    }
+
+    private fun feeAmounts(
+        transaction: SolanaTransaction,
+        watched: String = wallet,
+    ) = decode(transaction, watched = watched)!!.movements.associate {
+        val asset = it.amount.assetId
+        (if (it.role == MovementRole.FEE) (if (asset == SolanaIds.NATIVE) "fee" else "fee:${asset.value}") else asset.value) to
+            it.amount.atomicUnits.toString()
     }
 }
