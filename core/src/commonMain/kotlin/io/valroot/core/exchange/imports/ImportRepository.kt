@@ -102,6 +102,10 @@ internal class ImportRepository(
                 "parser_version INTEGER NOT NULL, time_offset INTEGER, account TEXT, record_key TEXT, status TEXT NOT NULL, cells TEXT NOT NULL, PRIMARY KEY(batch, seq))",
         )
         db.execute(
+            "CREATE TABLE IF NOT EXISTS exchange_import_decisions (batch TEXT NOT NULL, account TEXT NOT NULL, group_key TEXT NOT NULL, " +
+                "payload TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY(batch, account, group_key))",
+        )
+        db.execute(
             "CREATE TABLE IF NOT EXISTS exchange_import_events (account TEXT NOT NULL, record_key TEXT NOT NULL, batch TEXT NOT NULL, " +
                 "PRIMARY KEY(account, record_key, batch))",
         )
@@ -154,6 +158,58 @@ internal class ImportRepository(
         key: String,
         batch: String,
     ) = db.execute("INSERT OR IGNORE INTO exchange_import_events VALUES (?, ?, ?)", listOf(account.value, key, batch))
+
+    /** Keeps each batch's decision and the previous saved decision for independent undo. */
+    fun saveDecision(
+        batch: String,
+        account: AccountId,
+        group: String,
+        decision: GroupDecision,
+        rows: List<ExchangeRow>,
+    ) {
+        val tracked =
+            db.query(
+                "SELECT 1 FROM exchange_import_decisions WHERE account=? AND group_key=? LIMIT 1",
+                listOf(account.value, group),
+            )
+        if (tracked.isEmpty()) {
+            rows.firstOrNull { it.stream == ImportedEvents.DECISIONS && it.key == group }?.let { previous ->
+                db.execute(
+                    "INSERT INTO exchange_import_decisions VALUES (?, ?, ?, ?, ?)",
+                    listOf("", account.value, group, previous.payload, previous.source),
+                )
+            }
+        }
+        db.execute(
+            "INSERT OR REPLACE INTO exchange_import_decisions VALUES (?, ?, ?, ?, ?)",
+            listOf(batch, account.value, group, decision.name, batch),
+        )
+    }
+
+    /** Restores the newest active decision for every group touched by [batch]. */
+    fun undoDecisions(batch: String) {
+        val groups = db.query("SELECT account, group_key FROM exchange_import_decisions WHERE batch=?", listOf(batch))
+        db.execute("DELETE FROM exchange_import_decisions WHERE batch=?", listOf(batch))
+        groups.forEach { (account, group) ->
+            db.execute("DELETE FROM exchange_rows WHERE account=? AND stream=? AND key=?", listOf(account, ImportedEvents.DECISIONS, group))
+            val previous =
+                db
+                    .query(
+                        "SELECT d.payload, d.source FROM exchange_import_decisions d LEFT JOIN exchange_import_batches b ON b.id=d.batch " +
+                            "WHERE d.account=? AND d.group_key=? AND (d.batch='' OR b.undone_at IS NULL) " +
+                            "ORDER BY CASE WHEN d.batch='' THEN 0 ELSE 1 END DESC, b.imported_at DESC, b.rowid DESC LIMIT 1",
+                        listOf(account, group),
+                    ).firstOrNull()
+            if (previous != null) {
+                db.execute(
+                    "INSERT OR REPLACE INTO exchange_rows VALUES (?, ?, ?, 0, ?, ?)",
+                    listOf(account, ImportedEvents.DECISIONS, group, previous[0], previous[1]),
+                )
+            }
+        }
+        // Receipts saved before decision history was recorded still own their current decision rows.
+        db.execute("DELETE FROM exchange_rows WHERE stream=? AND source=?", listOf(ImportedEvents.DECISIONS, batch))
+    }
 
     /** Removes [batch]'s links and returns the events no other batch supports any more, by account. */
     fun unlink(batch: String): Map<AccountId, List<String>> {
@@ -213,6 +269,30 @@ internal class ImportRepository(
             }
         }
         return result
+    }
+
+    /** Identical historical statements need review when source-table evidence cannot establish occurrence identity. */
+    fun hasUnprovenStatementCopies(
+        account: AccountId,
+        rows: List<ExchangeRow>,
+    ): Boolean {
+        val aliases = aliases(account, rows)
+        val records = rows.filter { it.stream == ImportedEvents.STREAM && it.key !in aliases }
+        return records
+            .mapNotNull { row -> StatementIdentity.of(ImportedEvents.parse(row.payload))?.let { it to row.key } }
+            .groupBy({ it.first }, { it.second })
+            .values
+            .any { keys ->
+                keys.size > 1 &&
+                    keys.any { key ->
+                        db
+                            .query(
+                                "SELECT 1 FROM exchange_import_sources s JOIN exchange_import_batches b ON b.id=s.batch " +
+                                    "WHERE s.account=? AND s.record_key=? AND b.undone_at IS NULL LIMIT 1",
+                                listOf(account.value, key),
+                            ).isEmpty()
+                    }
+            }
     }
 
     /** Persists alias identity and gives its canonical event support from every active alias batch. */

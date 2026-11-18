@@ -140,6 +140,7 @@ private fun ExchangeImportContent(
                 }
             }
             ImportCounts(current.counts)
+            current.warnings.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
             current.groups.forEach { group ->
                 HorizontalDivider()
                 Text("${group.exchange.label} · ${group.kind.name.lowercase()} · ${importTimestamp(group.atMillis)}")

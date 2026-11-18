@@ -414,6 +414,28 @@ class MexcImportTest {
         assertEquals(2, MexcDecoder.decode(account, uid, rows.take(2), assets, emptyMap(), null).activities.size)
     }
 
+    @Test fun historicalStatementCopiesWithoutProvenanceRequireReview() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val repository = ImportRepository(db)
+            val record = interpret(MexcExports.STATEMENT, "$uid,2026-01-02 09:00:00,USDT,Deposit,Inflow,50").single()
+            val rows = listOf(saved(record, "legacy:a"), saved(record, "legacy:b"))
+            assertTrue(repository.hasUnprovenStatementCopies(account, rows))
+            assertFalse(repository.hasUnprovenStatementCopies(account, rows.take(1)))
+            val aliased =
+                rows[1].copy(
+                    payload =
+                        ImportedEvents.payload(
+                            record.copy(
+                                details =
+                                    record.details +
+                                        (StatementIdentity.CANONICAL_KEY to rows[0].key),
+                            ),
+                        ),
+                )
+            assertFalse(repository.hasUnprovenStatementCopies(account, listOf(rows[0], aliased)))
+        }
+    }
+
     @Test fun equalAmountsOfDifferentOperationsAreDifferentRecords() {
         val records =
             interpret(

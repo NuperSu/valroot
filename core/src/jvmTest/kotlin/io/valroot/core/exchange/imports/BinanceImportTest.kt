@@ -191,6 +191,74 @@ class BinanceImportTest {
         }
     }
 
+    @Test fun stalePreviewRollsBackChangedMatchingOutcome() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val preview = app.exchangeImports.preview(listOf(fills(fill)), chosen)
+            assertEquals(mapOf(ImportStatus.NEW to 1), preview.counts)
+            api(app, apiTrade(1, noonUtc4))
+            assertFailsWith<ImportFileException> { app.exchangeImports.commit(preview) }
+            assertTrue(app.exchangeImports.receipts().isEmpty())
+            assertEquals(1, activities(app).size)
+        }
+    }
+
+    @Test fun undoWorksForArchivedAccountsAndRemovesBatchDecisions() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val preview =
+                app.exchangeImports.preview(
+                    listOf(fills(fill)),
+                    chosen.copy(decisions = mapOf("review" to GroupDecision.DISTINCT)),
+                )
+            val receipt = app.exchangeImports.commit(preview)
+            app.accounts.archiveAccount(account)
+            assertTrue(app.exchangeImports.undo(receipt.id).undoneAtMillis != null)
+            assertTrue(app.exchanges.savedRows(account).none { it.stream == io.valroot.core.exchange.ImportedEvents.DECISIONS })
+        }
+    }
+
+    @Test fun undoRestoresOlderActiveGroupDecision() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val files = listOf(fills(fill))
+            val first =
+                app.exchangeImports.commit(
+                    app.exchangeImports.preview(
+                        files,
+                        chosen.copy(
+                            decisions =
+                                mapOf(
+                                    "review" to GroupDecision.SAME,
+                                ),
+                        ),
+                    ),
+                )
+            val second =
+                app.exchangeImports.commit(
+                    app.exchangeImports.preview(
+                        files,
+                        chosen.copy(
+                            decisions =
+                                mapOf(
+                                    "review" to GroupDecision.DISTINCT,
+                                ),
+                        ),
+                    ),
+                )
+            app.exchangeImports.undo(second.id)
+            assertEquals(
+                GroupDecision.SAME.name,
+                app.exchanges
+                    .savedRows(account)
+                    .single { it.stream == io.valroot.core.exchange.ImportedEvents.DECISIONS }
+                    .payload,
+            )
+            app.exchangeImports.undo(first.id)
+            assertTrue(app.exchanges.savedRows(account).none { it.stream == io.valroot.core.exchange.ImportedEvents.DECISIONS })
+        }
+    }
+
     private val statementFile = "Binance-Transaction-History-202610201950(UTC+4)_2044b610.zip"
 
     @Test fun theStatementSettlesAgainstDetailedRecordsAndRecordsFuturesTransfers() {
@@ -240,7 +308,16 @@ class BinanceImportTest {
             val flow = preview.futuresFlows.single()
             assertEquals(ExactDecimal.parse("500") to ExactDecimal.parse("300"), flow.toFutures to flow.fromFutures)
             assertEquals(ExactDecimal.parse("200"), flow.net)
-            app.exchangeImports.commit(preview)
+            val receipt = app.exchangeImports.commit(preview)
+            val savedStatementRows = app.exchangeImports.sources(receipt.id).filter { it.file == statementFile }
+            assertEquals(
+                statement.rows.drop(1).map {
+                    it.cells.map { cell ->
+                        cell.text
+                    }
+                },
+                savedStatementRows.sortedBy { it.rows.single() }.map { it.cells },
+            )
             assertEquals(flow, app.exchangeImports.futuresFlows(account).single())
             // The API trade, the deposit and the two futures transfers; the statement adds no second trade.
             assertEquals(4, activities(app).size)

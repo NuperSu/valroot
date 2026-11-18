@@ -95,6 +95,7 @@ class ImportPreview internal constructor(
     val groups: List<AmbiguousGroup>,
     val futuresFlows: List<FuturesFlow>,
     val blockers: List<String>,
+    val warnings: List<String>,
     internal val choices: ImportChoices,
     internal val planned: List<Planned>,
 ) {
@@ -245,10 +246,15 @@ class ExchangeImportService internal constructor(
 
         val planned = mutableListOf<Planned>()
         val groups = mutableListOf<AmbiguousGroup>()
+        val warnings = mutableListOf<String>()
         keyed.groupBy { assignmentOf(it.second) }.forEach { (assignmentKey, list) ->
             val assignment = assignments.single { it.key == assignmentKey }
             val account = assignment.account
             val saved = account?.let { app.exchanges.savedRows(it) }.orEmpty()
+            if (account != null && repository.hasUnprovenStatementCopies(account, saved)) {
+                warnings += "${assignment.exchange.label} has matching historical statement copies without enough source evidence. " +
+                    "Review the account history before importing; these events remain separate."
+            }
             val savedKeys = saved.filter { it.stream == ImportedEvents.STREAM }.map { it.key }.toSet()
             val resolved = resolveSavedKeys(list, saved)
             val moving = resolved.filter { (_, record) -> decodeRecord(record) }
@@ -314,6 +320,7 @@ class ExchangeImportService internal constructor(
             groups,
             futuresFlows(planned.map { it.record }),
             blockers,
+            warnings,
             choices,
             planned,
         )
@@ -346,7 +353,7 @@ class ExchangeImportService internal constructor(
     /** Records shared by overlapping tables retain every table's source evidence. */
     private fun keyRecords(read: List<Triple<DetectedTable, ImportedRecord, ImportOffset?>>): List<KeyedRecord> {
         val keyed = mutableListOf<Pair<String, Triple<DetectedTable, ImportedRecord, ImportOffset?>>>()
-        read.groupBy { it.first.table }.forEach { (_, ofTable) ->
+        read.groupBy { it.first }.forEach { (_, ofTable) ->
             val records = ofTable.map { it.second }
             val keys =
                 ImportValues.keys(
@@ -560,6 +567,7 @@ class ExchangeImportService internal constructor(
                         repository.link(account, planned.key, batch)
                     }
                     preview.choices.decisions.forEach { (group, decision) ->
+                        repository.saveDecision(batch, account, group, decision, savedRows)
                         app.exchanges.saveRowInTransaction(account, ExchangeRow(ImportedEvents.DECISIONS, group, 0, decision.name, batch))
                     }
                     val decoded = app.exchanges.rederiveInTransaction(assignment.exchange, account, uid, assets.getValue(assignment.key))
@@ -573,34 +581,43 @@ class ExchangeImportService internal constructor(
                             } else {
                                 planned.status
                             }
-                        if (final == ImportStatus.AMBIGUOUS && planned.status != ImportStatus.AMBIGUOUS) {
+                        val resolvedCoin =
+                            planned.status == ImportStatus.COIN_PENDING &&
+                                final in setOf(ImportStatus.NEW, ImportStatus.MATCHED)
+                        if (final != planned.status && !resolvedCoin) {
                             throw ImportFileException("The account changed since the preview; preview the import again")
                         }
                         finalStatuses[planned.key] = final
                     }
                 }
                 var sourceIndex = 0
+                val sourceRows = mutableMapOf<DetectedTable, Map<Int, ImportRow>>()
                 preview.planned.forEach { planned ->
                     planned.evidence.forEach { (table, record, offset) ->
-                        repository.saveSource(
-                            batch,
-                            sourceIndex++,
-                            ImportSourceRow(
-                                record.source.file,
-                                record.source.member,
-                                record.source.sheet,
-                                record.details[PROVENANCE_ROWS]?.split(',')?.mapNotNull { it.toIntOrNull() }
-                                    ?: listOf(record.source.row),
-                                record.report,
-                                accounts.getValue(planned.assignment),
-                                planned.key,
-                                finalStatuses[planned.key] ?: planned.status,
-                                record.cells,
-                            ),
-                            record.source.fileHash,
-                            table.report.version,
-                            offset?.minutes,
-                        )
+                        val byNumber = sourceRows.getOrPut(table) { table.rows.associateBy { it.number } }
+                        val rows =
+                            record.details[PROVENANCE_ROWS]?.split(',')?.mapNotNull { it.toIntOrNull() }
+                                ?: listOf(record.source.row)
+                        rows.forEach { row ->
+                            repository.saveSource(
+                                batch,
+                                sourceIndex++,
+                                ImportSourceRow(
+                                    record.source.file,
+                                    record.source.member,
+                                    record.source.sheet,
+                                    listOf(row),
+                                    record.report,
+                                    accounts.getValue(planned.assignment),
+                                    planned.key,
+                                    finalStatuses[planned.key] ?: planned.status,
+                                    byNumber[row]?.cells?.map { it.text } ?: record.cells,
+                                ),
+                                record.source.fileHash,
+                                table.report.version,
+                                offset?.minutes,
+                            )
+                        }
                     }
                 }
                 repository.receipts().single { it.id == batch }
@@ -620,13 +637,14 @@ class ExchangeImportService internal constructor(
     fun undo(batch: String): ImportReceipt {
         val receipt = repository.receipts().singleOrNull { it.id == batch } ?: throw IllegalArgumentException("Unknown import")
         require(receipt.undoneAtMillis == null) { "This import was already undone" }
+        val targets = ownership.load().targets
         val kinds =
             receipt.accounts.associateWith { account ->
                 ExchangeKind.entries.firstNotNullOf { kind ->
-                    app.exchanges.targets(kind).firstOrNull { it.first == account }?.let {
-                        kind to
-                            it.second
-                    }
+                    targets
+                        .firstOrNull {
+                            it.accountId == account && it.identity.networkId == kind.network && it.identity.kind == "uid"
+                        }?.let { kind to it.identity.canonicalKey }
                 }
             }
         val assets = kinds.mapValues { (account, kindUid) -> app.exchanges.historyAssets(kindUid.first, account) }
@@ -636,6 +654,7 @@ class ExchangeImportService internal constructor(
                 repository.unlink(batch).forEach { (account, keys) ->
                     keys.forEach { app.exchanges.deleteRowInTransaction(account, ImportedEvents.STREAM, it) }
                 }
+                repository.undoDecisions(batch)
                 repository.markUndone(batch, now())
                 kinds.forEach { (account, kindUid) ->
                     app.exchanges.rederiveInTransaction(kindUid.first, account, kindUid.second, assets.getValue(account))
