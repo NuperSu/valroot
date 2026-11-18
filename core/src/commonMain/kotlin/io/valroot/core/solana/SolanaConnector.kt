@@ -33,7 +33,7 @@ val SOLANA_MANIFEST =
  *    database transaction. When a scan reaches the end, the stream is read through the finalized slot taken before it.
  *    Mints are classified by their metadata before their page is projected, so NFTs are left out from the start.
  * 3. **Block times:** a transaction the node returned without one keeps its activity waiting; its block's time is
- *    asked for, at most [MAX_BLOCK_TIMES] per refresh.
+ *    asked for, at most [MAX_BLOCK_TIMES] per refresh, slots that failed before last.
  * 4. **Balance check** ([SolanaService.checkBalances]): pending until history is read and projected through the
  *    snapshot, then account by account.
  *
@@ -138,14 +138,27 @@ class SolanaConnector(
             if (finished) break
         }
         // Activities without a block time wait for it; the block's time is asked for, a few slots per refresh.
-        val due = replay.undatedSlots.sorted().take(minOf(MAX_BLOCK_TIMES, maxRequests - requests))
-        if (due.isNotEmpty()) {
-            val times = due.mapNotNull { slot -> Helius.parseBlockTime(call(Helius.blockTimeBody(slot)))?.let { slot to it } }.toMap()
-            if (times.isNotEmpty()) {
-                app.solana.saveBlockTimes(times)
-                replay = app.solana.project(account, wallet, stored)
+        // Each lookup stands alone: a found time is saved at once, and a slot that fails or has no time yet is asked
+        // after the others next refresh, so one bad slot cannot hold back the rest.
+        val due = app.solana.blockTimeOrder(replay.undatedSlots).take(minOf(MAX_BLOCK_TIMES, maxRequests - requests))
+        var recovered = false
+        due.forEach { slot ->
+            val time =
+                try {
+                    Helius.parseBlockTime(call(Helius.blockTimeBody(slot)))
+                } catch (cancelled: RefreshCancelled) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+            if (time == null) {
+                app.solana.recordBlockTimeAttempt(slot)
+            } else {
+                app.solana.saveBlockTime(slot, time)
+                recovered = true
             }
         }
+        if (recovered) replay = app.solana.project(account, wallet, stored)
         app.solana.checkBalances(wallet, stored, replay)
         app.solana.recordSuccess(wallet, stored, replay)
         return finished

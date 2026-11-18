@@ -531,4 +531,27 @@ class SolanaDecoderTest {
     }
 
     private val rent = 2_039_280L
+
+    @Test fun aStatedFeeWithoutBothBalanceSidesCreatesNoTransfer() {
+        val stated =
+            tx(
+                65,
+                listOf(wallet, fromAccount, toAccount, SolanaOwnership.TOKEN_PROGRAM_IDS.last()),
+                listOf(10_000, rent, rent, 1),
+                listOf(5_000, rent, rent, 1),
+                preTokens = listOf(Token(1, usdc, wallet, 1_000), Token(2, usdc, other, 0)),
+                instructions =
+                    listOf(
+                        insJson(
+                            "spl-token-2022",
+                            "transferCheckedWithFee",
+                            """{"source":"$fromAccount","destination":"$toAccount","mint":"$usdc","authority":"$wallet",""" +
+                                """"tokenAmount":{"amount":"100","decimals":6},"feeAmount":{"amount":"2","decimals":6}}""",
+                        ),
+                    ),
+                postRecorded = false,
+            )
+        assertEquals(mapOf("fee" to "-5000"), feeAmounts(stated))
+        assertEquals(listOf(null to SolanaGapReason.TOKEN_BALANCES_UNAVAILABLE), gaps(stated))
+    }
 }

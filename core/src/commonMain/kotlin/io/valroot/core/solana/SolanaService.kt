@@ -151,8 +151,20 @@ class SolanaService internal constructor(
         return kept.values.sortedWith(SolanaDecoder.CHAIN_ORDER) to replay
     }
 
-    /** Saves block times recovered for slots whose transactions had none; activities are re-projected next. */
-    fun saveBlockTimes(times: Map<Long, Long>) = db.transaction { times.forEach { (slot, time) -> repository.saveBlockTime(slot, time) } }
+    /** Saves a block time recovered for a slot whose transactions had none; activities are re-projected next. */
+    fun saveBlockTime(
+        slot: Long,
+        timeMillis: Long,
+    ) = db.transaction { repository.saveBlockTime(slot, timeMillis) }
+
+    /** Records a block-time lookup that failed or found no time, so the slot is asked after the others next time. */
+    fun recordBlockTimeAttempt(slot: Long) = db.transaction { repository.recordBlockTimeAttempt(slot) }
+
+    /** [slots] in the order to ask for their block times: fewest failed lookups first, then oldest. */
+    fun blockTimeOrder(slots: Collection<Long>): List<Long> {
+        val attempts = repository.blockTimeAttempts()
+        return slots.sortedWith(compareBy({ attempts[it] ?: 0 }, { it }))
+    }
 
     /** Replays every stored transaction of [wallet] and saves the activities that changed; obsolete ones are superseded. */
     fun project(
@@ -272,10 +284,13 @@ class SolanaService internal constructor(
         if (batches.isEmpty()) return current
         val readThrough = streams.minOfOrNull { it.scannedThrough ?: -1 } ?: -1
         val latest = batches.maxOf { it.slot }
-        // History must be both read and projected through the snapshot: a replay stopped at an unordered slot, or an
-        // activity waiting for its block time, would compare a partial ledger.
+        // History must be both read and projected through the snapshot: a replay stopped at an unordered slot, an
+        // activity waiting for its block time, or a stored transaction this parser cannot read would compare a partial
+        // ledger. The snapshot is kept until they are resolved.
         val projected =
-            (replay.deferredFromSlot?.let { it > latest } ?: true) && replay.undatedSlots.none { it <= latest }
+            (replay.deferredFromSlot?.let { it > latest } ?: true) &&
+                replay.undatedSlots.none { it <= latest } &&
+                (repository.firstUnsupportedSlot(wallet)?.let { it > latest } ?: true)
         val state =
             if (streams.isEmpty() || latest > readThrough || !projected) {
                 current.copy(balanceState = PENDING)

@@ -181,7 +181,9 @@ object SolanaDecoder {
                     val mint = instruction.text("mint") ?: touched.firstNotNullOfOrNull(tokens::mintOf)
                     gaps += SolanaGap(transaction.signature, mint?.let(SolanaIds::token), SolanaGapReason.UNSUPPORTED_EXTENSION)
                 }
-                if (instruction.type !in TRANSFERS) return@forEach
+                // Without both balance sides no token change is counted, so a stated fee would leave a transfer made of
+                // nothing; the unrecorded-balances gap already covers the transaction.
+                if (instruction.type !in TRANSFERS || !transaction.tokenBalancesKnown) return@forEach
                 val from = instruction.text("source") ?: return@forEach
                 if (!ownedBefore(from)) return@forEach
                 val mint = instruction.text("mint") ?: tokens.mintOf(from)

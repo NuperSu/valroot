@@ -37,6 +37,7 @@ class SolanaRepository(
                 "record_id TEXT NOT NULL, checksum TEXT NOT NULL, quality INTEGER NOT NULL, version TEXT)",
         )
         db.execute("CREATE TABLE IF NOT EXISTS solana_block_times (slot INTEGER PRIMARY KEY, time INTEGER NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS solana_block_time_attempts (slot INTEGER PRIMARY KEY, attempts INTEGER NOT NULL)")
         db.execute(
             "CREATE TABLE IF NOT EXISTS solana_wallet_transactions (wallet TEXT NOT NULL, signature TEXT NOT NULL, " +
                 "PRIMARY KEY(wallet, signature))",
@@ -127,6 +128,27 @@ class SolanaRepository(
             ).single()
             .single()!!
             .toInt()
+
+    /** The first slot of [wallet]'s stored transactions in a version this parser does not read, or null. */
+    fun firstUnsupportedSlot(wallet: String): Long? =
+        db
+            .query(
+                "SELECT MIN(t.slot) FROM solana_wallet_transactions w JOIN solana_transactions t ON t.signature=w.signature " +
+                    "WHERE w.wallet=? AND t.version IS NOT NULL",
+                listOf(wallet),
+            ).single()
+            .single()
+            ?.toLong()
+
+    /** Failed block-time lookups by slot, so slots that keep failing are asked after the others. */
+    fun blockTimeAttempts(): Map<Long, Int> =
+        db.query("SELECT slot, attempts FROM solana_block_time_attempts").associate { it[0]!!.toLong() to it[1]!!.toInt() }
+
+    fun recordBlockTimeAttempt(slot: Long) =
+        db.execute(
+            "INSERT INTO solana_block_time_attempts VALUES (?, 1) ON CONFLICT(slot) DO UPDATE SET attempts = attempts + 1",
+            listOf(slot.toString()),
+        )
 
     /** Block times recovered for transactions whose response had none, by slot. */
     fun blockTimes(): Map<Long, Long> =

@@ -121,6 +121,7 @@ class SolanaConnectorTest {
         var tokenAccounts = mutableMapOf<String, String>()
         var assets = mutableMapOf<String, String>()
         var blockTimes = mutableMapOf<Long, Long>()
+        val failingBlockTimes = mutableSetOf<Long>()
         val methods = mutableListOf<String>()
 
         fun hold(
@@ -142,6 +143,13 @@ class SolanaConnectorTest {
             val method = request.getValue("method").jsonPrimitive.content
             methods += method
             val params = request.getValue("params")
+            if (method == Helius.BLOCK_TIME &&
+                params.jsonArray[0]
+                    .jsonPrimitive.content
+                    .toLong() in failingBlockTimes
+            ) {
+                return """{"jsonrpc":"2.0","id":1,"error":{"code":-32009,"message":"Slot skipped"}}"""
+            }
             val result =
                 when (method) {
                     Helius.SLOT -> slot.toString()
@@ -459,6 +467,36 @@ class SolanaConnectorTest {
                     .coverage!!
                     .contains("1 transaction in a format Valroot cannot read yet"),
             )
+            // It lies before the snapshot, so the ledger is partial there: the check waits and keeps its snapshot.
+            assertEquals(SolanaService.PENDING, app.solana.state(wallet).balanceState)
+            assertEquals(1, app.solana.snapshot(wallet).size)
+        }
+    }
+
+    @Test fun aFailingBlockTimeLookupDoesNotHoldBackOtherSlots() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+
+            fun undated(entry: Entry) = entry.copy(json = JsonObject(entry.json + ("blockTime" to kotlinx.serialization.json.JsonNull)))
+            val helius = fakeWithChain().apply { entries = listOf(undated(receiveSol), undated(receiveUsdc), sendSol) }
+            helius.failingBlockTimes += receiveSol.slot
+            helius.blockTimes[receiveUsdc.slot] = 1_700_000_020L
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            // The later slot's time was saved although the earlier lookup failed.
+            assertEquals(2, activities(app).size)
+            assertTrue(
+                app.solana
+                    .state(wallet)
+                    .coverage!!
+                    .contains("1 transaction waiting for its block time"),
+            )
+            // The failed slot is asked after slots that have not failed.
+            assertEquals(listOf(15L, receiveSol.slot), app.solana.blockTimeOrder(listOf(receiveSol.slot, 15L)))
+            helius.failingBlockTimes.clear()
+            helius.blockTimes[receiveSol.slot] = 1_700_000_010L
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            assertEquals(3, activities(app).size)
+            assertEquals(SolanaService.MATCHED, app.solana.state(wallet).balanceState)
         }
     }
 }
