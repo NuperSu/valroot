@@ -26,6 +26,9 @@ class PortfolioApplication(
     val assets: AssetService = AssetService(ctx)
     val linkedCoins: LinkedCoinService = LinkedCoinService(ctx)
     val evm: EvmService = EvmService(ctx)
+    val solana: io.valroot.core.solana.SolanaService =
+        io.valroot.core.solana
+            .SolanaService(ctx)
     val exchanges: ExchangeService = ExchangeService(ctx)
     val exchangeImports: io.valroot.core.exchange.imports.ExchangeImportService =
         io.valroot.core.exchange.imports

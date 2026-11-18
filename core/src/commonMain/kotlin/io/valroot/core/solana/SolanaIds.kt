@@ -2,6 +2,7 @@ package io.valroot.core.solana
 
 import io.valroot.core.model.ActivityId
 import io.valroot.core.model.AssetId
+import io.valroot.core.model.NetworkId
 
 /**
  * Identities on Solana mainnet. Addresses, mints and signatures are Base58 and case-sensitive, so they are kept exactly
@@ -15,6 +16,9 @@ import io.valroot.core.model.AssetId
 object SolanaIds {
     const val NETWORK = "mainnet"
     const val TRANSACTION_PREFIX = "solana:$NETWORK:"
+
+    /** The network of Solana targets and assets. */
+    val NETWORK_ID = NetworkId("solana:$NETWORK")
     const val NATIVE_DECIMALS = 9
     val NATIVE = AssetId("solana:$NETWORK/native")
     private const val TOKEN_PREFIX = "solana:$NETWORK/token:"

@@ -112,6 +112,14 @@ class AccountService internal constructor(
                                 .evmAddress(value.identity.canonicalKey),
                     ),
             )
+        } else if (value.identity.networkId == io.valroot.core.solana.SolanaIds.NETWORK_ID) {
+            require(
+                value.identity.kind == "address" &&
+                    value.role == TargetRole.LEAF &&
+                    io.valroot.core.solana.SolanaIds
+                        .isAddress(value.identity.canonicalKey.trim()),
+            ) { "Track a Solana address as one address" }
+            value.copy(identity = value.identity.copy(canonicalKey = value.identity.canonicalKey.trim()))
         } else if (io.valroot.core.exchange.ExchangeKind
                 .ofNetwork(value.identity.networkId) != null
         ) {

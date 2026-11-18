@@ -50,6 +50,9 @@ internal class AppContext(
     val csvImports = CsvImportRepository(db)
     val evmChains = EvmChainRepository(db)
     val evmRecovered = EvmRecoveredRepository(db)
+    val solanaRepository =
+        io.valroot.core.solana
+            .SolanaRepository(db)
     val assetLinks = AssetLinkRepository(db)
     val exchangeCoins = ExchangeCoinRepository(db)
     val exchangeSync = ExchangeSyncRepository(db)
@@ -152,6 +155,7 @@ abstract class AppService internal constructor(
     internal val csvImports get() = ctx.csvImports
     protected val evmChains get() = ctx.evmChains
     protected val evmRecovered get() = ctx.evmRecovered
+    protected val solanaRepository get() = ctx.solanaRepository
     protected val assetLinks get() = ctx.assetLinks
     protected val exchangeCoins get() = ctx.exchangeCoins
     protected val exchangeSync get() = ctx.exchangeSync
