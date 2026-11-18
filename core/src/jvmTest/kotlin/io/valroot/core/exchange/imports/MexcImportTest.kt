@@ -295,25 +295,40 @@ class MexcImportTest {
         }
     }
 
+    private fun saved(
+        record: ImportedRecord,
+        key: String,
+    ) = ExchangeRow(ImportedEvents.STREAM, key, record.atMillis, ImportedEvents.payload(record), "source-$key")
+
     @Test fun equalRowsOfOneFileStayDistinctAndTheirCopiesDoNot() {
         val deposit = "$uid,2026-01-02 09:00:00,USDT,Deposit,Inflow,50"
-        // Two equal deposits in one export: the same content hash, ordinals 0 and 1.
+        // Two equal deposits in one export, on different rows.
         val records = interpret(MexcExports.STATEMENT, deposit, deposit)
-
-        fun row(
-            record: ImportedRecord,
-            key: String,
-        ) = ExchangeRow(ImportedEvents.STREAM, key, record.atMillis, ImportedEvents.payload(record), "source-$key")
+        assertTrue(records[0].details["rows"] != records[1].details["rows"])
         val rows =
             listOf(
-                row(records[0], "statement:aaaa:0"),
-                row(records[1], "statement:aaaa:1"),
-                // The same two saved again under another hash (a later version's key).
-                row(records[0], "statement:bbbb:0"),
-                row(records[1], "statement:bbbb:1"),
+                // An earlier version keyed each record with its row numbers: two different hashes for the two deposits.
+                saved(records[0], "statement:aaaa:0"),
+                saved(records[1], "statement:cccc:0"),
+                // The same file imported again under the current keys: one hash, ordinals 0 and 1.
+                saved(records[0], "statement:bbbb:0"),
+                saved(records[1], "statement:bbbb:1"),
             )
         val decoded = MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null)
         assertEquals(2, decoded.activities.size)
         assertEquals(2, decoded.imports.values.count { it is ImportOutcome.Same })
+        // Only the legacy rows, without the second import: still two deposits.
+        assertEquals(2, MexcDecoder.decode(account, uid, rows.take(2), assets, emptyMap(), null).activities.size)
+    }
+
+    @Test fun equalAmountsOfDifferentOperationsAreDifferentRecords() {
+        val records =
+            interpret(
+                MexcExports.STATEMENT,
+                "$uid,2026-01-02 09:00:00,USDT,Airdrop,Inflow,5",
+                "$uid,2026-01-02 09:00:00,USDT,Locked Savings Airdrop,Inflow,5",
+            )
+        val rows = records.mapIndexed { index, record -> saved(record, "statement:h$index:0") }
+        assertEquals(2, MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null).activities.size)
     }
 }

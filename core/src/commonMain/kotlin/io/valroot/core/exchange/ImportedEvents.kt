@@ -211,33 +211,37 @@ object ImportedEvents {
     }
 
     /**
-     * Separates stored copies of one record from the records themselves. A record's key is its content hash and its
-     * place among equal rows of one file (`report:hash:ordinal`), so two equal rows of one file share a hash and stay two
-     * records. The same record saved under another hash is a copy: a file imported again after its key changed, or
-     * statement rows moved to other lines. Records are compared by their economic content; for statement records the
-     * source rows and the operation of the first row are provenance, not content. Of each content, the largest family
-     * of one hash is kept, and every further record is a copy of a kept one.
+     * Separates stored copies of one record from the records themselves. Statement records name the source rows they
+     * came from (`rows`), and their saved key once included those rows, so the same file imported again after that
+     * changed was saved a second time under another key. A copy is the same record from the same source rows: the same
+     * economic content and the same `rows`. Two equal rows of one file have different rows and stay two records, and
+     * records without `rows` kept their keys and are never copies. A grouped record's operation is left out of the
+     * comparison, because it was once taken from whichever of its rows came first.
      */
     private fun withoutCopies(
         records: List<Pair<ExchangeRow, Stored>>,
     ): Pair<List<Pair<ExchangeRow, Stored>>, List<Pair<ExchangeRow, ExchangeRow>>> {
         val kept = mutableListOf<Pair<ExchangeRow, Stored>>()
         val copies = mutableListOf<Pair<ExchangeRow, ExchangeRow>>()
-        records.groupBy { (_, record) -> economicContent(record) }.values.forEach { same ->
-            val families = same.groupBy { (row, _) -> row.key.substringBeforeLast(':') }.values.map { it.sortedBy { (row, _) -> row.key } }
-            val largest = families.maxOf { it.size }
-            val originals = families.sortedBy { it.first().first.key }.first { it.size == largest }
-            kept += originals
-            (same - originals.toSet()).sortedBy { (row, _) -> row.key }.forEachIndexed { index, (row, _) ->
-                copies += row to originals[index % originals.size].first
+        val firstOf = mutableMapOf<String, ExchangeRow>()
+        records.sortedBy { (row, _) -> row.key }.forEach { pair ->
+            val identity = sourceIdentity(pair.second)
+            val original = identity?.let { firstOf[it] }
+            if (original == null) {
+                if (identity != null) firstOf[identity] = pair.first
+                kept += pair
+            } else {
+                copies += pair.first to original
             }
         }
         val order = records.withIndex().associate { it.value.first.key to it.index }
         return kept.sortedBy { order.getValue(it.first.key) } to copies
     }
 
-    private fun economicContent(record: Stored): String {
-        val provenance = if (record.details["statement"] == "1") setOf("rows", "operation") else setOf("rows")
+    /** What makes two stored statement records one: their economic content and source rows; null without source rows. */
+    private fun sourceIdentity(record: Stored): String? {
+        val rows = record.details["rows"] ?: return null
+        val ignored = if (',' in rows) setOf("operation") else emptySet()
         return listOf(
             record.report,
             record.kind.name,
@@ -251,7 +255,7 @@ object ImportedEvents {
             record.namespace.orEmpty(),
             record.nativeId.orEmpty(),
             record.details
-                .filterKeys { it !in provenance }
+                .filterKeys { it !in ignored }
                 .entries
                 .sortedBy { it.key }
                 .joinToString(";") { "${it.key}=${it.value}" },
