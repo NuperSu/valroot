@@ -30,8 +30,8 @@ Per column first (`Time(UTC)`, `Date(UTC+8)`, `Creation Time(UTC+04:00)`), then 
 ## Matching
 
 - Native IDs match only within their exchange, account, wallet and event namespace.
-- Without IDs, time, amount and coin are evidence, not a key: identical rows are distinct events, and an import's events are identified by their content and their order among identical rows, so reimports, renamed files, overlapping archives and reordered rows add nothing new.
-- Statement groups are matched as groups against detailed events; detailed evidence wins for trade legs and fees, and every source stays attached.
+- Without IDs, matching requires equal principal amounts and times within the report's matching window. Transfers retain transaction IDs from matching evidence, and records with conflicting IDs remain distinct.
+- Statement imports identify occurrences by economic content and preserve the multiplicity of identical rows within each source table. Matching reimports, renamed files and reordered rows add evidence to the saved event. Detailed records supply the legs and fees when a statement group matches them.
 - An ambiguous group waits for the user: same event, distinct event, or excluded.
 - A completed event is never downgraded by a sparser source.
 

@@ -109,6 +109,13 @@ internal class Planned(
     val assignment: String,
     val status: ImportStatus,
     val offset: ImportOffset?,
+    val evidence: List<Triple<DetectedTable, ImportedRecord, ImportOffset?>>,
+)
+
+private data class KeyedRecord(
+    val first: String,
+    val second: ImportedRecord,
+    val evidence: List<Triple<DetectedTable, ImportedRecord, ImportOffset?>>,
 )
 
 /**
@@ -243,7 +250,8 @@ class ExchangeImportService internal constructor(
             val account = assignment.account
             val saved = account?.let { app.exchanges.savedRows(it) }.orEmpty()
             val savedKeys = saved.filter { it.stream == ImportedEvents.STREAM }.map { it.key }.toSet()
-            val moving = list.filter { (_, record) -> decodeRecord(record) }
+            val resolved = resolveSavedKeys(list, saved)
+            val moving = resolved.filter { (_, record) -> decodeRecord(record) }
             val fresh = moving.filter { it.first !in savedKeys }
             val outcomes =
                 if (fresh.isEmpty()) {
@@ -261,8 +269,9 @@ class ExchangeImportService internal constructor(
                     val assets = app.exchanges.knownAssets(assignment.exchange.id, coins)
                     app.exchanges.decodeWith(assignment.exchange, account, uid, extra, assets).imports
                 }
-            list.forEach { (key, record) ->
-                val (table, _, offset) = read.first { it.second === record }
+            resolved.forEach { keyedRecord ->
+                val (key, record) = keyedRecord
+                val (table, _, offset) = keyedRecord.evidence.first()
                 val status =
                     when {
                         record.role == EvidenceRole.SUPPORTING || record.kind == RecordKind.ORDER -> ImportStatus.SUPPORTING
@@ -274,11 +283,11 @@ class ExchangeImportService internal constructor(
                         key in savedKeys -> ImportStatus.ALREADY_IMPORTED
                         else -> status(outcomes[key])
                     }
-                planned += Planned(table, record, key, assignmentKey, status, offset)
+                planned += Planned(table, record, key, assignmentKey, status, offset, keyedRecord.evidence)
             }
             outcomes.values.filterIsInstance<ImportOutcome.Ambiguous>().distinctBy { it.group }.forEach { ambiguous ->
                 val members = fresh.filter { (key, _) -> (outcomes[key] as? ImportOutcome.Ambiguous)?.group == ambiguous.group }
-                val first = members.first().second
+                val first = members.firstOrNull()?.second ?: return@forEach
                 groups +=
                     AmbiguousGroup(
                         ambiguous.group,
@@ -334,16 +343,43 @@ class ExchangeImportService internal constructor(
             ImportOutcome.CoinPending, null -> ImportStatus.COIN_PENDING
         }
 
-    /** Each record's key: its report, its content and its place among equal records of that report. */
-    private fun keyRecords(read: List<Triple<DetectedTable, ImportedRecord, ImportOffset?>>): List<Pair<String, ImportedRecord>> {
-        val result = mutableListOf<Pair<String, ImportedRecord>>()
+    /** Records shared by overlapping tables retain every table's source evidence. */
+    private fun keyRecords(read: List<Triple<DetectedTable, ImportedRecord, ImportOffset?>>): List<KeyedRecord> {
+        val keyed = mutableListOf<Pair<String, Triple<DetectedTable, ImportedRecord, ImportOffset?>>>()
         read.groupBy { it.first.table }.forEach { (_, ofTable) ->
             val records = ofTable.map { it.second }
-            val keys = ImportValues.keys(records.first().report, records.map(::content))
-            records.forEachIndexed { index, record -> result += keys[index] to record }
+            val keys =
+                ImportValues.keys(
+                    records.first().report,
+                    records.map { StatementIdentity.of(it)?.let { identity -> "${it.uid.orEmpty()}|$identity" } ?: content(it) },
+                )
+            ofTable.forEachIndexed { index, evidence -> keyed += keys[index] to evidence }
         }
-        // The same record in two files of a batch (overlapping exports) is one record.
-        return result.distinctBy { it.first }
+        return keyed.groupBy({ it.first }, { it.second }).map { (key, evidence) ->
+            KeyedRecord(key, evidence.first().second, evidence)
+        }
+    }
+
+    /** Reuses saved statement identities, including their occurrence ordinals and original activity IDs. */
+    private fun resolveSavedKeys(
+        records: List<KeyedRecord>,
+        saved: List<ExchangeRow>,
+    ): List<KeyedRecord> {
+        val candidates =
+            saved
+                .filter { it.stream == ImportedEvents.STREAM }
+                .map { it to ImportedEvents.parse(it.payload) }
+                .filter { (_, record) -> record.details[StatementIdentity.CANONICAL_KEY] == null }
+                .mapNotNull { (row, record) -> StatementIdentity.of(record)?.let { it to row.key } }
+                .groupBy({ it.first }, { it.second })
+        val seen = mutableMapOf<String, Int>()
+        return records.map { keyed ->
+            val identity = StatementIdentity.of(keyed.second) ?: return@map keyed
+            val ordinal = seen[identity] ?: 0
+            seen[identity] = ordinal + 1
+            val savedKey = candidates[identity]?.getOrNull(ordinal)
+            if (savedKey == null) keyed else keyed.copy(first = savedKey)
+        }
     }
 
     /**
@@ -474,20 +510,25 @@ class ExchangeImportService internal constructor(
                 repository.saveBatch(
                     batch,
                     now(),
-                    preview.planned.map { ImportedFile(it.table.table.file, it.table.table.fileHash) }.distinct(),
+                    preview.planned
+                        .flatMap { it.evidence }
+                        .map { ImportedFile(it.first.table.file, it.first.table.fileHash) }
+                        .distinct(),
                     accounts.values.distinct(),
                 )
                 val finalStatuses = mutableMapOf<String, ImportStatus>()
                 preview.assignments.forEach { assignment ->
                     val account = accounts.getValue(assignment.key)
                     val uid = uids.getValue(assignment.key)
-                    val saved =
-                        app.exchanges
-                            .savedRows(account)
-                            .filter { it.stream == ImportedEvents.STREAM }
-                            .map { it.key }
-                            .toSet()
-                    byAssignment[assignment.key].orEmpty().filter { decodeRecord(it.record) }.forEach { planned ->
+                    val savedRows = app.exchanges.savedRows(account)
+                    repository.supportAliases(account, savedRows)
+                    val saved = savedRows.filter { it.stream == ImportedEvents.STREAM }.map { it.key }.toSet()
+                    val plannedRows = byAssignment[assignment.key].orEmpty()
+                    val resolved = resolveSavedKeys(plannedRows.map { KeyedRecord(it.key, it.record, it.evidence) }, savedRows)
+                    if (resolved.map { it.first } != plannedRows.map { it.key }) {
+                        throw ImportFileException("The account changed since the preview. Preview the import again.")
+                    }
+                    plannedRows.filter { decodeRecord(it.record) }.forEach { planned ->
                         if (planned.key !in saved) {
                             val source =
                                 app.exchanges.ingestRecord(
@@ -532,28 +573,29 @@ class ExchangeImportService internal constructor(
                         finalStatuses[planned.key] = final
                     }
                 }
-                preview.planned.forEachIndexed { index, planned ->
-                    repository.saveSource(
-                        batch,
-                        index,
-                        ImportSourceRow(
-                            planned.record.source.file,
-                            planned.record.source.member,
-                            planned.record.source.sheet,
-                            planned.record.details[PROVENANCE_ROWS]
-                                ?.split(
-                                    ',',
-                                )?.mapNotNull { it.toIntOrNull() } ?: listOf(planned.record.source.row),
-                            planned.record.report,
-                            accounts.getValue(planned.assignment),
-                            planned.key,
-                            finalStatuses[planned.key] ?: planned.status,
-                            planned.record.cells,
-                        ),
-                        planned.record.source.fileHash,
-                        planned.table.report.version,
-                        planned.offset?.minutes,
-                    )
+                var sourceIndex = 0
+                preview.planned.forEach { planned ->
+                    planned.evidence.forEach { (table, record, offset) ->
+                        repository.saveSource(
+                            batch,
+                            sourceIndex++,
+                            ImportSourceRow(
+                                record.source.file,
+                                record.source.member,
+                                record.source.sheet,
+                                record.details[PROVENANCE_ROWS]?.split(',')?.mapNotNull { it.toIntOrNull() }
+                                    ?: listOf(record.source.row),
+                                record.report,
+                                accounts.getValue(planned.assignment),
+                                planned.key,
+                                finalStatuses[planned.key] ?: planned.status,
+                                record.cells,
+                            ),
+                            record.source.fileHash,
+                            table.report.version,
+                            offset?.minutes,
+                        )
+                    }
                 }
                 repository.receipts().single { it.id == batch }
             }
@@ -584,6 +626,7 @@ class ExchangeImportService internal constructor(
         val assets = kinds.mapValues { (account, kindUid) -> app.exchanges.historyAssets(kindUid.first, account) }
         val undone =
             db.transaction {
+                kinds.keys.forEach { account -> repository.supportAliases(account, app.exchanges.savedRows(account)) }
                 repository.unlink(batch).forEach { (account, keys) ->
                     keys.forEach { app.exchanges.deleteRowInTransaction(account, ImportedEvents.STREAM, it) }
                 }

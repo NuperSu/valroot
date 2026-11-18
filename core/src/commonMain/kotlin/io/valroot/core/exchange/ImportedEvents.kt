@@ -11,6 +11,7 @@ import io.valroot.core.exchange.imports.ProductFamily
 import io.valroot.core.exchange.imports.RecordKind
 import io.valroot.core.exchange.imports.RecordLeg
 import io.valroot.core.exchange.imports.RecordStatus
+import io.valroot.core.exchange.imports.StatementIdentity
 import io.valroot.core.ledger.Activity
 import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.ledger.MovementRole
@@ -210,56 +211,22 @@ object ImportedEvents {
         }
     }
 
-    /**
-     * Separates stored copies of one record from the records themselves. Statement records name the source rows they
-     * came from (`rows`), and their saved key once included those rows, so the same file imported again after that
-     * changed was saved a second time under another key. A copy is the same record from the same source rows: the same
-     * economic content and the same `rows`. Two equal rows of one file have different rows and stay two records, and
-     * records without `rows` kept their keys and are never copies. A grouped record's operation is left out of the
-     * comparison, because it was once taken from whichever of its rows came first.
-     */
+    /** Keeps one ledger record for each statement occurrence, with copies attached as further evidence. */
     private fun withoutCopies(
         records: List<Pair<ExchangeRow, Stored>>,
     ): Pair<List<Pair<ExchangeRow, Stored>>, List<Pair<ExchangeRow, ExchangeRow>>> {
         val kept = mutableListOf<Pair<ExchangeRow, Stored>>()
         val copies = mutableListOf<Pair<ExchangeRow, ExchangeRow>>()
-        val firstOf = mutableMapOf<String, ExchangeRow>()
-        records.sortedBy { (row, _) -> row.key }.forEach { pair ->
-            val identity = sourceIdentity(pair.second)
-            val original = identity?.let { firstOf[it] }
+        val byKey = records.associate { (row, _) -> row.key to row }
+        records.forEach { pair ->
+            val original = pair.second.details[StatementIdentity.CANONICAL_KEY]?.let(byKey::get)
             if (original == null) {
-                if (identity != null) firstOf[identity] = pair.first
                 kept += pair
             } else {
                 copies += pair.first to original
             }
         }
-        val order = records.withIndex().associate { it.value.first.key to it.index }
-        return kept.sortedBy { order.getValue(it.first.key) } to copies
-    }
-
-    /** What makes two stored statement records one: their economic content and source rows; null without source rows. */
-    private fun sourceIdentity(record: Stored): String? {
-        val rows = record.details["rows"] ?: return null
-        val ignored = if (',' in rows) setOf("operation") else emptySet()
-        return listOf(
-            record.report,
-            record.kind.name,
-            record.status.name,
-            record.atMillis.toString(),
-            record.legs
-                .map { "${it.coin}=${it.amount}/${it.role}" }
-                .sorted()
-                .joinToString(";"),
-            record.wallet.orEmpty(),
-            record.namespace.orEmpty(),
-            record.nativeId.orEmpty(),
-            record.details
-                .filterKeys { it !in ignored }
-                .entries
-                .sortedBy { it.key }
-                .joinToString(";") { "${it.key}=${it.value}" },
-        ).joinToString("|")
+        return kept to copies
     }
 
     /** One movement total per asset, in atomic units; fees count when [net]. */
@@ -329,8 +296,10 @@ object ImportedEvents {
         records.forEach { (row, record) ->
             when (val outcome = outcomes[row.key]) {
                 is MatchOutcome.Same -> {
-                    ledger.addSource(ActivityId(outcome.existing), SourceRecordId(row.source))
-                    ledger.imports[row.key] = ImportOutcome.Same(ActivityId(outcome.existing))
+                    val activity = ActivityId(outcome.existing)
+                    ledger.addSource(activity, SourceRecordId(row.source))
+                    addTransferEvidence(ledger, activity, record)
+                    ledger.imports[row.key] = ImportOutcome.Same(activity)
                 }
                 MatchOutcome.New -> build(ledger, row, record)
                 is MatchOutcome.Ambiguous ->
@@ -414,14 +383,30 @@ object ImportedEvents {
             }
         if (id != null) {
             ledger.importedKinds[id] = matchKind(record)
-            // Like a deposit or withdrawal from the exchange's API, an on-chain one from a file keeps its transaction ID,
-            // so later records match it by that ID and wallet activities in the same transaction can link to it.
-            val txid = record.details["txid"]?.trim()?.takeIf { it.isNotEmpty() }
-            if (txid != null && record.kind in setOf(RecordKind.DEPOSIT, RecordKind.WITHDRAWAL)) {
-                ledger.transfers[id] = ExchangeTransfer(record.details["network"].orEmpty(), txid)
-            }
+            addTransferEvidence(ledger, id, record)
         }
         ledger.imports[row.key] = id?.let { ImportOutcome.New(it) } ?: ImportOutcome.CoinPending
+    }
+
+    /** Transfer identifiers supplied by supporting records also belong to the matched activity. */
+    private fun addTransferEvidence(
+        ledger: ExchangeLedgerBuilder,
+        activity: ActivityId,
+        record: Stored,
+    ) {
+        if (record.kind !in setOf(RecordKind.DEPOSIT, RecordKind.WITHDRAWAL)) return
+        val txid = record.details["txid"]?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val existing = ledger.transfers[activity]
+        if (existing == null || existing.txId.isBlank()) {
+            ledger.transfers[activity] = ExchangeTransfer(record.details["network"].orEmpty(), txid)
+        } else if (io.valroot.core.model.TransactionIds
+                .normalize(existing.txId) ==
+            io.valroot.core.model.TransactionIds
+                .normalize(txid) &&
+            existing.chain.isBlank()
+        ) {
+            ledger.transfers[activity] = existing.copy(chain = record.details["network"].orEmpty())
+        }
     }
 
     private fun activityKind(kind: RecordKind): ActivityKind =

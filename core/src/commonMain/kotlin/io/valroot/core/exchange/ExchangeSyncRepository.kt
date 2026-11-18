@@ -1,5 +1,6 @@
 package io.valroot.core.exchange
 
+import io.valroot.core.exchange.imports.ImportRepository
 import io.valroot.core.model.AccountId
 import io.valroot.core.storage.SqliteDatabase
 
@@ -85,6 +86,8 @@ data class ExchangeAccountStatus(
 class ExchangeSyncRepository(
     private val db: SqliteDatabase,
 ) {
+    private val imports = ImportRepository(db)
+
     init {
         db.execute(
             "CREATE TABLE IF NOT EXISTS exchange_sync (account TEXT NOT NULL, stream TEXT NOT NULL, covered_from INTEGER NOT NULL, " +
@@ -180,12 +183,19 @@ class ExchangeSyncRepository(
         stream: String,
     ) = db.execute("DELETE FROM exchange_stream_ends WHERE account=? AND stream=?", listOf(account.value, stream))
 
-    fun rows(account: AccountId): List<ExchangeRow> =
-        db
-            .query(
-                "SELECT stream, key, at, payload, source FROM exchange_rows WHERE account=? ORDER BY at, stream, key",
-                listOf(account.value),
-            ).map { ExchangeRow(it[0]!!, it[1]!!, it[2]!!.toLong(), it[3]!!, it[4]!!) }
+    fun rows(account: AccountId): List<ExchangeRow> {
+        // File aliases settle in original evidence order, preserving the first imported activity's identity.
+        val rows =
+            db
+                .query(
+                    "SELECT stream, key, at, payload, source FROM exchange_rows WHERE account=? ORDER BY at, stream, " +
+                        "CASE WHEN stream='file' THEN (SELECT MIN(b.imported_at) FROM exchange_import_events e " +
+                        "JOIN exchange_import_batches b ON b.id=e.batch WHERE e.account=exchange_rows.account " +
+                        "AND e.record_key=exchange_rows.key) END, CASE WHEN stream='file' THEN rowid END, key",
+                    listOf(account.value),
+                ).map { ExchangeRow(it[0]!!, it[1]!!, it[2]!!.toLong(), it[3]!!, it[4]!!) }
+        return imports.annotateAliases(account, rows)
+    }
 
     fun saveRow(
         account: AccountId,

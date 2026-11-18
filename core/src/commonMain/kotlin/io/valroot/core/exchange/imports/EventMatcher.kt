@@ -45,18 +45,7 @@ sealed interface MatchOutcome {
     ) : MatchOutcome
 }
 
-/**
- * Matches imported records to existing events as economic events, never as rows.
- *
- * - A shared identifier decides at once between events of the same kind and principal amounts; with other amounts it
- *   is a different event in the same transaction (for example two deposits paid by one transaction).
- * - Otherwise records and events of the same kind with the same principal amounts, within the kind's [tolerance] of
- *   each other, form a group; an event whose identifiers contradict a record's ([conflicts]) never pairs with it.
- *   When the group has at least as many existing events as records, records pair with events in time order, as many
- *   as identifiers allow ([pairs]). With more records than events the file holds something the account does not, and either could be
- *   true (a repeated identical fill, or an export of the same event twice), so the group waits for a decision.
- * - Records without candidates are new; identical records stay distinct events.
- */
+/** Matches economic events using shared identifiers, then eligible time-and-identifier pairs. */
 object EventMatcher {
     fun match(
         records: List<EventShape>,
@@ -66,16 +55,20 @@ object EventMatcher {
     ): Map<String, MatchOutcome> {
         val outcomes = mutableMapOf<String, MatchOutcome>()
         val used = mutableSetOf<String>()
+        val order = compareBy<EventShape> { it.atMillis }.thenBy { it.id }
         val byId = mutableMapOf<String, MutableList<EventShape>>()
-        existing.forEach { event -> event.ids.forEach { byId.getOrPut(it) { mutableListOf() } += event } }
+        existing.sortedWith(order).forEach { event -> event.ids.forEach { byId.getOrPut(it) { mutableListOf() } += event } }
         val remaining =
-            records.filter { record ->
-                // One on-chain transaction can carry several distinct deposits, so a shared identifier decides only
-                // between events of the same kind and the same amounts.
+            records.sortedWith(order).filter { record ->
                 val event =
                     record.ids
+                        .sorted()
                         .flatMap { byId[it].orEmpty() }
-                        .firstOrNull { it.kind == record.kind && it.principal == record.principal && it.id !in used }
+                        .distinctBy { it.id }
+                        .sortedWith(order)
+                        .firstOrNull {
+                            it.kind == record.kind && it.principal == record.principal && it.id !in used && !conflicts(record, it)
+                        }
                 if (event != null) {
                     outcomes[record.id] = MatchOutcome.Same(event.id)
                     used += event.id
@@ -83,66 +76,200 @@ object EventMatcher {
                 event == null
             }
         val open = existing.filter { it.id !in used }
-        remaining
-            .groupBy { it.kind to it.principal }
-            .forEach { (signature, sameShape) ->
-                val window = tolerance(signature.first)
-                val candidates = open.filter { it.kind == signature.first && it.principal == signature.second }
-                clusters(sameShape, candidates, window).forEach { (group, clustered) ->
-                    val key = groupKey(group)
-                    val decision = decisions[key]
-                    // An event whose identifiers contradict every record's is a different event, however equal its amounts.
-                    val events = clustered.filter { event -> group.any { !conflicts(it, event) } }
-                    when {
-                        decision == GroupDecision.EXCLUDED -> group.forEach { outcomes[it.id] = MatchOutcome.Excluded(key) }
-                        decision == GroupDecision.DISTINCT || events.isEmpty() -> group.forEach { outcomes[it.id] = MatchOutcome.New }
-                        events.size >= group.size || decision == GroupDecision.SAME -> {
-                            val pairs = pairs(group, events)
-                            group.forEach { record ->
-                                outcomes[record.id] =
-                                    pairs[record.id]?.let { MatchOutcome.Same(it) } ?: MatchOutcome.New
-                            }
+        remaining.groupBy { it.kind to it.principal }.forEach { (signature, sameShape) ->
+            val window = tolerance(signature.first)
+            val candidates = open.filter { it.kind == signature.first && it.principal == signature.second }
+            clusters(sameShape, candidates, window).forEach { (group, events) ->
+                // Saved decisions can name the full time cluster. Keep those decisions when eligible edges split it.
+                val legacyKey = groupKey(group)
+                val legacyDecision = decisions[legacyKey]
+                val orderedRecords = group.sortedWith(order)
+                val orderedEvents = events.sortedWith(order)
+                val graph = Candidates(orderedRecords, orderedEvents, window)
+                components(graph).forEach { (recordIndexes, eventIndexes) ->
+                    val component = recordIndexes.map { orderedRecords[it] }
+                    if (eventIndexes.isEmpty()) {
+                        component.forEach { outcomes[it.id] = MatchOutcome.New }
+                        return@forEach
+                    }
+                    val key = groupKey(component)
+                    val decision = decisions[key] ?: legacyDecision
+                    val decisionKey =
+                        if (decisions.containsKey(key)) {
+                            key
+                        } else if (legacyDecision != null) {
+                            legacyKey
+                        } else {
+                            key
                         }
-                        else -> group.forEach { outcomes[it.id] = MatchOutcome.Ambiguous(key, group.size, events.size) }
+                    val pairs =
+                        if (decision == GroupDecision.EXCLUDED || decision == GroupDecision.DISTINCT) {
+                            emptyMap()
+                        } else {
+                            pairs(recordIndexes, graph)
+                        }
+                    when {
+                        decision == GroupDecision.EXCLUDED ->
+                            component.forEach { outcomes[it.id] = MatchOutcome.Excluded(decisionKey) }
+                        decision == GroupDecision.DISTINCT -> component.forEach { outcomes[it.id] = MatchOutcome.New }
+                        pairs.size == component.size || decision == GroupDecision.SAME ->
+                            recordIndexes.forEach { record ->
+                                outcomes[orderedRecords[record].id] =
+                                    pairs[record]?.let { MatchOutcome.Same(orderedEvents[it].id) } ?: MatchOutcome.New
+                            }
+                        else -> component.forEach { outcomes[it.id] = MatchOutcome.Ambiguous(key, component.size, eventIndexes.size) }
                     }
                 }
             }
+        }
         return outcomes
     }
 
-    /**
-     * Pairs [records] with [events] of one group, by record ID to event ID. Without contradicting identifiers they pair in
-     * time order. Otherwise as many pair as possible: a record first takes the earliest free event it does not
-     * contradict, and when none is free an earlier pairing moves to another event to make room (an augmenting path).
-     */
-    private fun pairs(
-        records: List<EventShape>,
-        events: List<EventShape>,
-    ): Map<String, String> {
-        val inOrder = records.sortedBy { it.atMillis }
-        val candidates = events.sortedBy { it.atMillis }
-        val owner = arrayOfNulls<Int>(candidates.size)
+    private fun within(
+        a: Long,
+        b: Long,
+        window: Long,
+    ): Boolean = window >= 0 && if (a >= b) a.toULong() - b.toULong() <= window.toULong() else b.toULong() - a.toULong() <= window.toULong()
 
-        fun place(
-            record: Int,
-            seen: MutableSet<Int>,
-        ): Boolean {
-            val allowed = candidates.indices.filter { !conflicts(inOrder[record], candidates[it]) && it !in seen }
-            allowed.firstOrNull { owner[it] == null }?.let {
-                owner[it] = record
-                return true
+    /** Eligible neighbors are enumerated on demand, keeping dense equal-fill groups linear in memory. */
+    private class Candidates(
+        val records: List<EventShape>,
+        val events: List<EventShape>,
+        val window: Long,
+    ) {
+        private val recordKinds = records.flatMap { it.ids }.map { it.substringBefore(':') }.toSet()
+        val unrestricted = events.none { event -> event.ids.any { it.substringBefore(':') in recordKinds } }
+        val ranges = records.map { range(it.atMillis, events) }
+
+        fun events(record: Int): Sequence<Int> =
+            ranges[record].asSequence().filter { unrestricted || !conflicts(records[record], events[it]) }
+
+        fun records(event: Int): Sequence<Int> =
+            range(events[event].atMillis, records).asSequence().filter { unrestricted || !conflicts(records[it], events[event]) }
+
+        private fun range(
+            at: Long,
+            shapes: List<EventShape>,
+        ): IntRange {
+            fun bound(after: Boolean): Int {
+                var low = 0
+                var high = shapes.size
+                while (low < high) {
+                    val mid = low + (high - low) / 2
+                    val time = shapes[mid].atMillis
+                    val before = if (after) time <= at || within(time, at, window) else time < at && !within(time, at, window)
+                    if (before) low = mid + 1 else high = mid
+                }
+                return low
             }
-            allowed.forEach { event ->
-                seen += event
-                if (place(owner[event]!!, seen)) {
-                    owner[event] = record
-                    return true
+            if (window < 0) return IntRange.EMPTY
+            return bound(false) until bound(true)
+        }
+    }
+
+    /** Connected components of eligible record/event edges; an isolated record forms its own component. */
+    private fun components(graph: Candidates): List<Pair<List<Int>, List<Int>>> {
+        val result = mutableListOf<Pair<List<Int>, List<Int>>>()
+        if (graph.unrestricted) {
+            var records = mutableListOf<Int>()
+            var firstEvent = -1
+            var lastEvent = -1
+
+            fun finish() {
+                if (records.isNotEmpty()) result += records.toList() to (firstEvent..lastEvent).toList()
+                records = mutableListOf()
+            }
+            graph.ranges.forEachIndexed { record, range ->
+                if (range.isEmpty()) {
+                    result += listOf(record) to emptyList()
+                } else {
+                    if (records.isNotEmpty() && range.first > lastEvent) finish()
+                    if (records.isEmpty()) firstEvent = range.first
+                    lastEvent = range.last
+                    records += record
                 }
             }
-            return false
+            finish()
+            return result
         }
-        inOrder.indices.forEach { place(it, mutableSetOf()) }
-        return owner.withIndex().mapNotNull { (event, record) -> record?.let { inOrder[it].id to candidates[event].id } }.toMap()
+        val seenRecords = BooleanArray(graph.records.size)
+        val seenEvents = BooleanArray(graph.events.size)
+        graph.records.indices.forEach { start ->
+            if (seenRecords[start]) return@forEach
+            val records = mutableListOf(start)
+            val events = mutableListOf<Int>()
+            seenRecords[start] = true
+            var next = 0
+            while (next < records.size) {
+                graph.events(records[next++]).forEach { event ->
+                    if (!seenEvents[event]) {
+                        seenEvents[event] = true
+                        events += event
+                        graph.records(event).forEach { record ->
+                            if (!seenRecords[record]) {
+                                seenRecords[record] = true
+                                records += record
+                            }
+                        }
+                    }
+                }
+            }
+            result += records.sorted() to events.sorted()
+        }
+        return result
+    }
+
+    /** Deterministic maximum matching using iterative augmenting paths, without recursion. */
+    private fun pairs(
+        records: List<Int>,
+        graph: Candidates,
+    ): Map<Int, Int> {
+        if (graph.unrestricted) {
+            val pairs = mutableMapOf<Int, Int>()
+            var next = 0
+            records.forEach { record ->
+                val range = graph.ranges[record]
+                next = maxOf(next, range.first)
+                if (next <= range.last) pairs[record] = next++
+            }
+            return pairs
+        }
+        val owner = mutableMapOf<Int, Int>()
+        val assigned = mutableMapOf<Int, Int>()
+        records.forEach { start ->
+            val free = graph.events(start).firstOrNull { it !in owner }
+            if (free != null) {
+                owner[free] = start
+                assigned[start] = free
+                return@forEach
+            }
+            val previous = mutableMapOf<Int, Int>()
+            val seenRecords = mutableSetOf(start)
+            val queue = mutableListOf(start)
+            var next = 0
+            var end = -1
+            while (next < queue.size && end < 0) {
+                val record = queue[next++]
+                for (event in graph.events(record)) {
+                    if (event in previous) continue
+                    previous[event] = record
+                    if (event !in owner) {
+                        end = event
+                        break
+                    }
+                    val occupiedBy = owner.getValue(event)
+                    if (seenRecords.add(occupiedBy)) queue += occupiedBy
+                }
+            }
+            while (end >= 0) {
+                val record = previous.getValue(end)
+                val old = assigned[record] ?: -1
+                owner[end] = record
+                assigned[record] = end
+                end = old
+            }
+        }
+        return assigned
     }
 
     /**
@@ -175,7 +302,7 @@ object EventMatcher {
         val result = mutableListOf<Pair<MutableList<EventShape>, MutableList<EventShape>>>()
         var last = Long.MIN_VALUE
         items.forEach { (shape, isRecord) ->
-            if (result.isEmpty() || shape.atMillis - last > window) result += mutableListOf<EventShape>() to mutableListOf()
+            if (result.isEmpty() || !within(shape.atMillis, last, window)) result += mutableListOf<EventShape>() to mutableListOf()
             if (isRecord) result.last().first += shape else result.last().second += shape
             last = shape.atMillis
         }

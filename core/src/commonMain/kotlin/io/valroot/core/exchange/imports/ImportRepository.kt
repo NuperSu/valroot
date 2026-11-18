@@ -1,11 +1,15 @@
 package io.valroot.core.exchange.imports
 
+import io.valroot.core.exchange.ExchangeRow
+import io.valroot.core.exchange.ImportedEvents
 import io.valroot.core.model.AccountId
 import io.valroot.core.storage.SqliteDatabase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /** One file of an import batch, as the receipt lists it. */
@@ -163,6 +167,89 @@ internal class ImportRepository(
                     .query("SELECT 1 FROM exchange_import_events WHERE account=? AND record_key=? LIMIT 1", listOf(account.value, key))
                     .isEmpty()
             }.groupBy({ it.first }, { it.second })
+    }
+
+    /** Maps statement copies using their ordinal within each original source table. Missing provenance stays separate. */
+    fun aliases(
+        account: AccountId,
+        rows: List<ExchangeRow>,
+    ): Map<String, String> {
+        val records = rows.filter { it.stream == ImportedEvents.STREAM }.associate { it.key to ImportedEvents.parse(it.payload) }
+        if (records.size < 2) return emptyMap()
+        val pinned =
+            records
+                .mapNotNull { (key, record) ->
+                    record.details[StatementIdentity.CANONICAL_KEY]?.takeIf { it != key && it in records }?.let { key to it }
+                }.toMap()
+        val result = pinned.toMutableMap()
+        val pinnedKeys = pinned.keys + pinned.values
+        val identities = records.mapValues { StatementIdentity.of(it.value) }
+        val evidence =
+            db
+                .query(
+                    "SELECT s.record_key, s.batch, s.file_hash, s.member, s.sheet, s.rows FROM exchange_import_sources s " +
+                        "JOIN exchange_import_batches b ON b.id=s.batch WHERE s.account=? AND b.undone_at IS NULL " +
+                        "ORDER BY b.imported_at, b.rowid, s.seq",
+                    listOf(account.value),
+                ).filter { identities[it[0]] != null }
+                .groupBy { identities[it[0]] }
+        val order = records.keys.withIndex().associate { it.value to it.index }
+        evidence.values.forEach { group ->
+            val ordinals = mutableMapOf<String, MutableSet<Int>>()
+            group.groupBy { it.subList(1, 5) }.values.forEach { table ->
+                table
+                    .distinctBy { it[0] }
+                    .sortedBy { source ->
+                        source[5].orEmpty().substringBefore(',').toIntOrNull() ?: Int.MAX_VALUE
+                    }.forEachIndexed { ordinal, source ->
+                        ordinals.getOrPut(source[0]!!) { mutableSetOf() } += ordinal
+                    }
+            }
+            val candidates = ordinals.filterValues { it.size == 1 }.keys - pinnedKeys
+            candidates.groupBy { ordinals.getValue(it).single() }.values.forEach { copies ->
+                val canonical = copies.minBy { order.getValue(it) }
+                copies.filter { it != canonical }.forEach { result[it] = canonical }
+            }
+        }
+        return result
+    }
+
+    /** Persists alias identity and gives its canonical event support from every active alias batch. */
+    fun supportAliases(
+        account: AccountId,
+        rows: List<ExchangeRow>,
+    ) {
+        aliases(account, rows).forEach { (alias, canonical) ->
+            val row = rows.single { it.stream == ImportedEvents.STREAM && it.key == alias }
+            db.execute(
+                "UPDATE exchange_rows SET payload=? WHERE account=? AND stream=? AND key=?",
+                listOf(aliasPayload(row, canonical), account.value, ImportedEvents.STREAM, alias),
+            )
+            db
+                .query("SELECT batch FROM exchange_import_events WHERE account=? AND record_key=?", listOf(account.value, alias))
+                .forEach { link(account, canonical, it[0]!!) }
+        }
+    }
+
+    fun annotateAliases(
+        account: AccountId,
+        rows: List<ExchangeRow>,
+    ): List<ExchangeRow> {
+        val aliases = aliases(account, rows)
+        return rows.map { row ->
+            aliases[row.key]
+                ?.takeIf { row.stream == ImportedEvents.STREAM }
+                ?.let { row.copy(payload = aliasPayload(row, it)) } ?: row
+        }
+    }
+
+    private fun aliasPayload(
+        row: ExchangeRow,
+        canonical: String,
+    ): String {
+        val payload = Json.parseToJsonElement(row.payload).jsonObject
+        val details = payload.getValue("details").jsonObject + (StatementIdentity.CANONICAL_KEY to JsonPrimitive(canonical))
+        return JsonObject(payload + ("details" to JsonObject(details))).toString()
     }
 
     fun markUndone(

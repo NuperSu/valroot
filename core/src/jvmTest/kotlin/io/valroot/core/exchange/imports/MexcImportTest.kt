@@ -11,6 +11,7 @@ import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.ExactDecimal
+import io.valroot.core.reconcile.ActivityOverlay
 import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -267,7 +268,7 @@ class MexcImportTest {
         }
     }
 
-    @Test fun aRecordSavedUnderAnEarlierKeyIsNotImportedTwice() {
+    @Test fun aMovedLegacyStatementKeepsItsActivityAndSurvivesUndoOfTheOriginalBatch() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { at + 100_000 }
             app.snapshot()
@@ -276,24 +277,110 @@ class MexcImportTest {
             val deposit = "$uid,2026-01-02 09:00:00,USDT,Deposit,Inflow,50"
             val file = table(MexcExports.STATEMENT, buy, pay, deposit)
             val choices = ImportChoices(offset = ImportOffset(240), accounts = mapOf("mexc:$uid" to AccountChoice.New("MEXC export", uid)))
-            app.exchangeImports.commit(app.exchangeImports.preview(listOf(file), choices))
-            // Records an earlier version saved under keys that included their row numbers.
-            db.execute("UPDATE exchange_rows SET key=replace(key, ':', ':legacy') WHERE stream='file'")
+            val first = app.exchangeImports.commit(app.exchangeImports.preview(listOf(file), choices))
+            val account = first.accounts.single()
+            val sources = app.exchangeImports.sources(first.id)
+            val records = interpret(MexcExports.STATEMENT, buy, pay, deposit)
+            val legacyKeys = ImportValues.keys(records.first().report, records.map(::legacyStatementContent))
+            val assets = app.exchanges.historyAssets(ExchangeKind.MEXC, account)
+            db.transaction {
+                records.zip(legacyKeys).forEach { (record, legacyKey) ->
+                    val originalKey = sources.single { it.rows.first() == record.source.row }.key!!
+                    db.execute(
+                        "UPDATE exchange_rows SET key=?, payload=? WHERE account=? AND stream='file' AND key=?",
+                        listOf(legacyKey, ImportedEvents.payload(record), account.value, originalKey),
+                    )
+                    db.execute(
+                        "UPDATE exchange_import_events SET record_key=? WHERE account=? AND record_key=?",
+                        listOf(legacyKey, account.value, originalKey),
+                    )
+                    db.execute(
+                        "UPDATE exchange_import_sources SET record_key=? WHERE account=? AND record_key=?",
+                        listOf(legacyKey, account.value, originalKey),
+                    )
+                }
+                app.exchanges.rederiveInTransaction(ExchangeKind.MEXC, account, uid, assets)
+            }
 
-            fun counts() =
+            fun active() =
                 app
                     .snapshot()
                     .activities
-                    .filter { it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
-                    .groupingBy { it.activity.kind }
-                    .eachCount()
-            val before = counts()
-            app.exchangeImports.commit(app.exchangeImports.preview(listOf(file), choices.copy(accounts = emptyMap())))
-            assertEquals(before, counts())
-            assertEquals(1, before[ActivityKind.TRADE])
-            assertEquals(1, before[ActivityKind.DEPOSIT])
+                    .map { it.activity }
+                    .filter { it.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
+
+            app.reload()
+            val originalIds = active().map { it.id to it.movements.map { movement -> movement.id } }.toSet()
+            assertEquals(2, originalIds.size)
+            val tradeId = active().single { it.kind == ActivityKind.TRADE }.id
+            app.transactions.saveOverlay(ActivityOverlay(tradeId, note = "Original trade note"))
+            val shifted = table(MexcExports.STATEMENT, deposit, pay, buy, file = "shifted.xlsx")
+            val preview = app.exchangeImports.preview(listOf(shifted), choices.copy(accounts = emptyMap()))
+            assertEquals(mapOf(ImportStatus.ALREADY_IMPORTED to 2), preview.counts)
+            val second = app.exchangeImports.commit(preview)
+            assertEquals(originalIds, active().map { it.id to it.movements.map { movement -> movement.id } }.toSet())
+
+            // Model an older import that saved its moved statement trade under a distinct legacy key.
+            val moved = interpret(MexcExports.STATEMENT, deposit, pay, buy).single { it.kind == RecordKind.TRADE }
+            val movedKey = ImportValues.keys(moved.report, listOf(legacyStatementContent(moved))).single()
+            val tradeKey = legacyKeys[records.indexOfFirst { it.kind == RecordKind.TRADE }]
+            db.transaction {
+                val payload = ImportedEvents.payload(moved)
+                val source =
+                    app.exchanges.ingestRecord(
+                        ExchangeKind.MEXC,
+                        account,
+                        uid,
+                        "file:$movedKey",
+                        payload,
+                        moved.report,
+                        origin = "file",
+                    )
+                app.exchanges.saveRowInTransaction(
+                    account,
+                    ExchangeRow(ImportedEvents.STREAM, movedKey, moved.atMillis, payload, source.value),
+                )
+                db.execute(
+                    "UPDATE exchange_import_events SET record_key=? WHERE batch=? AND account=? AND record_key=?",
+                    listOf(movedKey, second.id, account.value, tradeKey),
+                )
+                db.execute(
+                    "UPDATE exchange_import_sources SET record_key=? WHERE batch=? AND account=? AND record_key=?",
+                    listOf(movedKey, second.id, account.value, tradeKey),
+                )
+                app.exchanges.rederiveInTransaction(ExchangeKind.MEXC, account, uid, assets)
+            }
+            app.reload()
+            assertEquals(originalIds, active().map { it.id to it.movements.map { movement -> movement.id } }.toSet())
+            app.exchangeImports.undo(first.id)
+            assertEquals(originalIds, active().map { it.id to it.movements.map { movement -> movement.id } }.toSet())
+            assertEquals(
+                "Original trade note",
+                app
+                    .snapshot()
+                    .activities
+                    .single { it.activity.id == tradeId }
+                    .note,
+            )
+            app.exchangeImports.undo(second.id)
+            assertTrue(active().isEmpty())
         }
     }
+
+    private fun legacyStatementContent(record: ImportedRecord) =
+        listOf(
+            record.uid.orEmpty(),
+            record.kind.name,
+            record.status.name,
+            record.atMillis.toString(),
+            record.legs.joinToString(";") { "${it.coin}=${it.amount}/${it.role}" },
+            record.wallet.orEmpty(),
+            record.namespace.orEmpty(),
+            record.nativeId.orEmpty(),
+            record.details.entries
+                .sortedBy { it.key }
+                .joinToString(";") { "${it.key}=${it.value}" },
+        ).joinToString("|")
 
     private fun saved(
         record: ImportedRecord,
@@ -311,8 +398,14 @@ class MexcImportTest {
                 saved(records[0], "statement:aaaa:0"),
                 saved(records[1], "statement:cccc:0"),
                 // The same file imported again under the current keys: one hash, ordinals 0 and 1.
-                saved(records[0], "statement:bbbb:0"),
-                saved(records[1], "statement:bbbb:1"),
+                saved(
+                    records[0].copy(details = records[0].details + (StatementIdentity.CANONICAL_KEY to "statement:aaaa:0")),
+                    "statement:bbbb:0",
+                ),
+                saved(
+                    records[1].copy(details = records[1].details + (StatementIdentity.CANONICAL_KEY to "statement:cccc:0")),
+                    "statement:bbbb:1",
+                ),
             )
         val decoded = MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null)
         assertEquals(2, decoded.activities.size)
@@ -349,5 +442,25 @@ class MexcImportTest {
                 .map { it.txId }
                 .toSet(),
         )
+    }
+
+    @Test fun aMatchedRecordEnrichesTheTransferBeforeTheNextReportIsMatched() {
+        val records =
+            interpret(
+                MexcExports.DEPOSITS,
+                "$uid,Completed,2026-01-02 09:00:00,USDT,TRC20,50,0xaaa,1/1",
+                "$uid,Completed,2026-01-02 09:00:00,USDT,TRC20,50,0xbbb,1/1",
+            )
+        val withoutId = records[0].copy(report = "a", details = records[0].details - "txid")
+        val rows = listOf(saved(withoutId, "a"), saved(records[0].copy(report = "b"), "b"), saved(records[1].copy(report = "c"), "c"))
+        val decoded = MexcDecoder.decode(account, uid, rows, assets, emptyMap(), null)
+        assertEquals(2, decoded.activities.size)
+        assertEquals(
+            setOf("0xaaa", "0xbbb"),
+            decoded.transfers.values
+                .map { it.txId }
+                .toSet(),
+        )
+        assertTrue(decoded.imports["b"] is ImportOutcome.Same)
     }
 }

@@ -129,4 +129,64 @@ class EventMatcherTest {
         assertEquals(MatchOutcome.Same("api-2"), outcomes["f-1"])
         assertEquals(MatchOutcome.Same("api-1"), outcomes["f-2"])
     }
+
+    @Test fun aTimeClusterCannotPairEventsOutsideEachRecordsWindow() {
+        val records = listOf(trade("f-1", 0), trade("f-2", 6_000))
+        val events = listOf(trade("api-1", 1_000), trade("bridge", 2_999), trade("api-2", 4_998))
+        val outcomes = EventMatcher.match(records, events, tolerance)
+        assertEquals(MatchOutcome.Same("api-1"), outcomes["f-1"])
+        assertEquals(MatchOutcome.Same("api-2"), outcomes["f-2"])
+        assertEquals(outcomes, EventMatcher.match(records.reversed(), events.reversed(), tolerance))
+    }
+
+    @Test fun recordsWithoutEligibleCandidatesAreNewEvenInsideABusyCluster() {
+        val records = listOf(trade("isolated", 0), trade("near", 1_999))
+        val events = listOf(trade("event", 3_998))
+        val outcomes = EventMatcher.match(records, events, tolerance)
+        assertEquals(MatchOutcome.New, outcomes["isolated"])
+        assertEquals(MatchOutcome.Same("event"), outcomes["near"])
+    }
+
+    @Test fun countsAloneCannotProveACompleteMatching() {
+        val records = listOf(trade("f-1", 0), trade("f-2", 0), trade("f-3", 10))
+        val events = listOf(trade("e-1", 0), trade("e-2", 20), trade("e-3", 20))
+        val outcomes = EventMatcher.match(records, events, { 10L })
+        val ambiguous = assertIs<MatchOutcome.Ambiguous>(outcomes["f-1"])
+        assertEquals(ambiguous, outcomes["f-2"])
+        assertEquals(ambiguous, outcomes["f-3"])
+        val same = EventMatcher.match(records, events, { 10L }, mapOf(ambiguous.group to GroupDecision.SAME))
+        assertEquals(2, same.values.count { it is MatchOutcome.Same })
+        assertEquals(1, same.values.count { it == MatchOutcome.New })
+    }
+
+    @Test fun identifierIncompatibleSubgroupsDoNotShareAmbiguity() {
+        val records = listOf(trade("a-1", 0), trade("a-2", 0), trade("b", 6_000))
+        val events = listOf(trade("a", 1_000), trade("bridge", 2_999), trade("b-event", 4_998))
+        val outcomes = EventMatcher.match(records, events, tolerance)
+        val ambiguous = assertIs<MatchOutcome.Ambiguous>(outcomes["a-1"])
+        assertEquals(2, ambiguous.records)
+        assertEquals(1, ambiguous.candidates)
+        assertEquals(MatchOutcome.Same("b-event"), outcomes["b"])
+        val legacyKey = EventMatcher.groupKey(records)
+        val excluded = EventMatcher.match(records, events, tolerance, mapOf(legacyKey to GroupDecision.EXCLUDED))
+        assertEquals(MatchOutcome.Excluded(legacyKey), excluded["a-1"])
+        assertEquals(MatchOutcome.Excluded(legacyKey), excluded["b"])
+    }
+
+    @Test fun aSharedIdentifierDoesNotOverrideAnotherContradictingIdentifier() {
+        val record = trade("file", 0, ids = setOf("trade:shared", "txid:first"))
+        val event = trade("api", 0, ids = setOf("trade:shared", "txid:other"))
+        assertEquals(MatchOutcome.New, EventMatcher.match(listOf(record), listOf(event), tolerance)["file"])
+    }
+
+    @Test fun aLargeAmbiguousComponentMatchesDeterministicallyWithoutRecursion() {
+        val records = (0 until 1_000).map { trade("f-$it", 0) }
+        val events = (0 until 999).map { trade("api-$it", 0) }
+        val key = EventMatcher.groupKey(records)
+        val decisions = mapOf(key to GroupDecision.SAME)
+        val result = EventMatcher.match(records, events, tolerance, decisions)
+        assertEquals(999, result.values.count { it is MatchOutcome.Same })
+        assertEquals(1, result.values.count { it == MatchOutcome.New })
+        assertEquals(result, EventMatcher.match(records.reversed(), events.reversed(), tolerance, decisions))
+    }
 }
