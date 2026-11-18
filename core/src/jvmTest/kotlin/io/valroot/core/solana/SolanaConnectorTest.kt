@@ -51,20 +51,22 @@ class SolanaConnectorTest {
 
     private data class Entry(
         val slot: Long,
-        val index: Int,
+        val index: Int?,
         val json: JsonObject,
     )
 
     private fun entry(
         seed: Int,
         slot: Long,
-        index: Int,
+        index: Int?,
         accounts: List<String>,
         pre: List<Long>,
         post: List<Long>,
         preTokens: List<Token> = emptyList(),
         postTokens: List<Token> = emptyList(),
         instructions: List<String> = emptyList(),
+        blockTime: Boolean = true,
+        version: String = "0",
     ): Entry {
         fun tokens(list: List<Token>) =
             list.joinToString(",", "[", "]") {
@@ -74,7 +76,7 @@ class SolanaConnectorTest {
         val keys = accounts.joinToString(",", "[", "]") { """{"pubkey":"$it","signer":false,"writable":true,"source":"transaction"}""" }
         val top = instructions.ifEmpty { listOf("""{"program":"system","programId":"x","parsed":{"type":"transfer","info":{}}}""") }
         val text =
-            """{"slot":$slot,"transactionIndex":$index,"blockTime":${1_700_000_000 + slot},"version":0,
+            """{"slot":$slot,"transactionIndex":$index,"blockTime":${if (blockTime) 1_700_000_000 + slot else null},"version":$version,
               "transaction":{"signatures":["${signature(
                 seed,
             )}"],"message":{"accountKeys":$keys,"instructions":${top.joinToString(",", "[", "]")}}},
@@ -118,6 +120,7 @@ class SolanaConnectorTest {
         var chain = mutableMapOf<String, String>()
         var tokenAccounts = mutableMapOf<String, String>()
         var assets = mutableMapOf<String, String>()
+        var blockTimes = mutableMapOf<Long, Long>()
         val methods = mutableListOf<String>()
 
         fun hold(
@@ -142,6 +145,12 @@ class SolanaConnectorTest {
             val result =
                 when (method) {
                     Helius.SLOT -> slot.toString()
+                    Helius.BLOCK_TIME ->
+                        blockTimes[
+                            params.jsonArray[0]
+                                .jsonPrimitive.content
+                                .toLong(),
+                        ]?.toString() ?: "null"
                     Helius.TOKEN_ACCOUNTS -> {
                         val program =
                             params.jsonArray[1]
@@ -177,10 +186,10 @@ class SolanaConnectorTest {
                                 ?.split(':')
                         val after =
                             entries
-                                .sortedWith(compareBy({ it.slot }, { it.index }))
-                                .filter { token == null || it.slot to it.index > token[0].toLong() to token[1].toInt() }
+                                .sortedWith(compareBy({ it.slot }, { it.index ?: -1 }))
+                                .filter { token == null || it.slot to (it.index ?: -1) > token[0].toLong() to token[1].toInt() }
                         val page = after.take(pageSize)
-                        val next = if (after.size > pageSize) page.last().let { "\"${it.slot}:${it.index}\"" } else "null"
+                        val next = if (after.size > pageSize) page.last().let { "\"${it.slot}:${it.index ?: -1}\"" } else "null"
                         """{"data":${page.joinToString(",", "[", "]") { it.json.toString() }},"paginationToken":$next}"""
                     }
                     else -> error("Unexpected method $method")
@@ -339,6 +348,117 @@ class SolanaConnectorTest {
             assertEquals("1 NFT not tracked", app.solana.state(wallet).coverage)
             // The NFT's account already held its rent when history first saw it, so that SOL is unexplained.
             assertEquals("History does not explain all SOL held", app.solana.state(wallet).balanceDifference)
+        }
+    }
+
+    private fun Entry.without(field: String) =
+        copy(
+            json = JsonObject(json + (field to kotlinx.serialization.json.JsonNull)),
+            index =
+                if (field ==
+                    "transactionIndex"
+                ) {
+                    null
+                } else {
+                    index
+                },
+        )
+
+    @Test fun aMoreCompleteResponseForAStoredSignatureReplacesItAndIsReplayed() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val helius = fakeWithChain().apply { entries = listOf(receiveSol.without("transactionIndex"), receiveUsdc, sendSol) }
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            val first = app.solana.transactions(wallet).first()
+            assertNull(first.index)
+            // Read again from the start: the response now has the position, so it is kept and replayed.
+            helius.entries = listOf(receiveSol, receiveUsdc, sendSol)
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions(recoverHistory = true))
+            assertEquals(
+                0,
+                app.solana
+                    .transactions(wallet)
+                    .first()
+                    .index,
+            )
+            assertTrue(
+                activities(app).single { it.id.value.contains(first.signature) }.orderingKey.endsWith("0000000000:${first.signature}"),
+            )
+            // An equally or less complete response never replaces the kept one, whatever its hash.
+            helius.entries = listOf(receiveSol.without("transactionIndex"), receiveUsdc, sendSol)
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions(recoverHistory = true))
+            assertEquals(
+                0,
+                app.solana
+                    .transactions(wallet)
+                    .first()
+                    .index,
+            )
+            assertEquals(3, activities(app).size)
+        }
+    }
+
+    @Test fun aMissingBlockTimeIsRecoveredWithoutStallingTheStream() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val undated = receiveSol.copy(json = JsonObject(receiveSol.json + ("blockTime" to kotlinx.serialization.json.JsonNull)))
+            val helius = fakeWithChain().apply { entries = listOf(undated, receiveUsdc, sendSol) }
+            // The node has no time for the block yet: the activity waits, the stream still advances, the check waits.
+            val outcome = SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(JobState.COMPLETED), outcome.jobs)
+            assertEquals(2, activities(app).size)
+            assertEquals(helius.slot, app.solana.stream(wallet).scannedThrough)
+            assertEquals(SolanaService.PENDING, app.solana.state(wallet).balanceState)
+            assertTrue(
+                app.solana
+                    .state(wallet)
+                    .coverage!!
+                    .contains("1 transaction waiting for its block time"),
+            )
+            // Once the block's time is known, the activity is dated and the saved snapshot matches.
+            helius.blockTimes[receiveSol.slot] = 1_700_000_005L
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            assertEquals(3, activities(app).size)
+            assertEquals(
+                1_700_000_005_000L,
+                activities(app).single { it.orderingKey.contains(":00000000000000000010:") }.occurredAtEpochMillis,
+            )
+            assertEquals(SolanaService.MATCHED, app.solana.state(wallet).balanceState)
+        }
+    }
+
+    @Test fun aReplayStoppedAtAnUnorderedSlotKeepsTheCheckPending() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            // Both slot-20 transactions without positions: projection stops at slot 20, below the snapshot.
+            val helius =
+                fakeWithChain(pageSize = 5).apply {
+                    entries = listOf(receiveSol, receiveUsdc.without("transactionIndex"), sendSol.without("transactionIndex"))
+                }
+            SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            assertEquals(helius.slot, app.solana.stream(wallet).scannedThrough)
+            assertEquals(1, activities(app).size)
+            assertEquals(SolanaService.PENDING, app.solana.state(wallet).balanceState)
+            assertNull(app.solana.state(wallet).balanceDifference)
+            assertEquals(1, app.solana.snapshot(wallet).size, "the snapshot is kept for when the order is known")
+        }
+    }
+
+    @Test fun aTransactionInAnUnreadableVersionIsStoredAndReported() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val future = entry(9, 40, 0, listOf(other, wallet), listOf(10, 0), listOf(5, 5), version = "2")
+            val helius = fakeWithChain().apply { entries = entries + future }
+            val outcome = SolanaConnector(helius::post).refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(JobState.COMPLETED), outcome.jobs)
+            assertEquals(helius.slot, app.solana.stream(wallet).scannedThrough)
+            assertEquals(3, activities(app).size)
+            assertTrue(
+                app.solana
+                    .state(wallet)
+                    .coverage!!
+                    .contains("1 transaction in a format Valroot cannot read yet"),
+            )
         }
     }
 }

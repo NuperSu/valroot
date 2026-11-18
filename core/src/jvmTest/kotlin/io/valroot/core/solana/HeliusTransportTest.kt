@@ -62,6 +62,7 @@ class HeliusTransportTest {
                 Helius.accountsBody(listOf(wallet)),
                 Helius.tokenAccountsBody(wallet, SolanaOwnership.TOKEN_PROGRAM_IDS.first()),
                 Helius.assetsBody(listOf(wallet)),
+                Helius.blockTimeBody(7),
             )
         bodies.forEach(transport::post)
         assertEquals(Helius.METHODS, bodies.map { Helius.methodOf(it) }.toSet())

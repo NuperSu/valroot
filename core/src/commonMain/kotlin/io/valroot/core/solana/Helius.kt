@@ -66,7 +66,8 @@ object Helius {
     const val ACCOUNTS = "getMultipleAccounts"
     const val TOKEN_ACCOUNTS = "getTokenAccountsByOwner"
     const val ASSETS = "getAssetBatch"
-    val METHODS = setOf(HISTORY, SLOT, ACCOUNTS, TOKEN_ACCOUNTS, ASSETS)
+    const val BLOCK_TIME = "getBlockTime"
+    val METHODS = setOf(HISTORY, SLOT, ACCOUNTS, TOKEN_ACCOUNTS, ASSETS, BLOCK_TIME)
 
     /** The address's finalized transactions oldest first, with token-account activity and every instruction parsed. */
     fun historyBody(
@@ -83,7 +84,7 @@ object Helius {
                     put("sortOrder", "asc")
                     put("limit", PAGE_SIZE)
                     put("commitment", "finalized")
-                    put("maxSupportedTransactionVersion", 0)
+                    put("maxSupportedTransactionVersion", 1)
                     putJsonObject("filters") { put("tokenAccounts", "balanceChanged") }
                     paginationToken?.let { put("paginationToken", it) }
                 },
@@ -92,6 +93,26 @@ object Helius {
     }
 
     fun slotBody(): String = request(SLOT) { add(buildJsonObject { put("commitment", "finalized") }) }
+
+    fun blockTimeBody(slot: Long): String {
+        require(slot >= 0) { "Invalid slot" }
+        return request(BLOCK_TIME) { add(JsonPrimitive(slot)) }
+    }
+
+    /** A block's time in milliseconds, or null when the node has none for it. */
+    fun parseBlockTime(text: String): Long? {
+        val response =
+            runCatching { Json.parseToJsonElement(text).jsonObject }.getOrNull()
+                ?: throw IllegalStateException("Helius returned an unreadable response.")
+        (response["error"] as? JsonObject)?.let { error ->
+            throw IllegalStateException("Helius could not answer (error ${(error["code"] as? JsonPrimitive)?.content ?: "unknown"}).")
+        }
+        return (response["result"] as? JsonPrimitive)
+            ?.takeIf { it !is JsonNull }
+            ?.content
+            ?.toLong()
+            ?.times(1000)
+    }
 
     fun accountsBody(addresses: List<String>): String {
         require(addresses.size in 1..ACCOUNT_BATCH && addresses.all(SolanaIds::isAddress)) { "Invalid account batch" }

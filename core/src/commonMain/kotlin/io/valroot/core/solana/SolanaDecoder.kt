@@ -101,6 +101,8 @@ data class SolanaGap(
 data class SolanaDecoded(
     val activity: Activity?,
     val gaps: List<SolanaGap>,
+    /** True when the transaction moved funds but has no block time, so its activity waits. */
+    val undated: Boolean = false,
 )
 
 /**
@@ -153,11 +155,15 @@ object SolanaDecoder {
         }
         val tokens = TokenView(transaction)
         val skipped = SolanaIds.WRAPPED_SOL_MINTS + ignoredMints
-        transaction.postTokens.filter { it.mint !in skipped }.forEach {
-            if (ownedAfter(transaction.accounts[it.accountIndex])) add(deltas, SolanaIds.token(it.mint), it.amount)
-        }
-        transaction.preTokens.filter { it.mint !in skipped }.forEach {
-            if (ownedBefore(transaction.accounts[it.accountIndex])) add(deltas, SolanaIds.token(it.mint), -it.amount)
+        // Token changes need both sides: with either balance list unrecorded, one side alone would read as a whole
+        // balance arriving or leaving, so none is counted and the gap below is reported instead.
+        if (transaction.tokenBalancesKnown) {
+            transaction.postTokens.filter { it.mint !in skipped }.forEach {
+                if (ownedAfter(transaction.accounts[it.accountIndex])) add(deltas, SolanaIds.token(it.mint), it.amount)
+            }
+            transaction.preTokens.filter { it.mint !in skipped }.forEach {
+                if (ownedBefore(transaction.accounts[it.accountIndex])) add(deltas, SolanaIds.token(it.mint), -it.amount)
+            }
         }
         if (!transaction.tokenBalancesKnown && transaction.accounts.any { it in SolanaOwnership.TOKEN_PROGRAM_IDS }) {
             gaps += SolanaGap(transaction.signature, null, SolanaGapReason.TOKEN_BALANCES_UNAVAILABLE)
@@ -212,7 +218,8 @@ object SolanaDecoder {
                     Movement(EventId(key), account, AtomicAmount(asset, -fee), MovementRole.FEE)
                 }
         if (movements.isEmpty()) return SolanaDecoded(null, gaps.toList())
-        val timestamp = requireNotNull(transaction.blockTimeMillis) { "Transaction has no block time" }
+        // An activity is never dated by guesswork: without its block time it waits until the time is recovered.
+        val timestamp = transaction.blockTimeMillis ?: return SolanaDecoded(null, gaps.toList(), undated = true)
         val kind =
             when {
                 swap -> ActivityKind.TRADE
@@ -230,6 +237,9 @@ object SolanaDecoder {
      * returns each decoded activity and coverage gap with the ownership after the last one. Transactions whose order
      * within their slot is unknown stop the replay there: ownership after them cannot be trusted, so the rest waits.
      *
+     * A transaction without a block time still advances ownership, but its activity waits: its slot is listed in
+     * [Replay.undatedSlots] until [blockTimes] (recovered times by slot) supplies one.
+     *
      * With [resume], a replay of the earlier transactions, [transactions] are only the ones added after it and decoding
      * continues from its ownership; [canContinue] must hold.
      */
@@ -239,37 +249,57 @@ object SolanaDecoder {
         transactions: List<SolanaTransaction>,
         ignoredMints: Set<String> = emptySet(),
         resume: Replay? = null,
+        blockTimes: Map<Long, Long> = emptyMap(),
         source: (SolanaTransaction) -> SourceRecordId,
     ): Replay {
-        val ordered = transactions.distinctBy { it.signature }.sortedWith(CHAIN_ORDER)
-        require(resume == null || canContinue(resume, ordered, ignoredMints)) { "This replay cannot be continued" }
+        val ordered =
+            transactions
+                .distinctBy { it.signature }
+                .sortedWith(CHAIN_ORDER)
+                .map {
+                    if (it.blockTimeMillis == null &&
+                        it.slot in blockTimes
+                    ) {
+                        it.copy(blockTimeMillis = blockTimes.getValue(it.slot))
+                    } else {
+                        it
+                    }
+                }
+        require(resume == null || canContinue(resume, ordered, ignoredMints, blockTimes)) { "This replay cannot be continued" }
         val base = resume ?: Replay(emptyList(), emptyList(), SolanaOwnership(), null, null, ignoredMints)
         val ambiguous = ordered.groupBy { it.slot }.filterValues { group -> group.size > 1 && group.any { it.index == null } }.keys
         var ownership = base.ownership
         var last = base.last
         val activities = base.activities.toMutableList()
         val gaps = base.gaps.toMutableList()
+        val undated = base.undatedSlots.toMutableSet()
         for (transaction in ordered) {
             if (transaction.slot in ambiguous || (last != null && last.slot == transaction.slot && last.index == null)) {
-                return Replay(activities, gaps, ownership, transaction.slot, last, ignoredMints)
+                return Replay(activities, gaps, ownership, transaction.slot, last, ignoredMints, undated)
             }
             val decoded = decode(wallet, account, transaction, ownership, source(transaction), ignoredMints)
             decoded.activity?.let(activities::add)
+            if (decoded.undated) undated += transaction.slot
             gaps += decoded.gaps
             ownership = ownership.after(transaction)
             last = transaction
         }
-        return Replay(activities, gaps, ownership, null, last, ignoredMints)
+        return Replay(activities, gaps, ownership, null, last, ignoredMints, undated)
     }
 
-    /** Whether [resume] can continue with [added]: it was not deferred, ignores the same mints, and they all follow it. */
+    /**
+     * Whether [resume] can continue with [added]: it was not deferred, ignores the same mints, has no waiting activity
+     * whose block time is now known, and they all follow it.
+     */
     fun canContinue(
         resume: Replay,
         added: List<SolanaTransaction>,
         ignoredMints: Set<String>,
+        blockTimes: Map<Long, Long> = emptyMap(),
     ): Boolean =
         resume.deferredFromSlot == null &&
             resume.ignoredMints == ignoredMints &&
+            resume.undatedSlots.none { it in blockTimes } &&
             added.all { resume.last == null || CHAIN_ORDER.compare(it, resume.last) > 0 }
 
     /** Chain order: slot, then position in the slot, then signature. */
@@ -284,6 +314,8 @@ object SolanaDecoder {
         /** The last transaction replayed. */
         val last: SolanaTransaction? = null,
         val ignoredMints: Set<String> = emptySet(),
+        /** Slots of transactions whose activity waits for a block time. */
+        val undatedSlots: Set<Long> = emptySet(),
     )
 
     /** Token balances of one transaction by account, for mint lookups and transfer-fee evidence. */

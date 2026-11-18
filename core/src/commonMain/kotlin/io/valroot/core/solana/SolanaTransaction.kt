@@ -27,6 +27,19 @@ data class SolanaTokenBalance(
     val plainAmount: Boolean = true,
 )
 
+/** A transaction's signature and place in the chain. */
+data class SolanaPosition(
+    val signature: String,
+    val slot: Long,
+    val index: Int?,
+)
+
+/** A transaction in a version this parser does not read; it is stored raw and reported, never decoded by guesswork. */
+class UnsupportedSolanaTransaction(
+    val position: SolanaPosition,
+    val version: String,
+) : IllegalArgumentException("Unsupported Solana transaction version")
+
 /** One executed instruction, by name when the node parses its program (`spl-token`, `system`, `stake`, …). */
 data class SolanaInstruction(
     val program: String?,
@@ -58,6 +71,12 @@ data class SolanaTransaction(
     /** False when the node did not record token balances: then the token lists are unknown, not empty. */
     val tokenBalancesKnown: Boolean = true,
 ) {
+    /**
+     * How complete this response is: a known position, block time and token balances each count. Of two responses for
+     * one signature the more complete is kept.
+     */
+    val quality: Int get() = listOf(index != null, blockTimeMillis != null, tokenBalancesKnown).count { it }
+
     /** The fee payer: always the first account. */
     val feePayer: String get() = accounts.first()
 
@@ -66,9 +85,46 @@ data class SolanaTransaction(
         "solana-chain:${slot.toString().padStart(20, '0')}:${index?.toString()?.padStart(10, '0') ?: "unknown"}:$signature"
 
     companion object {
-        /** Parses one history entry; throws [IllegalArgumentException] for a malformed or unexpected one. */
-        fun parse(entry: JsonObject): SolanaTransaction =
+        /** Transaction versions whose `jsonParsed` shape this parser reads. */
+        val VERSIONS = setOf("legacy", "0", "1")
+
+        /**
+         * The signature and chain position of a history entry, read without parsing the rest, so an entry in a format
+         * this parser does not read can still be stored and ordered.
+         */
+        fun positionOf(entry: JsonObject): SolanaPosition =
             try {
+                val signature =
+                    entry
+                        .getValue("transaction")
+                        .jsonObject
+                        .getValue("signatures")
+                        .jsonArray
+                        .first()
+                        .jsonPrimitive.content
+                require(SolanaIds.isSignature(signature)) { "Invalid signature" }
+                SolanaPosition(
+                    signature,
+                    entry
+                        .getValue("slot")
+                        .jsonPrimitive.content
+                        .toLong(),
+                    (entry["transactionIndex"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.toInt(),
+                )
+            } catch (failure: IllegalArgumentException) {
+                throw failure
+            } catch (failure: RuntimeException) {
+                throw IllegalArgumentException("Malformed Solana transaction", failure)
+            }
+
+        /**
+         * Parses one history entry. Throws [UnsupportedSolanaTransaction] for a transaction version outside [VERSIONS]
+         * and [IllegalArgumentException] for a malformed entry.
+         */
+        fun parse(entry: JsonObject): SolanaTransaction {
+            val version = (entry["version"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content ?: "legacy"
+            if (version !in VERSIONS) throw UnsupportedSolanaTransaction(positionOf(entry), version)
+            return try {
                 val transaction = entry.getValue("transaction").jsonObject
                 val message = transaction.getValue("message").jsonObject
                 val meta = entry.getValue("meta").jsonObject
@@ -157,6 +213,7 @@ data class SolanaTransaction(
             } catch (failure: RuntimeException) {
                 throw IllegalArgumentException("Malformed Solana transaction", failure)
             }
+        }
 
         fun parse(text: String): SolanaTransaction = parse(Json.parseToJsonElement(text).jsonObject)
 

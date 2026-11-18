@@ -87,38 +87,72 @@ class SolanaService internal constructor(
         previous: SolanaDecoder.Replay?,
     ): Pair<List<SolanaTransaction>, SolanaDecoder.Replay> {
         requireTarget(account, wallet)
-        val parsed = entries.map { it to SolanaTransaction.parse(it) }
         val retrieved = Instant.fromEpochMilliseconds(now()).toString()
-        val known = stored.mapTo(mutableSetOf()) { it.signature }
-        val added = parsed.filter { it.second.signature !in known }.map { it.second }
-        val all = (stored + added).sortedWith(SolanaDecoder.CHAIN_ORDER)
+        val kept = stored.associateBy { it.signature }.toMutableMap()
+        val added = mutableListOf<SolanaTransaction>()
+        var replaced = false
         lateinit var replay: SolanaDecoder.Replay
         db.transaction {
-            parsed.forEach { (entry, transaction) ->
+            entries.forEach { entry ->
+                val parsed =
+                    try {
+                        SolanaTransaction.parse(entry)
+                    } catch (unsupported: UnsupportedSolanaTransaction) {
+                        unsupported
+                    }
+                val transaction = parsed as? SolanaTransaction
+                val position =
+                    transaction?.let { SolanaPosition(it.signature, it.slot, it.index) }
+                        ?: (parsed as UnsupportedSolanaTransaction).position
                 val payload = entry.toString()
+                val checksum = sha256(payload)
                 val record =
                     store.ingestInTransaction(
                         RawObservation(
-                            "${SolanaIds.TRANSACTION_PREFIX}${transaction.signature}",
+                            "${SolanaIds.TRANSACTION_PREFIX}${position.signature}",
                             SolanaIds.NETWORK_ID.value,
-                            transaction.signature,
+                            position.signature,
                             SolanaIds.NETWORK_ID.value,
                             "helius",
                             retrieved,
                             payload,
                             PAYLOAD_VERSION,
-                            sha256(payload),
+                            checksum,
                             "address=$wallet",
                         ),
                     )
-                repository.index(wallet, transaction, record.value)
+                val better =
+                    repository.index(
+                        wallet,
+                        position,
+                        record.value,
+                        checksum,
+                        transaction?.quality ?: UNSUPPORTED_QUALITY,
+                        (parsed as? UnsupportedSolanaTransaction)?.version,
+                    )
+                if (transaction == null) return@forEach
+                when {
+                    position.signature !in kept -> {
+                        kept[position.signature] = transaction
+                        added += transaction
+                    }
+                    better -> {
+                        // A more complete response for a stored signature, such as one with its position: replay again.
+                        kept[position.signature] = transaction
+                        replaced = true
+                    }
+                }
             }
             repository.saveStream(stream)
-            replay = projectInTransaction(account, wallet, all, previous?.let { it to added })
+            val all = kept.values.sortedWith(SolanaDecoder.CHAIN_ORDER)
+            replay = projectInTransaction(account, wallet, all, if (replaced) null else previous?.let { it to added })
         }
         invalidate()
-        return all to replay
+        return kept.values.sortedWith(SolanaDecoder.CHAIN_ORDER) to replay
     }
+
+    /** Saves block times recovered for slots whose transactions had none; activities are re-projected next. */
+    fun saveBlockTimes(times: Map<Long, Long>) = db.transaction { times.forEach { (slot, time) -> repository.saveBlockTime(slot, time) } }
 
     /** Replays every stored transaction of [wallet] and saves the activities that changed; obsolete ones are superseded. */
     fun project(
@@ -149,11 +183,12 @@ class SolanaService internal constructor(
         fun source(transaction: SolanaTransaction) =
             sources.getOrPut(transaction.signature) { SourceRecordId("${SolanaIds.TRANSACTION_PREFIX}${transaction.signature}") }
         val nfts = repository.mints().filterValues { it.kind == SolanaMintKind.NFT }.keys
+        val times = repository.blockTimes()
         val continued =
             resume
-                ?.takeIf { (replay, added) -> SolanaDecoder.canContinue(replay, added, nfts) }
-                ?.let { (replay, added) -> SolanaDecoder.replay(wallet, account, added, nfts, replay, ::source) }
-        val replay = continued ?: SolanaDecoder.replay(wallet, account, all, nfts, null, ::source)
+                ?.takeIf { (replay, added) -> SolanaDecoder.canContinue(replay, added, nfts, times) }
+                ?.let { (replay, added) -> SolanaDecoder.replay(wallet, account, added, nfts, replay, times, ::source) }
+        val replay = continued ?: SolanaDecoder.replay(wallet, account, all, nfts, null, times, ::source)
         val fresh = if (continued != null) replay.activities.drop(resume!!.first.activities.size) else replay.activities
         registerAssets(all, replay)
         fresh.forEach { activity -> if (activities.currentById(activity.id) != activity) activities.saveInTransaction(activity) }
@@ -165,6 +200,7 @@ class SolanaService internal constructor(
                 .filter { it.id !in ids && SolanaIds.signatureOf(it.id.value) != null && it.id.value.endsWith(":$wallet") }
                 .filter { it.status == ActivityStatus.CONFIRMED || it.status == ActivityStatus.PENDING }
                 .filter { deferred == null || slotOf(it.orderingKey) < deferred }
+                .filter { slotOf(it.orderingKey) !in replay.undatedSlots }
                 .forEach { activities.saveInTransaction(it.copy(status = ActivityStatus.SUPERSEDED)) }
         }
         return replay
@@ -235,12 +271,16 @@ class SolanaService internal constructor(
         val current = repository.state(wallet)
         if (batches.isEmpty()) return current
         val readThrough = streams.minOfOrNull { it.scannedThrough ?: -1 } ?: -1
+        val latest = batches.maxOf { it.slot }
+        // History must be both read and projected through the snapshot: a replay stopped at an unordered slot, or an
+        // activity waiting for its block time, would compare a partial ledger.
+        val projected =
+            (replay.deferredFromSlot?.let { it > latest } ?: true) && replay.undatedSlots.none { it <= latest }
         val state =
-            if (streams.isEmpty() || batches.any { it.slot > readThrough }) {
+            if (streams.isEmpty() || latest > readThrough || !projected) {
                 current.copy(balanceState = PENDING)
             } else {
                 // Each batch against history at its own slot, then the ledger against the accounts at the latest one.
-                val latest = batches.maxOf { it.slot }
                 val differences =
                     batches.flatMap { SolanaBalances.differences(wallet, it, SolanaBalances.at(stored, it.slot)) } +
                         SolanaBalances.unexplained(
@@ -303,6 +343,12 @@ class SolanaService internal constructor(
                 },
                 held.count { it !in mints }.takeIf { it > 0 }?.let { "${plural(it, "token")} not yet classified" },
                 replay.deferredFromSlot?.let { "History from slot $it waits until its transaction order is known" },
+                replay.undatedSlots.size
+                    .takeIf { it > 0 }
+                    ?.let { "${plural(it, "transaction")} waiting for its block time" },
+                repository.unsupportedCount(wallet).takeIf { it > 0 }?.let {
+                    "${plural(it, "transaction")} in a format Valroot cannot read yet; their changes are not counted"
+                },
             )
         db.transaction {
             repository.saveState(
@@ -329,6 +375,7 @@ class SolanaService internal constructor(
 
     companion object {
         const val PAYLOAD_VERSION = "helius-jsonParsed-1"
+        private const val UNSUPPORTED_QUALITY = -1
         const val MATCHED = "matched"
         const val PENDING = "pending"
         const val DIFFERENT = "different"

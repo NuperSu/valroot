@@ -32,7 +32,10 @@ val SOLANA_MANIFEST =
  * 2. **History:** pages continue from the stream's cursor, oldest first. Each page is stored raw and projected in one
  *    database transaction. When a scan reaches the end, the stream is read through the finalized slot taken before it.
  *    Mints are classified by their metadata before their page is projected, so NFTs are left out from the start.
- * 3. **Balance check** ([SolanaService.checkBalances]): pending until history covers the snapshot, then account by account.
+ * 3. **Block times:** a transaction the node returned without one keeps its activity waiting; its block's time is
+ *    asked for, at most [MAX_BLOCK_TIMES] per refresh.
+ * 4. **Balance check** ([SolanaService.checkBalances]): pending until history is read and projected through the
+ *    snapshot, then account by account.
  *
  * [post] sends a JSON-RPC body built by [Helius] and returns the response.
  */
@@ -111,9 +114,17 @@ class SolanaConnector(
         // Two requests are kept back for the page's mint lookup and one for the page itself.
         while (requests + 2 <= maxRequests) {
             val page = Helius.parseHistory(call(Helius.historyBody(wallet, stream.cursor)))
-            val parsed = page.entries.map(SolanaTransaction::parse)
+            // Entries in a version this parser does not read are stored raw by the service and reported, not decoded.
+            val parsed =
+                page.entries.mapNotNull {
+                    try {
+                        SolanaTransaction.parse(it)
+                    } catch (_: UnsupportedSolanaTransaction) {
+                        null
+                    }
+                }
             classify(app, wallet, parsed, asked, ::call)
-            val last = parsed.maxWithOrNull(SolanaDecoder.CHAIN_ORDER)
+            val last = page.entries.map(SolanaTransaction::positionOf).maxWithOrNull(compareBy({ it.slot }, { it.index ?: -1 }))
             finished = page.paginationToken == null
             stream =
                 stream.copy(
@@ -125,6 +136,15 @@ class SolanaConnector(
             stored = applied.first
             replay = applied.second
             if (finished) break
+        }
+        // Activities without a block time wait for it; the block's time is asked for, a few slots per refresh.
+        val due = replay.undatedSlots.sorted().take(minOf(MAX_BLOCK_TIMES, maxRequests - requests))
+        if (due.isNotEmpty()) {
+            val times = due.mapNotNull { slot -> Helius.parseBlockTime(call(Helius.blockTimeBody(slot)))?.let { slot to it } }.toMap()
+            if (times.isNotEmpty()) {
+                app.solana.saveBlockTimes(times)
+                replay = app.solana.project(account, wallet, stored)
+            }
         }
         app.solana.checkBalances(wallet, stored, replay)
         app.solana.recordSuccess(wallet, stored, replay)
@@ -166,5 +186,8 @@ class SolanaConnector(
     companion object {
         /** Requests per address and refresh, about 1,000 Helius credits at most. */
         const val MAX_REQUESTS = 100
+
+        /** Block times asked for per address and refresh. */
+        const val MAX_BLOCK_TIMES = 20
     }
 }

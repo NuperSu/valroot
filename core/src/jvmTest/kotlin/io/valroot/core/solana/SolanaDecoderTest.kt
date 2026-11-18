@@ -62,6 +62,9 @@ class SolanaDecoderTest {
         slot: Long = 100L + seed,
         index: Int? = 0,
         tokenBalances: Boolean = true,
+        postRecorded: Boolean = true,
+        blockTime: Boolean = true,
+        version: String = "0",
     ): SolanaTransaction {
         fun tokens(list: List<Token>) =
             list.joinToString(",", "[", "]") {
@@ -75,12 +78,18 @@ class SolanaDecoderTest {
         val innerJson = if (inner.isEmpty()) "[]" else """[{"index":0,"instructions":${inner.joinToString(",", "[", "]")}}]"""
         val top = (instructions.ifEmpty { listOf(ins("system", "transfer")) }).joinToString(",", "[", "]")
         return SolanaTransaction.parse(
-            """{"slot":$slot,"transactionIndex":${index ?: "null"},"blockTime":1700000000,"version":0,
+            """{"slot":$slot,"transactionIndex":${index ?: "null"},"blockTime":${if (blockTime) "1700000000" else "null"},"version":$version,
               "transaction":{"signatures":["${signature(seed)}"],"message":{"accountKeys":$keys,"instructions":$top}},
               "meta":{"err":${if (failed) "{\"InstructionError\":[0,\"Custom\"]}" else "null"},"fee":$fee,
                 "preBalances":${pre.joinToString(",", "[", "]")},"postBalances":${post.joinToString(",", "[", "]")},
                 "preTokenBalances":${if (tokenBalances) tokens(preTokens) else "null"},
-                "postTokenBalances":${if (tokenBalances) tokens(postTokens) else "null"},"innerInstructions":$innerJson}}""",
+                "postTokenBalances":${if (tokenBalances && postRecorded) {
+                tokens(
+                    postTokens,
+                )
+            } else {
+                "null"
+            }},"innerInstructions":$innerJson}}""",
         )
     }
 
@@ -446,4 +455,80 @@ class SolanaDecoderTest {
         (if (it.role == MovementRole.FEE) (if (asset == SolanaIds.NATIVE) "fee" else "fee:${asset.value}") else asset.value) to
             it.amount.atomicUnits.toString()
     }
+
+    @Test fun oneUnrecordedBalanceSideCountsNoTokenChange() {
+        // The wallet held 100 before; the post-balance list is missing, which must not read as 100 leaving.
+        val missingPost =
+            tx(
+                60,
+                listOf(other, ata, SolanaOwnership.TOKEN_PROGRAM_IDS.first()),
+                listOf(10_000, rent, 1),
+                listOf(5_000, rent, 1),
+                preTokens = listOf(Token(1, usdc, wallet, 100)),
+                postRecorded = false,
+            )
+        assertNull(decode(missingPost), "no token movement and no SOL change for the wallet")
+        assertEquals(listOf(null to SolanaGapReason.TOKEN_BALANCES_UNAVAILABLE), gaps(missingPost))
+    }
+
+    @Test fun aTransactionWithoutABlockTimeWaitsButOwnershipContinues() {
+        val init =
+            tx(
+                61,
+                listOf(wallet, ata),
+                listOf(10_000_000, 0),
+                listOf(10_000_000 - rent - 5_000, rent),
+                instructions = listOf(ins("spl-token", "initializeAccount3", "account" to ata, "mint" to usdc, "owner" to wallet)),
+                blockTime = false,
+            )
+        val later =
+            tx(
+                62,
+                listOf(other, ata),
+                listOf(10_000, rent),
+                listOf(5_000, rent),
+                preTokens = listOf(Token(1, usdc, null, 0)),
+                postTokens = listOf(Token(1, usdc, null, 70)),
+            )
+        val waiting = SolanaDecoder.replay(wallet, account, listOf(init, later)) { source }
+        assertEquals(setOf(init.slot), waiting.undatedSlots)
+        // Ownership from the undated transaction still attributes the later receipt.
+        assertEquals(
+            listOf(mapOf(usdcAsset.value to "70")),
+            waiting.activities.map { a ->
+                a.movements.associate {
+                    it.amount.assetId.value to
+                        it.amount.atomicUnits.toString()
+                }
+            },
+        )
+        val dated =
+            SolanaDecoder.replay(
+                wallet,
+                account,
+                listOf(init, later),
+                blockTimes = mapOf(init.slot to 1_699_000_000_000),
+            ) { source }
+        assertTrue(dated.undatedSlots.isEmpty())
+        assertEquals(1_699_000_000_000, dated.activities.first().occurredAtEpochMillis)
+        assertTrue(!SolanaDecoder.canContinue(waiting, emptyList(), emptySet(), mapOf(init.slot to 1L)))
+    }
+
+    @Test fun versionOneIsReadAndLaterVersionsAreReportedNotGuessed() {
+        assertEquals(signature(63), tx(63, listOf(other, wallet), listOf(10, 0), listOf(5, 5), version = "1").signature)
+        val unsupported =
+            kotlin.test.assertFailsWith<UnsupportedSolanaTransaction> {
+                tx(
+                    64,
+                    listOf(other, wallet),
+                    listOf(10, 0),
+                    listOf(5, 5),
+                    version = "2",
+                )
+            }
+        assertEquals(signature(64), unsupported.position.signature)
+        assertEquals("2", unsupported.version)
+    }
+
+    private val rent = 2_039_280L
 }

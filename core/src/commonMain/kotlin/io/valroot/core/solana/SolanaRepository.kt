@@ -34,8 +34,9 @@ class SolanaRepository(
     init {
         db.execute(
             "CREATE TABLE IF NOT EXISTS solana_transactions (signature TEXT PRIMARY KEY, slot INTEGER NOT NULL, position INTEGER, " +
-                "record_id TEXT NOT NULL)",
+                "record_id TEXT NOT NULL, checksum TEXT NOT NULL, quality INTEGER NOT NULL, version TEXT)",
         )
+        db.execute("CREATE TABLE IF NOT EXISTS solana_block_times (slot INTEGER PRIMARY KEY, time INTEGER NOT NULL)")
         db.execute(
             "CREATE TABLE IF NOT EXISTS solana_wallet_transactions (wallet TEXT NOT NULL, signature TEXT NOT NULL, " +
                 "PRIMARY KEY(wallet, signature))",
@@ -57,28 +58,84 @@ class SolanaRepository(
         )
     }
 
-    /** Indexes a stored raw transaction and assigns it to [wallet]; idempotent. */
+    /**
+     * Indexes one stored raw revision of a transaction and assigns it to [wallet]. The revision becomes the one replay
+     * reads when the signature is new or when it is more complete ([quality]) than the one kept; an equally complete
+     * revision never replaces it, so the choice does not depend on hashes or arrival order. [version] is null for a
+     * revision this parser reads, otherwise the unsupported version. Returns true when a kept revision was replaced.
+     */
     fun index(
         wallet: String,
-        transaction: SolanaTransaction,
+        position: SolanaPosition,
         recordId: String,
-    ) {
-        db.execute(
-            "INSERT OR IGNORE INTO solana_transactions VALUES (?, ?, ?, ?)",
-            listOf(transaction.signature, transaction.slot.toString(), transaction.index?.toString(), recordId),
-        )
-        db.execute("INSERT OR IGNORE INTO solana_wallet_transactions VALUES (?, ?)", listOf(wallet, transaction.signature))
+        checksum: String,
+        quality: Int,
+        version: String?,
+    ): Boolean {
+        db.execute("INSERT OR IGNORE INTO solana_wallet_transactions VALUES (?, ?)", listOf(wallet, position.signature))
+        val kept =
+            db
+                .query("SELECT checksum, quality FROM solana_transactions WHERE signature=?", listOf(position.signature))
+                .singleOrNull()
+        val values =
+            listOf(
+                position.slot.toString(),
+                position.index?.toString(),
+                recordId,
+                checksum,
+                quality.toString(),
+                version,
+                position.signature,
+            )
+        return when {
+            kept == null -> {
+                db.execute(
+                    "INSERT INTO solana_transactions (slot, position, record_id, checksum, quality, version, signature) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    values,
+                )
+                false
+            }
+            kept[0] != checksum && quality > kept[1]!!.toInt() -> {
+                db.execute(
+                    "UPDATE solana_transactions SET slot=?, position=?, record_id=?, checksum=?, quality=?, version=? WHERE signature=?",
+                    values,
+                )
+                true
+            }
+            else -> false
+        }
     }
 
-    /** The raw payloads of [wallet]'s transactions, one per signature. */
+    /** The kept raw payloads of [wallet]'s transactions in a version this parser reads, one per signature. */
     fun payloads(wallet: String): List<String> =
         db
             .query(
-                "SELECT (SELECT payload FROM raw_revisions r WHERE r.record_id=t.record_id ORDER BY checksum LIMIT 1) " +
-                    "FROM solana_wallet_transactions w JOIN solana_transactions t ON t.signature=w.signature WHERE w.wallet=? " +
+                "SELECT r.payload FROM solana_wallet_transactions w JOIN solana_transactions t ON t.signature=w.signature " +
+                    "JOIN raw_revisions r ON r.record_id=t.record_id AND r.checksum=t.checksum WHERE w.wallet=? AND t.version IS NULL " +
                     "ORDER BY t.slot, t.position, t.signature",
                 listOf(wallet),
             ).map { requireNotNull(it.single()) { "Stored Solana transaction has no payload" } }
+
+    /** How many of [wallet]'s stored transactions are in a version this parser does not read. */
+    fun unsupportedCount(wallet: String): Int =
+        db
+            .query(
+                "SELECT COUNT(*) FROM solana_wallet_transactions w JOIN solana_transactions t ON t.signature=w.signature " +
+                    "WHERE w.wallet=? AND t.version IS NOT NULL",
+                listOf(wallet),
+            ).single()
+            .single()!!
+            .toInt()
+
+    /** Block times recovered for transactions whose response had none, by slot. */
+    fun blockTimes(): Map<Long, Long> =
+        db.query("SELECT slot, time FROM solana_block_times").associate { it[0]!!.toLong() to it[1]!!.toLong() }
+
+    fun saveBlockTime(
+        slot: Long,
+        timeMillis: Long,
+    ) = db.execute("INSERT OR REPLACE INTO solana_block_times VALUES (?, ?)", listOf(slot.toString(), timeMillis.toString()))
 
     fun transactionCount(wallet: String): Int =
         db
