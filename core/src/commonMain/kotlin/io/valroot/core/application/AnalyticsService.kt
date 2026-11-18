@@ -339,10 +339,15 @@ class AnalyticsService internal constructor(
                 // the same instant are summed exactly first, so money in and out at once cancels.
                 val net = linkedMapOf<Long, ExactDecimal>()
                 net[startMillis] = zero - startValue
-                counted.forEach { flow -> net[flow.at] = (net[flow.at] ?: zero) + (if (flow.incoming) zero - flow.value!! else flow.value!!) }
+                counted.forEach { flow ->
+                    net[flow.at] = (net[flow.at] ?: zero) + (if (flow.incoming) zero - flow.value!! else flow.value!!)
+                }
                 net[endMillis] = (net[endMillis] ?: zero) + endValue
                 InternalRate.solve(
-                    net.map { (at, amount) -> DatedFlow((at - startMillis) / year, amount.toString().toDouble()) }.filter { it.amount != 0.0 },
+                    net
+                        .map { (at, amount) ->
+                            DatedFlow((at - startMillis) / year, amount.toString().toDouble())
+                        }.filter { it.amount != 0.0 },
                 )
             }
         return MoneyWeightedReturn(
