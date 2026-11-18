@@ -124,7 +124,7 @@ class BitcoinGraphDeltaRepositoryTest {
                 listOf(listOf(second.toString())),
                 db.query(
                     "SELECT value FROM application_settings WHERE key=?",
-                    listOf("bitcoin_graph_baseline:${BitcoinGraphDeltaRepository.scopeKey(other)}"),
+                    listOf(BITCOIN_RECOVERY_BASELINE),
                 ),
             )
             assertEquals(

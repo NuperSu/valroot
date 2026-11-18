@@ -243,7 +243,7 @@ class BitcoinGraphRepositoryTest {
     }
 
     @Test
-    fun recoveryBaselineIsScopedAndRollsBackWithItsSnapshot() {
+    fun globalRecoveryBaselineRollsBackWithItsSnapshot() {
         BundledSqliteDatabase(":memory:").use { db ->
             Store(db)
             val repository = BitcoinGraphRepository(db)
@@ -261,8 +261,8 @@ class BitcoinGraphRepositoryTest {
             val lower = BitcoinBlockAnchor(190, "d".repeat(64))
             db.transaction { save(repository, emptyList(), anchor = lower, recoveryBaseline = true) }
             assertEquals(listOf(lower), repository.anchors(scope))
-            assertEquals(listOf(BitcoinBlockAnchor(210, "f".repeat(64))), repository.anchors(otherScope))
-            assertEquals(listOf(210L, 190L), repository.anchors().map { it.height })
+            assertEquals(emptyList(), repository.anchors(otherScope))
+            assertEquals(listOf(lower), repository.anchors())
             assertEquals(3, repository.snapshots().size)
         }
     }

@@ -159,7 +159,7 @@ class BitcoinGraphDeltaRepository(
         if (recoveryBaseline) {
             db.execute(
                 "INSERT OR REPLACE INTO application_settings VALUES (?,?)",
-                listOf("bitcoin_graph_baseline:$scope", id.toString()),
+                listOf(BITCOIN_RECOVERY_BASELINE, id.toString()),
             )
         }
         return id

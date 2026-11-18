@@ -9,6 +9,8 @@ import io.valroot.core.storage.sha256
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
+internal const val BITCOIN_RECOVERY_BASELINE = "bitcoin_graph_baseline:all"
+
 /** Evidence of competing spenders. A confirmed winner proves exclusion; pending competition is only possible replacement. */
 enum class BitcoinReplacementEvidenceKind { POSSIBLE, CONFIRMED }
 
@@ -328,7 +330,7 @@ class BitcoinGraphRepository(
         if (recoveryBaseline) {
             db.execute(
                 "INSERT OR REPLACE INTO application_settings VALUES (?, ?)",
-                listOf("bitcoin_graph_baseline:${scopeKey(graph.ownedAddresses)}", id.toString()),
+                listOf(BITCOIN_RECOVERY_BASELINE, id.toString()),
             )
         }
         return id
@@ -368,17 +370,20 @@ class BitcoinGraphRepository(
             ?.toLong()
             ?.let(::snapshot)
 
-    /** Accepted anchors at or after each scope's recovery baseline, highest first. */
+    /** Accepted anchors at or after the most recent explicit recovery, highest first. */
     fun anchors(
         ownedAddresses: Map<String, AccountId>? = null,
         limit: Int = 100,
     ): List<BitcoinBlockAnchor> {
         require(limit > 0)
         val baseline =
-            "id>=COALESCE((SELECT CAST(value AS INTEGER) FROM application_settings " +
-                "WHERE key='bitcoin_graph_baseline:'||scope_key),0)"
-        val where = " WHERE $baseline" + if (ownedAddresses == null) "" else " AND scope_key=?"
-        val args = ownedAddresses?.let { listOf(scopeKey(it)) } ?: emptyList()
+            db
+                .query(
+                    "SELECT COALESCE(MAX(CAST(value AS INTEGER)),0) FROM application_settings WHERE key GLOB 'bitcoin_graph_baseline:*'",
+                ).single()
+                .single()!!
+        val where = " WHERE id>=?" + if (ownedAddresses == null) "" else " AND scope_key=?"
+        val args = listOf(baseline) + listOfNotNull(ownedAddresses?.let(::scopeKey))
         val candidates =
             """
             SELECT anchor_height AS height,anchor_hash AS hash,id AS snapshot_id FROM bitcoin_graph_snapshots$where

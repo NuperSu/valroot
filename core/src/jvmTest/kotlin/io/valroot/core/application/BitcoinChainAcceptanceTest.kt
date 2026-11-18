@@ -523,6 +523,41 @@ class BitcoinChainAcceptanceTest {
     }
 
     @Test
+    fun lowerRecoveryResetsContinuityForEveryAddressSet() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = ChainProvider()
+            val repository = BitcoinGraphRepository(db)
+            initialScan(app, db, provider)
+            val second =
+                TrackingTarget(
+                    TrackingTargetId("second"),
+                    AccountId("account"),
+                    TargetIdentity(BITCOIN_MAINNET, "address", other),
+                    TargetRole.LEAF,
+                    "Second address",
+                )
+            app.accounts.saveTarget(second)
+            provider.tipHeight = 115
+            assertEquals(listOf(JobState.COMPLETED, JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+
+            app.accounts.saveTarget(second.copy(enabled = false))
+            provider.tipHeight = 109
+            assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport, recoverHistory = true))
+            assertEquals(listOf(109L, 100L), repository.anchors().map { it.height })
+            assertEquals(listOf(110L, 115L, 109L), repository.snapshots().map { it.anchor.height })
+            assertEquals(listOf(JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+
+            app.accounts.saveTarget(second)
+            provider.tipHeight = 108
+            val failure = assertFailsWith<BitcoinProviderException> { app.bitcoin.refresh(provider.transport) }
+            assertEquals(BitcoinProviderFailure.LAGGING_CHAIN, failure.reason)
+            provider.tipHeight = 109
+            assertEquals(listOf(JobState.COMPLETED, JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+        }
+    }
+
+    @Test
     fun longDowntimeAcceptsCanonicalSavedCheckpointBeyondRewindBound() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
