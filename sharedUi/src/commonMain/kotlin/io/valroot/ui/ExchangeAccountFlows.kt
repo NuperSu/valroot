@@ -181,17 +181,16 @@ internal fun ExchangeConnectDialog(
                         selectedPortfolio
                             ?.takeIf { it.accountIds.isNotEmpty() }
                             ?.let { app.accounts.savePortfolio(it.copy(accountIds = it.accountIds + accountId)) }
-                        // The first history source may have just been added: reschedule from the saved switch.
-                        host.updateRefreshPreferences(host.refreshPreferences())
                         null
                     }
                 if (problem != null) {
                     error = problem
                     return@launch
                 }
+                val scheduled = host.rescheduleSourceRefresh()
                 onSaved()
                 host.refreshWithoutBitcoin {}
-                notify("${kind.label} account added. Its history loads in the background.")
+                notify(if (scheduled) "${kind.label} account added. Its history loads in the background." else SOURCE_SCHEDULE_FAILURE)
                 close()
             } catch (cancelled: CancellationException) {
                 throw cancelled

@@ -3,9 +3,11 @@ package io.valroot.ui
 import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.model.AssetId
 import io.valroot.core.model.TrackingTargetId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 
 enum class SyncPhase { IDLE, SYNCING, SUCCESS, ERROR }
 
@@ -75,6 +77,20 @@ internal fun applyAutomaticRefresh(
     app.prices.setAutomaticRefresh(enabled)
     host.updateRefreshPreferences(RefreshPreferences(enabled, host.refreshPreferences().wifiOnly))
 }
+
+internal const val SOURCE_SCHEDULE_FAILURE = "Account saved. Automatic refresh could not be scheduled. Check sync settings."
+
+internal suspend fun PlatformActions.rescheduleSourceRefresh(): Boolean =
+    withContext(dispatcher) {
+        try {
+            updateRefreshPreferences(refreshPreferences())
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
 
 data class UnlockResult(
     val success: Boolean,

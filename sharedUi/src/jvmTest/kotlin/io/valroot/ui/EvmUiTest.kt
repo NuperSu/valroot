@@ -61,14 +61,16 @@ class EvmUiTest {
         BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
-                val host = EvmTestHost(executor.asCoroutineDispatcher())
+                val host = EvmTestHost(executor.asCoroutineDispatcher(), failScheduling = true)
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
                 app.evm.setAlchemyApiKey("alchemy-test-key-123")
                 val good = eip55("0x$address")
                 val bad = mistyped(good)
+                var savedCount = 0
+                var notice: String? = null
                 runDesktopComposeUiTest(width = 800, height = 1400) {
                     setContent {
-                        EvmConnectDialog(app, host, app.snapshot(), null, close = {}, onSaved = {}, notify = {})
+                        EvmConnectDialog(app, host, app.snapshot(), null, close = {}, onSaved = { savedCount++ }, notify = { notice = it })
                     }
                     onNodeWithTag("evm-connect-name").performTextInput("Main wallet")
                     onNodeWithTag("evm-connect-address").performTextInput(bad)
@@ -82,7 +84,7 @@ class EvmUiTest {
                     onNodeWithTag("evm-chain-1").assertIsDisplayed()
                     assertTrue(onAllNodesWithTag("evm-chain-number").fetchSemanticsNodes().isEmpty())
                     onNodeWithTag("evm-connect-confirm").performClick()
-                    waitUntil(timeoutMillis = 10_000) { app.evm.targets().isNotEmpty() }
+                    waitUntil(timeoutMillis = 10_000) { host.refreshRequests > 0 }
                     val (_, saved) = app.evm.targets().single()
                     assertEquals("0x$address", saved)
                     assertEquals(
@@ -93,9 +95,11 @@ class EvmUiTest {
                             .toSet(),
                     )
                     assertTrue(app.evm.consent())
-                    waitUntil(timeoutMillis = 10_000) { host.refreshRequests > 0 }
-                    // Connecting the first source reschedules automatic refresh, which may now have something to fetch.
                     assertTrue(host.rescheduled > 0)
+                    runOnIdle {
+                        assertEquals(1, savedCount)
+                        assertEquals(SOURCE_SCHEDULE_FAILURE, notice)
+                    }
                 }
             } finally {
                 executor.shutdown()
@@ -285,6 +289,7 @@ class EvmUiTest {
     /** Records the requests the EVM flows make; provider work is not run. */
     private class EvmTestHost(
         override val dispatcher: CoroutineDispatcher,
+        private val failScheduling: Boolean = false,
     ) : PlatformActions {
         var refreshRequests = 0
 
@@ -293,6 +298,7 @@ class EvmUiTest {
 
         override fun updateRefreshPreferences(preferences: RefreshPreferences) {
             rescheduled++
+            check(!failScheduling) { "Scheduler unavailable" }
         }
 
         override val dataRevision = MutableStateFlow(0L)

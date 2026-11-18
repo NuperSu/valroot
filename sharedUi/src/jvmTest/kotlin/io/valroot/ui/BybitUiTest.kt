@@ -29,8 +29,11 @@ class BybitUiTest {
         BundledSqliteDatabase(":memory:").use { db ->
             val executor = Executors.newSingleThreadExecutor()
             try {
-                val host = BybitTestHost(executor.asCoroutineDispatcher())
+                val host = BybitTestHost(executor.asCoroutineDispatcher(), failScheduling = true)
                 val app = PortfolioApplication(db) { 1_800_000_000_000L }
+                var savedCount = 0
+                var notice: String? = null
+                var closed = false
                 runDesktopComposeUiTest(width = 800, height = 1400) {
                     setContent {
                         ExchangeConnectDialog(
@@ -39,9 +42,9 @@ class BybitUiTest {
                             host,
                             app.snapshot(),
                             null,
-                            close = {},
-                            onSaved = {},
-                            notify = {},
+                            close = { closed = true },
+                            onSaved = { savedCount++ },
+                            notify = { notice = it },
                         )
                     }
                     onNodeWithTag("bybit-connect-confirm").assertIsNotEnabled()
@@ -64,9 +67,13 @@ class BybitUiTest {
                     assertEquals("1001", uid)
                     assertEquals("KEYKEYKEYKEY" to "SECRETSECRETSECRET", app.exchanges.key(ExchangeKind.BYBIT, account))
                     waitUntil(timeoutMillis = 10_000) { host.refreshRequests > 0 }
-                    // Connecting the first source reschedules automatic refresh, which may now have something to fetch.
                     assertTrue(host.rescheduled > 0)
                     assertEquals(listOf("KEYKEYKEYKEY" to "SECRETSECRETSECRET"), host.checked.distinct())
+                    runOnIdle {
+                        assertEquals(1, savedCount)
+                        assertEquals(SOURCE_SCHEDULE_FAILURE, notice)
+                        assertTrue(closed)
+                    }
                 }
             } finally {
                 executor.shutdown()
@@ -165,6 +172,7 @@ class BybitUiTest {
 
     private class BybitTestHost(
         override val dispatcher: CoroutineDispatcher,
+        private val failScheduling: Boolean = false,
     ) : PlatformActions {
         var refreshRequests = 0
 
@@ -173,6 +181,7 @@ class BybitUiTest {
 
         override fun updateRefreshPreferences(preferences: RefreshPreferences) {
             rescheduled++
+            check(!failScheduling) { "Scheduler unavailable" }
         }
 
         var info: ExchangeKeyInfo? = null
