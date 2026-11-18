@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
 class BitcoinChainAcceptanceTest {
     private val address = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
     private val txid = "a".repeat(64)
+    private val other = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"
 
     private fun blockHash(height: Long): String = height.toString(16).padStart(64, '0')
 
@@ -124,6 +125,9 @@ class BitcoinChainAcceptanceTest {
                     path == "/address/$address/txs/chain" -> "[${chainPayloads().joinToString(",")}]"
                     path == "/address/$address/txs/chain/$txid" -> "[]"
                     path == "/address/$address/utxo" -> utxoResponse(address, chainPayloads())
+                    path == "/address/$other" -> """{"chain_stats":{"tx_count":0},"mempool_stats":{"tx_count":0}}"""
+                    path == "/address/$other/txs/mempool" || path == "/address/$other/txs/chain" -> "[]"
+                    path == "/address/$other/utxo" -> "[]"
                     else -> error("Unexpected provider request: $path")
                 }
             }
@@ -475,7 +479,7 @@ class BitcoinChainAcceptanceTest {
                 TrackingTarget(
                     TrackingTargetId("second"),
                     AccountId("account"),
-                    TargetIdentity(BITCOIN_MAINNET, "address", "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"),
+                    TargetIdentity(BITCOIN_MAINNET, "address", other),
                     TargetRole.LEAF,
                     "Second address",
                 ),
@@ -486,6 +490,35 @@ class BitcoinChainAcceptanceTest {
             assertEquals(BitcoinProviderFailure.LAGGING_CHAIN, failure.reason)
             assertEquals(before, acceptedData(db))
             assertTrue(provider.calls.none { it.startsWith("/address/") })
+        }
+    }
+
+    @Test
+    fun returningToAnEarlierAddressSetKeepsTheNewerScansLagGuard() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = ChainProvider()
+            // A alone is accepted at 110 by the initial scan; then A+B is accepted at 115.
+            initialScan(app, db, provider)
+            val second =
+                TrackingTarget(
+                    TrackingTargetId("second"),
+                    AccountId("account"),
+                    TargetIdentity(BITCOIN_MAINNET, "address", other),
+                    TargetRole.LEAF,
+                    "Second address",
+                )
+            app.accounts.saveTarget(second)
+            provider.tipHeight = 115
+            assertEquals(listOf(JobState.COMPLETED, JobState.COMPLETED), app.bitcoin.refresh(provider.transport))
+            // Back to A alone, whose own checkpoint is 110, with a provider at 112: still behind what was accepted.
+            app.accounts.saveTarget(second.copy(enabled = false))
+            val before = acceptedData(db)
+            provider.tipHeight = 112
+
+            val failure = assertFailsWith<BitcoinProviderException> { app.bitcoin.refresh(provider.transport) }
+            assertEquals(BitcoinProviderFailure.LAGGING_CHAIN, failure.reason)
+            assertEquals(before, acceptedData(db))
         }
     }
 

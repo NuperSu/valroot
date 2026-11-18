@@ -176,12 +176,13 @@ class BitcoinService internal constructor(
         // the earlier set still bounds it, so a lagging or reorganised provider cannot reverse history it confirmed.
         val acceptedAnchors = bitcoinGraph.anchors(addresses).ifEmpty { bitcoinGraph.anchors() }
         val previousCheckpoint = acceptedAnchors.maxByOrNull { it.height }
+        // The newest chain height accepted for any address set: returning to an earlier set must not lower the bar to
+        // that set's older checkpoint, or a provider behind the newer scan could reverse what that scan confirmed.
+        val newestAcceptedHeight = maxOf(previousCheckpoint?.height ?: -1, bitcoinGraph.anchors(limit = 1).firstOrNull()?.height ?: -1)
         // A non-canonical checkpoint means the accepted history may have changed, so the skip below must not run.
         var checkpointCanonical = true
+        if (!recoverHistory && newestAcceptedHeight > anchorHeight) throw BitcoinProviderException(BitcoinProviderFailure.LAGGING_CHAIN)
         if (!recoverHistory && previousCheckpoint != null) {
-            require(previousCheckpoint.height <= anchorHeight) {
-                throw BitcoinProviderException(BitcoinProviderFailure.LAGGING_CHAIN)
-            }
             val canonical = transport.get("/block-height/${previousCheckpoint.height}").trim()
             require(canonical.isHash64()) { "Invalid checkpoint response" }
             if (canonical != previousCheckpoint.hash) {
