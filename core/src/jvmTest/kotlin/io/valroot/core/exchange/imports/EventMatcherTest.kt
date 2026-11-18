@@ -99,4 +99,21 @@ class EventMatcherTest {
         val both = EventMatcher.match(listOf(deposit("f-2", "2")), listOf(deposit("api-1", "1"), deposit("api-2", "2")), tolerance)
         assertEquals(MatchOutcome.Same("api-2"), both["f-2"])
     }
+
+    @Test fun equalAmountsWithDifferentTransactionIdsAreDifferentEvents() {
+        fun deposit(
+            id: String,
+            txid: String?,
+            at: Long = 1_000,
+        ) = EventShape(id, MatchKind.IN, at, mapOf("ETH" to d("1")), setOfNotNull(txid?.let { "txid:$it" }))
+        val existing = listOf(deposit("api-1", "0xaaa"))
+        assertEquals(MatchOutcome.New, EventMatcher.match(listOf(deposit("f-1", "0xbbb")), existing, tolerance)["f-1"])
+        // Without a transaction ID on one side, equal amounts and times still pair.
+        assertEquals(MatchOutcome.Same("api-1"), EventMatcher.match(listOf(deposit("f-2", null)), existing, tolerance)["f-2"])
+        // Pairing in time order skips an event a record's ID contradicts: 0xbbb cannot take the 0xaaa deposit.
+        val two = listOf(deposit("api-1", "0xaaa", 1_000), deposit("api-2", null, 2_000))
+        val outcomes = EventMatcher.match(listOf(deposit("f-3", "0xbbb", 900), deposit("f-5", null, 950)), two, tolerance)
+        assertEquals(MatchOutcome.Same("api-2"), outcomes["f-3"])
+        assertEquals(MatchOutcome.Same("api-1"), outcomes["f-5"])
+    }
 }

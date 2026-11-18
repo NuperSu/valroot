@@ -51,7 +51,8 @@ sealed interface MatchOutcome {
  * - A shared identifier decides at once between events of the same kind and principal amounts; with other amounts it
  *   is a different event in the same transaction (for example two deposits paid by one transaction).
  * - Otherwise records and events of the same kind with the same principal amounts, within the kind's [tolerance] of
- *   each other, form a group. When the group has at least as many existing events as records, records pair with events
+ *   each other, form a group; an event whose identifiers contradict a record's ([conflicts]) never pairs with it.
+ *   When the group has at least as many existing events as records, records pair with events
  *   in time order. With more records than events the file holds something the account does not, and either could be
  *   true (a repeated identical fill, or an export of the same event twice), so the group waits for a decision.
  * - Records without candidates are new; identical records stay distinct events.
@@ -87,16 +88,20 @@ object EventMatcher {
             .forEach { (signature, sameShape) ->
                 val window = tolerance(signature.first)
                 val candidates = open.filter { it.kind == signature.first && it.principal == signature.second }
-                clusters(sameShape, candidates, window).forEach { (group, events) ->
+                clusters(sameShape, candidates, window).forEach { (group, clustered) ->
                     val key = groupKey(group)
                     val decision = decisions[key]
+                    // An event whose identifiers contradict every record's is a different event, however equal its amounts.
+                    val events = clustered.filter { event -> group.any { !conflicts(it, event) } }
                     when {
                         decision == GroupDecision.EXCLUDED -> group.forEach { outcomes[it.id] = MatchOutcome.Excluded(key) }
                         decision == GroupDecision.DISTINCT || events.isEmpty() -> group.forEach { outcomes[it.id] = MatchOutcome.New }
                         events.size >= group.size || decision == GroupDecision.SAME -> {
-                            val sortedEvents = events.sortedBy { it.atMillis }
-                            group.sortedBy { it.atMillis }.forEachIndexed { index, record ->
-                                outcomes[record.id] = sortedEvents.getOrNull(index)?.let { MatchOutcome.Same(it.id) } ?: MatchOutcome.New
+                            val free = events.sortedBy { it.atMillis }.toMutableList()
+                            group.sortedBy { it.atMillis }.forEach { record ->
+                                val event = free.firstOrNull { !conflicts(record, it) }
+                                if (event != null) free -= event
+                                outcomes[record.id] = event?.let { MatchOutcome.Same(it.id) } ?: MatchOutcome.New
                             }
                         }
                         else -> group.forEach { outcomes[it.id] = MatchOutcome.Ambiguous(key, group.size, events.size) }
@@ -104,6 +109,20 @@ object EventMatcher {
                 }
             }
         return outcomes
+    }
+
+    /**
+     * Whether [a] and [b] name different events: both carry identifiers of one kind (such as `txid:`) and share none of
+     * that kind. Identifiers of a kind only one side has say nothing.
+     */
+    fun conflicts(
+        a: EventShape,
+        b: EventShape,
+    ): Boolean {
+        fun byKind(ids: Set<String>) = ids.groupBy { it.substringBefore(':') }
+        val left = byKind(a.ids)
+        val right = byKind(b.ids)
+        return left.keys.intersect(right.keys).any { kind -> left.getValue(kind).intersect(right.getValue(kind).toSet()).isEmpty() }
     }
 
     /** A stable key for a group of records, saved with the user's decision. */
