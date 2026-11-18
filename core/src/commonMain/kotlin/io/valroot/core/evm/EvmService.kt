@@ -190,7 +190,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(retrieved).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.VERSION,
+                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
                             sha256(payload),
                             "address=$address",
                         ),
@@ -217,7 +217,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(retrieved).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.VERSION,
+                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
                             sha256(payload),
                             "address=$address",
                         ),
@@ -246,6 +246,12 @@ class EvmService internal constructor(
         return saved
     }
 
+    /** Forgets the accepted head of [address] on [chainId], so the next refresh reads the chain in full. */
+    fun clearChainHead(
+        address: String,
+        chainId: Long,
+    ) = evmChains.clearHead(address, chainId)
+
     /** Records a finished refresh of [address] on [chainId] at [head]; called once history and balances are both settled. */
     fun recordChainSuccess(
         address: String,
@@ -253,18 +259,26 @@ class EvmService internal constructor(
         head: String,
     ) = evmChains.recordSuccess(address, chainId, head, now())
 
-    /** Whether any current activity of [address] on [chainId] was decoded by an earlier [EvmDecoder] version. */
+    /**
+     * Whether a live (confirmed or pending) activity of [address] on [chainId] was decoded by an earlier [EvmDecoder]
+     * version, looking only at each activity's latest revision. Superseded and reversed activities never ask for a
+     * re-read, so one left behind cannot make every refresh read the whole chain.
+     */
     fun decodedByEarlierVersion(
         address: String,
         chainId: Long,
-    ): Boolean =
-        activities.current().any {
-            !it.manual &&
-                it.id.value.startsWith("eip155:$chainId:") &&
-                it.id.value.endsWith(":$address") &&
-                it.decoderVersion != null &&
-                it.decoderVersion != EvmDecoder.VERSION
-        }
+    ): Boolean {
+        val prefix = "eip155:$chainId:"
+        val suffix = ":$address"
+        return db
+            .query(
+                "SELECT 1 FROM ledger_activities a WHERE substr(a.id, 1, ?)=? AND substr(a.id, -?)=? AND a.manual=0 " +
+                    "AND a.decoder IS NOT NULL AND a.decoder<>? AND a.status IN ('CONFIRMED','PENDING') " +
+                    "AND a.revision=(SELECT a2.revision FROM ledger_activities a2 WHERE a2.id=a.id " +
+                    "ORDER BY CAST(a2.revision AS INTEGER) DESC LIMIT 1) LIMIT 1",
+                listOf(prefix.length.toString(), prefix, suffix.length.toString(), suffix, EvmDecoder.VERSION),
+            ).isNotEmpty()
+    }
 
     /** Whether [account] holds a rebasing token on [chainId], so its balance is read even when no transfer is new. */
     fun holdsRebasing(
@@ -325,7 +339,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(at).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.VERSION,
+                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
                             sha256(payload),
                             "address=$address",
                         ),
@@ -446,7 +460,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(now()).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.VERSION,
+                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
                             sha256(payload),
                             "address=$address",
                         ),

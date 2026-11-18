@@ -51,6 +51,11 @@ class EvmChainRepository(
         listOf(head, atMillis.toString(), address, chainId.toString()),
     )
 
+    fun clearHead(
+        address: String,
+        chainId: Long,
+    ) = db.execute("UPDATE evm_chains SET head=NULL WHERE address=? AND chain_id=?", listOf(address, chainId.toString()))
+
     fun recordError(
         address: String,
         chainId: Long,

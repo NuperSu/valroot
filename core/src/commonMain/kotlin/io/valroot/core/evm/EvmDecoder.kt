@@ -66,7 +66,15 @@ data class EvmAssetInfo(
  * which case no value moved. Activities record what happened; no accounting treatment is assumed.
  */
 object EvmDecoder {
+    /** The version of the activities this decoder builds; a change re-decodes saved history on the next refresh. */
     const val VERSION = "evm-2"
+
+    /**
+     * The version of the raw record format ([EvmTransactionGroup.canonical] and the rebase and adjustment records). It
+     * changes only when that format does, never with [VERSION]: the same record must keep its version, because storage
+     * rejects one payload saved under two versions.
+     */
+    const val PAYLOAD_VERSION = "evm-1"
 
     /**
      * Groups transfers by transaction. [positions] gives the block position of transactions the address did not send

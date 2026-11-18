@@ -124,6 +124,9 @@ class EvmConnectorTest {
         /** When set, network discovery (several networks per request) gets this answer: an error, or partial errors. */
         var tokensAnswer: String? = null
 
+        /** The chain head eth_blockNumber reports. */
+        var latestBlock = 200L
+
         /** When set, the single-chain balance read fails. */
         var failBalances = false
 
@@ -156,7 +159,7 @@ class EvmConnectorTest {
                 val params = single["params"]!!.jsonArray
                 val result =
                     when (method) {
-                        "eth_blockNumber" -> "\"${hex(200)}\""
+                        "eth_blockNumber" -> "\"${hex(latestBlock)}\""
                         "eth_getTransactionCount" -> {
                             val at = params[1].jsonPrimitive.content
                             val count =
@@ -541,23 +544,30 @@ class EvmConnectorTest {
     @Test fun incomingTransactionsAreOrderedByTheirBlockPosition() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
-            EvmConnector(FakeAlchemy().post).refresh(app, SourceRefreshOptions())
-            // h(5) was sent by someone else: its position comes from its receipt, not from its token log index.
-            val incoming =
+            val provider = FakeAlchemy()
+            EvmConnector(provider.post).refresh(app, SourceRefreshOptions())
+
+            fun key(n: Int) =
                 app.transactions
                     .entries(ActivityFilter())
                     .single {
                         it.activity.id.value
-                            .contains(h(5))
-                    }.activity
-            assertTrue(incoming.orderingKey.endsWith(":0000000001:${h(5)}"), incoming.orderingKey)
-            assertEquals(
-                mapOf(h(5) to (105L to 1)),
+                            .contains(h(n))
+                    }.activity.orderingKey
+            // Someone else sent h(5) (a token) and h(1) (plain coin): positions come from their receipts, not log indexes.
+            assertTrue(key(5).endsWith(":0000000001:${h(5)}"), key(5))
+            assertTrue(key(1).endsWith(":0000000001:${h(1)}"), key(1))
+            // Blocks 101 to 109 are within 256 of the head (200): their positions are not saved, since they may still move.
+            assertTrue(
                 app.evm
                     .recovered()
                     .positions(me, chain)
-                    .filterKeys { it == h(5) },
+                    .isEmpty(),
             )
+            provider.latestBlock = 1_000
+            EvmConnector(provider.post).refresh(app, SourceRefreshOptions(recoverHistory = true))
+            assertEquals(105L to 1, app.evm.recovered().positions(me, chain)[h(5)])
+            assertEquals(101L to 1, app.evm.recovered().positions(me, chain)[h(1)])
         }
     }
 
@@ -582,6 +592,99 @@ class EvmConnectorTest {
                     .nonces(me, chain)
                     .keys,
             )
+        }
+    }
+
+    @Test fun anOlderDecoderVersionIsReadAgainWithTheSameRawRecords() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            // History decoded before an upgrade: its raw records are byte for byte what this version writes.
+            db.execute("UPDATE ledger_activities SET decoder='evm-1' WHERE id LIKE 'eip155:%'")
+            assertTrue(app.evm.decodedByEarlierVersion(me, chain))
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertTrue(!app.evm.decodedByEarlierVersion(me, chain))
+            assertEquals(
+                listOf("evm-1"),
+                db.query("SELECT DISTINCT payload_version FROM raw_revisions WHERE record_id LIKE 'eip155:%'").map { it.single() },
+            )
+        }
+    }
+
+    @Test fun aSupersededActivityOfAnOlderDecoderDoesNotForceFullReads() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            // An activity decoded by the earlier version and later superseded stays behind in the ledger.
+            db.execute("UPDATE ledger_activities SET decoder='evm-1', status='SUPERSEDED' WHERE id=?", listOf("eip155:$chain:${h(5)}:$me"))
+            assertTrue(!app.evm.decodedByEarlierVersion(me, chain))
+            provider.requests.clear()
+            connector.refresh(app, SourceRefreshOptions())
+            assertEquals(3, provider.requests.size, "only the unchanged-head check")
+        }
+    }
+
+    @Test fun aFailedBalanceCheckAfterAnAcceptedHeadIsNotSkippedLater() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            assertTrue(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head != null,
+            )
+            // A full read of the same head (here a forced one) whose balance check fails leaves no accepted head.
+            provider.failBalances = true
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions(recoverHistory = true)).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+            provider.failBalances = false
+            provider.requests.clear()
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertTrue(provider.requests.size > 3, "the chain is read and checked again, not skipped")
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .error,
+            )
+        }
+    }
+
+    @Test fun aForcedRecoveryNeverPublishesAnOrphanedTrace() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            slug = "bnb-mainnet"
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            app.evm.addChains(me, setOf(56L))
+            app.evm.recordDiscovery(me)
+            // A contract payment traced in block 50; the transaction is now in block 188, so the trace is stale.
+            app.evm.recovered().saveTrace(
+                me,
+                56,
+                h(88),
+                listOf(EvmInternalTransfer(h(88), 50, 0, 1_768_003_250_000, other, me, ExactInteger.parse("77"), true)),
+            )
+            EvmConnector(provider.post).refresh(app, SourceRefreshOptions(recoverHistory = true))
+            assertTrue(
+                app.transactions.entries(ActivityFilter()).none {
+                    it.activity.id.value
+                        .contains(h(88))
+                },
+            )
+            assertTrue(h(88) !in app.evm.recovered().traces(me, 56))
+            slug = "base-mainnet"
         }
     }
 }

@@ -167,6 +167,9 @@ class EvmConnector(
                 "n$sent",
             ).joinToString("|") { it ?: "-" }
         val recovered = app.evm.recovered()
+        // A forced recovery first drops saved traces and nonce results whose transactions left the chain, before any of
+        // them is read into this refresh.
+        if (force) revalidateRecovered(app, address, chain)
         val recheck =
             oneInch != null &&
                 chain in OneInch.CHAINS &&
@@ -186,9 +189,13 @@ class EvmConnector(
                 // A rebasing token's balance changes without a transfer, so it is read on every refresh; a difference
                 // left by an earlier check is settled too.
                 if (state.balanceDifference != null || app.evm.holdsRebasing(account, chain)) checkBalances(app, account, address, chain)
+                app.evm.recordChainSuccess(address, chain, head)
                 return
             }
         }
+        // Until this read and its balance check finish, the chain has no accepted head: a failure anywhere below makes
+        // the next refresh read it in full again instead of skipping it as unchanged.
+        app.evm.clearChainHead(address, chain)
 
         val transactions = mutableListOf<EvmTransaction>()
         val internal = mutableListOf<EvmInternalTransfer>()
@@ -206,9 +213,6 @@ class EvmConnector(
             internal += recovered.traces(address, chain).values.flatten()
         }
         if (network.internalTransfers && recheck && !checkedOneInch) readOneInch(app, address, chain, internalListed = true)
-
-        // A forced recovery first drops saved traces and nonce results whose transactions left the chain.
-        if (force) revalidateRecovered(app, address, chain)
 
         // Receipts for every transaction the address may have sent: fee, status and the actual sender.
         val candidates =
@@ -269,9 +273,10 @@ class EvmConnector(
     }
 
     /**
-     * Block positions of transactions the address did not send, from their receipts; saved per hash with the block it
-     * was read in and read again when the transaction is now in another block. A transaction without a receipt keeps
-     * an unknown position.
+     * Block positions of transactions the address did not send (incoming coin, token and contract transfers), from
+     * their receipts. A position is saved only once its block is [REORG_DEPTH] blocks deep, so a reorganisation that
+     * puts the transaction elsewhere at the same height cannot leave a stale position behind; newer ones are read on
+     * every full read. A transaction without a receipt keeps an unknown position.
      */
     private fun positions(
         app: PortfolioApplication,
@@ -283,18 +288,32 @@ class EvmConnector(
     ): Map<String, Int> {
         val recovered = app.evm.recovered()
         val known = transactions.filter { it.position != null }.map { it.hash }.toSet()
-        val blocks = (tokens.map { it.transactionHash to it.blockNumber } + internal.map { it.transactionHash to it.blockNumber }).toMap()
-        val saved = recovered.positions(address, chain)
-        val due = blocks.filter { (hash, block) -> hash !in known && saved[hash]?.first != block }.keys.toList()
-        due.chunked(Alchemy.RECEIPT_BATCH).forEach { batch ->
+        val blocks =
+            (
+                transactions.mapNotNull { tx -> tx.blockNumber?.takeIf { tx.position == null }?.let { tx.hash to it } } +
+                    tokens.map { it.transactionHash to it.blockNumber } +
+                    internal.map { it.transactionHash to it.blockNumber }
+            ).toMap() - known
+        if (blocks.isEmpty()) return emptyMap()
+        val settledThrough = Alchemy.parseQuantity(post(Alchemy.rpcUrl(chain), Alchemy.blockNumberBody())) - REORG_DEPTH
+        val saved =
+            recovered.positions(address, chain).filter { (hash, saved) ->
+                blocks[hash] == saved.first &&
+                    saved.first <= settledThrough
+            }
+        val positions = saved.mapValues { it.value.second }.toMutableMap()
+        blocks.keys.filter { it !in saved }.chunked(Alchemy.RECEIPT_BATCH).forEach { batch ->
             Alchemy.parseReceiptsByHash(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(batch)), batch).forEach { (hash, receipt) ->
-                if (receipt != null) recovered.savePosition(address, chain, hash, receipt.blockNumber, receipt.position)
+                if (receipt == null || receipt.blockNumber != blocks[hash]) return@forEach
+                positions[hash] = receipt.position
+                if (receipt.blockNumber <=
+                    settledThrough
+                ) {
+                    recovered.savePosition(address, chain, hash, receipt.blockNumber, receipt.position)
+                }
             }
         }
-        return recovered
-            .positions(address, chain)
-            .filter { (hash, saved) -> blocks[hash] == saved.first }
-            .mapValues { it.value.second }
+        return positions
     }
 
     /**
@@ -471,6 +490,9 @@ class EvmConnector(
 
     companion object {
         const val MAX_PAGES = 400
+
+        /** Blocks below the chain head after which a saved transaction position is trusted not to move. */
+        const val REORG_DEPTH = 256L
 
         /** Nonces searched per chain and refresh; each search takes about 30 small requests. */
         const val MAX_NONCE_SEARCHES = 3
