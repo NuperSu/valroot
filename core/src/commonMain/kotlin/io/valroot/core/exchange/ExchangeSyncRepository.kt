@@ -194,7 +194,8 @@ class ExchangeSyncRepository(
                         "AND e.record_key=exchange_rows.key) END, CASE WHEN stream='file' THEN rowid END, key",
                     listOf(account.value),
                 ).map { ExchangeRow(it[0]!!, it[1]!!, it[2]!!.toLong(), it[3]!!, it[4]!!) }
-        return imports.annotateAliases(account, rows)
+        val aliased = imports.annotateAliases(account, rows)
+        return imports.annotateBybitFills(account, aliased)
     }
 
     fun saveRow(
@@ -257,6 +258,11 @@ class ExchangeSyncRepository(
         key: String,
         value: String,
     ) = db.execute("INSERT OR REPLACE INTO exchange_cursors VALUES (?, ?, ?)", listOf(account.value, key, value))
+
+    fun clearCursor(
+        account: AccountId,
+        key: String,
+    ) = db.execute("DELETE FROM exchange_cursors WHERE account=? AND key=?", listOf(account.value, key))
 
     fun deleteRow(
         account: AccountId,

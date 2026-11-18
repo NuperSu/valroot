@@ -241,6 +241,7 @@ object BybitDecoder : ExchangeHistory {
                 when {
                     reward -> ActivityKind.REWARD
                     first.type in WALLET_TRANSFER_TYPES || first.type in PRODUCT_LOG_TYPES -> ActivityKind.TRANSFER
+                    group.substringAfter(':').startsWith(BybitImportedLogs.UNPAIRED_FILL_PREFIX) -> ActivityKind.TRADE
                     else -> null
                 }
             }

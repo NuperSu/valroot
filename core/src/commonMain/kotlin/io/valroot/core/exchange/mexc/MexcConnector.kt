@@ -49,6 +49,7 @@ private data class MexcStream(
  * Every record is kept, so history grows from the first refresh on.
  */
 class MexcConnector(
+    private val requestLimit: Int = MAX_REQUESTS,
     private val get: (account: AccountId, request: MexcRequest) -> String,
 ) : ExchangeConnector(ExchangeKind.MEXC) {
     override val manifest = MEXC_MANIFEST
@@ -59,21 +60,26 @@ class MexcConnector(
         uid: String,
         options: SourceRefreshOptions,
     ): Boolean {
-        val budget = RequestBudget<MexcRequest>(MAX_REQUESTS) { get(account, it) }
+        val budget = RequestBudget<MexcRequest>(requestLimit) { get(account, it) }
         require(Mexc.parseUid(budget.send(Mexc.uid())) == uid) { "This API key belongs to another MEXC account" }
         val now = app.clockMillis()
         val balances = Mexc.parseBalances(budget.send(Mexc.account()))
 
         fun save(rows: List<ExchangeRow>) = app.exchanges.saveRows(ExchangeKind.MEXC, account, uid, rows, MexcDecoder.VERSION)
         var unfinished = false
+        val cursors = app.exchanges.cursors(account)
         STREAMS.forEach { stream ->
             options.onProgress("MEXC · ${stream.name}")
-            val windows = StreamWindows(stream.name, Mexc.WEEK_MILLIS, now - stream.retentionMillis)
+            val targetKey = "mexc-record-target:${stream.name}"
+            val savedTarget = cursors[targetKey]?.toLongOrNull()
+            val target = savedTarget ?: now
+            val windows = StreamWindows(stream.name, Mexc.WEEK_MILLIS, target - stream.retentionMillis)
             val complete =
-                readStream(app, account, windows, now, { !budget.spent }) { from, to ->
-                    if (budget.spent) null else stream.read(budget::send, from, to).also(::save).size
+                readStream(app, account, windows, target, { !budget.spent }) { from, to ->
+                    readRecordWindow(app, account, stream, targetKey, target, from, to, budget, ::save)
                 }
-            if (!complete) unfinished = true
+            if (complete && stream.name in CAPPED_RECORD_STREAMS) app.exchanges.clearCursor(account, targetKey)
+            if (!complete || target < now) unfinished = true
         }
         if (!budget.spent) {
             save(Mexc.parseDust(budget.send(Mexc.dust())).first.map { ExchangeRow(MexcDecoder.DUST, it.id, it.atMillis, it.raw, "") })
@@ -99,6 +105,61 @@ class MexcConnector(
         return unfinished
     }
 
+    /** Splits capped deposit/withdrawal pages, retaining finished halves across refresh budgets. */
+    private fun readRecordWindow(
+        app: PortfolioApplication,
+        account: AccountId,
+        stream: MexcStream,
+        targetKey: String,
+        target: Long,
+        from: Long,
+        to: Long,
+        budget: RequestBudget<MexcRequest>,
+        save: (List<ExchangeRow>) -> Unit,
+    ): Int? {
+        if (budget.spent) return null
+        if (stream.name !in CAPPED_RECORD_STREAMS) {
+            return stream.read(budget::send, from, to).also(save).size
+        }
+        val key = "mexc-record-pending:${stream.name}:$from:$to"
+        val pending = app.exchanges.cursors(account)[key].orEmpty()
+        val parts = pending.split('|')
+        var found = if (pending.isEmpty()) 0 else parts.first().toInt()
+        val windows =
+            if (pending.isEmpty()) {
+                mutableListOf(from to to)
+            } else {
+                parts
+                    .drop(1)
+                    .map { entry ->
+                        val bounds = entry.split(':')
+                        bounds[0].toLong() to bounds[1].toLong()
+                    }.toMutableList()
+            }
+        while (windows.isNotEmpty()) {
+            if (budget.spent) return null
+            val (start, end) = windows.first()
+            val rows = stream.read(budget::send, start, end)
+            if (rows.size >= Mexc.RECORD_PAGE) {
+                check(end - start > 1L) { "MEXC returned a full ${stream.name} page in one millisecond; this history window is incomplete" }
+                val middle = start + (end - start) / 2
+                windows.removeAt(0)
+                windows.add(0, middle to end)
+                windows.add(0, start to middle)
+                app.exchanges.saveCursor(account, targetKey, "$target")
+            } else {
+                save(rows)
+                found += rows.size
+                windows.removeAt(0)
+            }
+            if (windows.isNotEmpty()) {
+                app.exchanges.saveCursor(account, key, (listOf("$found") + windows.map { "${it.first}:${it.second}" }).joinToString("|"))
+            }
+        }
+        app.exchanges.clearCursor(account, key)
+        return found
+    }
+
     /** Reads trades of every candidate symbol that is due; false when the budget ran out first. */
     private fun readTrades(
         app: PortfolioApplication,
@@ -113,48 +174,67 @@ class MexcConnector(
         val candidates = TradeSymbols.candidates(app, ExchangeKind.MEXC, account, balances, listed, QUOTES)
         val changed = TradeSymbols.changedCoins(app, account, balances)
         val cursors = app.exchanges.cursors(account)
-        for ((symbol, pair) in candidates.entries.sortedBy { it.key }) {
+        // Resume unfinished symbols first so changing balances cannot starve their older halves.
+        for ((symbol, pair) in candidates.entries.sortedWith(compareBy({ cursors[TRADE_PENDING + it.key].isNullOrEmpty() }, { it.key }))) {
             val read = cursors[TRADE_CURSOR + symbol]?.toLongOrNull()
-            val due = read == null || now - read >= Mexc.DAY_MILLIS || pair.first in changed || pair.second in changed
+            val pending = cursors[TRADE_PENDING + symbol].orEmpty()
+            val due =
+                pending.isNotEmpty() || read == null || now - read >= Mexc.DAY_MILLIS || pair.first in changed || pair.second in changed
             if (!due) continue
             if (budget.spent) return false
             val from = maxOf(read?.minus(Mexc.DAY_MILLIS) ?: 0L, now - Mexc.TRADE_RETENTION_MILLIS + Mexc.DAY_MILLIS / 24)
-            if (!readTradeWindow(symbol, from, now, budget, save)) return false
-            app.exchanges.saveCursor(account, TRADE_CURSOR + symbol, "$now")
-        }
-        return true
-    }
+            val parts = pending.split('|')
+            val target = if (pending.isEmpty()) now else parts.first().toLong()
+            val windows =
+                if (pending.isEmpty()) {
+                    mutableListOf(from to target)
+                } else {
+                    parts
+                        .drop(1)
+                        .map { entry ->
+                            val bounds = entry.split(':')
+                            bounds[0].toLong() to bounds[1].toLong()
+                        }.toMutableList()
+                }
 
-    /**
-     * Reads one symbol's trades in a window, halving it while a page comes back full; false when the budget ran out.
-     * Rows of finished halves are saved, but the symbol's cursor only moves once the whole window is read.
-     */
-    private fun readTradeWindow(
-        symbol: String,
-        from: Long,
-        to: Long,
-        budget: RequestBudget<MexcRequest>,
-        save: (List<ExchangeRow>) -> Unit,
-    ): Boolean {
-        if (budget.spent) return false
-        val trades = Mexc.parseTrades(budget.send(Mexc.trades(symbol, from, to)))
-        if (trades.size >= Mexc.TRADE_PAGE) {
-            // A full page may hide more trades; failing keeps the cursor before them instead of skipping them.
-            check(to - from > MIN_TRADE_WINDOW_MILLIS) { "MEXC has more trades in one minute than it returns; retry later" }
-            val middle = from + (to - from) / 2
-            return readTradeWindow(symbol, from, middle, budget, save) && readTradeWindow(symbol, middle, to, budget, save)
+            fun checkpoint() =
+                app.exchanges.saveCursor(
+                    account,
+                    TRADE_PENDING + symbol,
+                    (listOf("$target") + windows.map { "${it.first}:${it.second}" }).joinToString("|"),
+                )
+            checkpoint()
+            while (windows.isNotEmpty()) {
+                if (budget.spent) return false
+                val (start, end) = windows.first()
+                val trades = Mexc.parseTrades(budget.send(Mexc.trades(symbol, start, end)))
+                if (trades.size >= Mexc.TRADE_PAGE) {
+                    check(end - start > 1L) { "MEXC returned a full trades page in one millisecond; import a statement for this history" }
+                    val middle = start + (end - start) / 2
+                    windows.removeAt(0)
+                    windows.add(0, middle to end)
+                    windows.add(0, start to middle)
+                } else {
+                    save(trades.map { ExchangeRow(MexcDecoder.TRADES, "$symbol:${it.id}", it.atMillis, it.raw, "") })
+                    windows.removeAt(0)
+                }
+                checkpoint()
+            }
+            // Keep the legacy completion cursor as a timestamp; pending work has a separate durable cursor.
+            app.exchanges.saveCursor(account, TRADE_CURSOR + symbol, "$target")
+            app.exchanges.clearCursor(account, TRADE_PENDING + symbol)
         }
-        save(trades.map { ExchangeRow(MexcDecoder.TRADES, "$symbol:${it.id}", it.atMillis, it.raw, "") })
         return true
     }
 
     companion object {
         const val MAX_REQUESTS = 300
 
-        /** A window is not split below a minute; a minute that still fills a page fails the refresh. */
-        const val MIN_TRADE_WINDOW_MILLIS = 60_000L
+        private val CAPPED_RECORD_STREAMS = setOf(MexcDecoder.DEPOSITS, MexcDecoder.WITHDRAWALS)
 
         const val TRADE_CURSOR = "mexc-trades:"
+
+        const val TRADE_PENDING = "mexc-trade-pending:"
 
         /** Coins MEXC quotes markets in. */
         val QUOTES = listOf("USDT", "USDC", "USDE", "BTC", "ETH", "MX", "EUR")
@@ -212,7 +292,7 @@ object MexcProvider : ExchangeProvider<MexcRequest> {
     override val history: ExchangeHistory = MexcDecoder
     override val exports = MexcExports
 
-    override fun connector(transport: ExchangeTransport<MexcRequest>) = MexcConnector(transport::get)
+    override fun connector(transport: ExchangeTransport<MexcRequest>) = MexcConnector(get = transport::get)
 
     /** MEXC does not report a key's permissions: the key is trusted to be read-only, and only reads are ever sent. */
     override fun checkKey(send: (MexcRequest) -> String): ExchangeKeyInfo = ExchangeKeyInfo(Mexc.parseUid(send(Mexc.uid())), true, null)

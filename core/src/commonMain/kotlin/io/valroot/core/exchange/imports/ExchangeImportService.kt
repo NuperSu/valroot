@@ -397,8 +397,14 @@ class ExchangeImportService internal constructor(
             record.namespace.orEmpty(),
             record.nativeId.orEmpty(),
             record.details
-                .filterKeys { it != PROVENANCE_ROWS }
-                .sortedByKeys()
+                .filterKeys {
+                    it != PROVENANCE_ROWS &&
+                        !(
+                            io.valroot.core.exchange.bybit.BybitExports
+                                .isUnifiedReport(record.report) &&
+                                it in io.valroot.core.exchange.bybit.BybitExports.fillFields
+                        )
+                }.sortedByKeys()
                 .entries
                 .joinToString(";") { "${it.key}=${it.value}" },
         ).joinToString("|")

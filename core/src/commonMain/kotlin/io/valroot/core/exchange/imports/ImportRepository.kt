@@ -2,6 +2,7 @@ package io.valroot.core.exchange.imports
 
 import io.valroot.core.exchange.ExchangeRow
 import io.valroot.core.exchange.ImportedEvents
+import io.valroot.core.exchange.bybit.BybitExports
 import io.valroot.core.model.AccountId
 import io.valroot.core.storage.SqliteDatabase
 import kotlinx.serialization.json.Json
@@ -240,6 +241,46 @@ internal class ImportRepository(
             aliases[row.key]
                 ?.takeIf { row.stream == ImportedEvents.STREAM }
                 ?.let { row.copy(payload = aliasPayload(row, it)) } ?: row
+        }
+    }
+
+    /** Fill evidence follows its original receipt while the wallet log keeps its stable import key. */
+    fun annotateBybitFills(
+        account: AccountId,
+        rows: List<ExchangeRow>,
+    ): List<ExchangeRow> {
+        val missing =
+            rows
+                .asSequence()
+                .filter { it.stream == ImportedEvents.STREAM }
+                .mapNotNull { row ->
+                    val record = ImportedEvents.parse(row.payload)
+                    row.key.takeIf {
+                        BybitExports.isUnifiedReport(record.report) &&
+                            record.details["bybitWalletLog"] != null &&
+                            record.kind in setOf(RecordKind.TRADE, RecordKind.CONVERT) &&
+                            BybitExports.fillFields.none(record.details::containsKey)
+                    }
+                }.toSet()
+        if (missing.isEmpty()) return rows
+        val evidence = mutableMapOf<String, Map<String, String>>()
+        db
+            .query(
+                "SELECT s.record_key, s.report, s.cells FROM exchange_import_sources s " +
+                    "JOIN exchange_import_batches b ON b.id=s.batch WHERE s.account=? AND b.undone_at IS NULL " +
+                    "ORDER BY b.imported_at, b.rowid, s.seq",
+                listOf(account.value),
+            ).forEach { (key, report, rawCells) ->
+                if (key == null || key !in missing || key in evidence || report == null || rawCells == null) return@forEach
+                val cells = Json.parseToJsonElement(rawCells).jsonArray.map { it.jsonPrimitive.content }
+                val fields = BybitExports.fillEvidence(report, cells)
+                if (fields.isNotEmpty()) evidence[key] = fields
+            }
+        return rows.map { row ->
+            val fields = evidence[row.key]?.takeIf { row.stream == ImportedEvents.STREAM } ?: return@map row
+            val payload = Json.parseToJsonElement(row.payload).jsonObject
+            val details = payload.getValue("details").jsonObject + fields.mapValues { JsonPrimitive(it.value) }
+            row.copy(payload = JsonObject(payload + ("details" to JsonObject(details))).toString())
         }
     }
 

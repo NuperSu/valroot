@@ -63,6 +63,32 @@ object BybitExports : ExchangeExportAdapter {
     val FUNDING_LEGACY = report("funding.legacy", ProductFamily.FUNDING, EvidenceRole.PRIMARY, FUND_HEADER)
     val UNIFIED = report("unified", ProductFamily.SPOT, EvidenceRole.PRIMARY, "Uid,$UTA_HEADER")
     val UNIFIED_LEGACY = report("unified.legacy", ProductFamily.SPOT, EvidenceRole.PRIMARY, UTA_HEADER)
+
+    internal val fillFields = setOf("direction", "quantity", "filledPrice")
+
+    internal fun isUnifiedReport(report: String): Boolean = report == UNIFIED.id || report == UNIFIED_LEGACY.id
+
+    /** The Unified report's original cells can supply fill evidence to saved wallet log records. */
+    internal fun fillEvidence(
+        report: String,
+        cells: List<String>,
+    ): Map<String, String> {
+        val header =
+            when (report) {
+                UNIFIED.id -> UNIFIED.header
+                UNIFIED_LEGACY.id -> UNIFIED_LEGACY.header
+                else -> return emptyMap()
+            }
+        if (cells.size < header.size) return emptyMap()
+
+        fun text(name: String) = cells[header.indexOf(name)].trim()
+
+        fun amount(name: String) = ImportValues.optionalDecimal(text(name), name)?.toString() ?: ZERO.toString()
+        return runCatching {
+            mapOf("direction" to text("Direction"), "quantity" to amount("Quantity"), "filledPrice" to amount("Filled Price"))
+        }.getOrDefault(emptyMap())
+    }
+
     val SPOT = report("spot", ProductFamily.SPOT, EvidenceRole.PRIMARY, "Type,Coin,Amount,Wallet Balance,Time(UTC)")
     val TRANSFERS =
         report(
@@ -260,8 +286,12 @@ object BybitExports : ExchangeExportAdapter {
                                 "contract" to text("Contract"),
                                 "cashFlow" to optional("Cash Flow").toString(),
                                 "funding" to optional("Funding").toString(),
-                            ) +
-                            if (derivative || kind == RecordKind.UNKNOWN) emptyMap() else mapOf("bybitWalletLog" to "1")
+                            ) + (if (derivative || kind == RecordKind.UNKNOWN) emptyMap() else mapOf("bybitWalletLog" to "1")) +
+                            if (kind == RecordKind.TRADE || kind == RecordKind.CONVERT) {
+                                fillEvidence(table.report.id, row.cells.map { it.text })
+                            } else {
+                                emptyMap()
+                            }
                     }
                 }
                 TRANSFERS.id -> {

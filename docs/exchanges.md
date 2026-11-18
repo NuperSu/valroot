@@ -184,7 +184,7 @@ Signed like Binance (query, `timestamp`, `recvWindow=10000`, then the hex HMAC-S
 
 ## Keeping MEXC's short history
 
-MEXC drops trades after a month and transfers after 90 days, so Valroot keeps every record it reads and history grows from the first refresh on. Trades are read per symbol, chosen as for Binance (pairs of the account's coins and MEXC's quote coins USDT, USDC, USDE, BTC, ETH, MX, EUR, plus pairs the user adds), from the last read less a day; a window that returns a full page is halved. Each symbol is read again when one of its coins' balance changed, or after a day, well within MEXC's month.
+MEXC API history has a rolling retention window. Valroot keeps every record it reads. Trade symbols include pairs of the account's coins and MEXC's quote coins USDT, USDC, USDE, BTC, ETH, MX and EUR, along with pairs the user adds. Each symbol is read from its last accepted timestamp with a one-day overlap. A balance change or a day since the last read makes it due again. When a trade, deposit or withdrawal request returns a full page, Valroot splits the time window and resumes remaining work on the next refresh. A full page that cannot be split leaves the window incomplete.
 
 ## From records to activities
 

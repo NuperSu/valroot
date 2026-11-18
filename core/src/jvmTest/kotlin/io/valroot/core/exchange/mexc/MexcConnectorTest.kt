@@ -119,8 +119,11 @@ class MexcConnectorTest {
         }
     }
 
-    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
-        val app = PortfolioApplication(db) { now }
+    private fun setUp(
+        db: BundledSqliteDatabase,
+        clock: () -> Long = { now },
+    ): PortfolioApplication {
+        val app = PortfolioApplication(db, clock)
         app.snapshot()
         app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
         app.accounts.saveAccountAndTarget(
@@ -278,11 +281,172 @@ class MexcConnectorTest {
     }
 
     @Test
-    fun aMinuteWithMoreThanAPageOfTradesFailsInsteadOfSkippingTrades() {
+    fun fullWithdrawalPagesSplitAndRecoverEveryRecord() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
             val mexc = FakeMexc()
-            repeat(120) { i -> mexc.trades += mexc.trade("burst$i", "0.001", "50", "0.05", "USDT", true, now - 5 * day + i * 100L) }
+            val outcome =
+                MexcConnector { _, request ->
+                    if (request.path != "/api/v3/capital/withdraw/history") {
+                        mexc.get(request)
+                    } else {
+                        val query = request.query.toMap()
+                        val from = query.getValue("startTime").toLong()
+                        val to = query.getValue("endTime").toLong()
+                        val rows =
+                            (0 until 1200).mapNotNull { i ->
+                                val at = now - 3 * day + i * 60_000L
+                                if (at !in from..to) {
+                                    null
+                                } else {
+                                    """{"id":"w$i","coin":"BTC","network":"BTC","amount":"1","transHash":"tx$i","status":7,"transactionFee":"0","applyTime":$at}"""
+                                }
+                            }
+                        "[${rows.take(Mexc.RECORD_PAGE).joinToString(",")}]"
+                    }
+                }.refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(JobState.COMPLETED), outcome.jobs)
+            assertEquals(1200, app.exchanges.rowKeys(account, MexcDecoder.WITHDRAWALS).size)
+            assertTrue(
+                app.exchanges
+                    .streams(account)
+                    .getValue(MexcDecoder.WITHDRAWALS)
+                    .complete,
+            )
+        }
+    }
+
+    @Test
+    fun fullDepositAndWithdrawalPagesLeaveTheirWindowUnread() {
+        listOf("deposits", "withdrawals").forEach { stream ->
+            BundledSqliteDatabase(":memory:").use { db ->
+                val app = setUp(db)
+                val mexc = FakeMexc()
+                val path = if (stream == "deposits") "/api/v3/capital/deposit/hisrec" else "/api/v3/capital/withdraw/history"
+                val outcome =
+                    MexcConnector { _, request ->
+                        if (request.path != path) {
+                            mexc.get(request)
+                        } else {
+                            val rows =
+                                (0 until Mexc.RECORD_PAGE).map { i ->
+                                    if (stream == "deposits") {
+                                        """{"id":"d$i","coin":"BTC","network":"BTC","amount":"1","txId":"tx$i","status":5,"insertTime":${now - day}}"""
+                                    } else {
+                                        """{"id":"w$i","coin":"BTC","network":"BTC","amount":"1","transHash":"tx$i","status":7,"transactionFee":"0","applyTime":${now - day}}"""
+                                    }
+                                }
+                            "[${rows.joinToString(",")}]"
+                        }
+                    }.refresh(app, SourceRefreshOptions())
+                assertEquals(listOf(JobState.FAILED), outcome.jobs)
+                val state = app.exchanges.streams(account).getValue(stream)
+                assertEquals(now, state.fromMillis)
+                assertEquals(now, state.toMillis)
+                assertTrue(!state.complete)
+                assertTrue(
+                    app.exchanges
+                        .status(account)
+                        .error
+                        .orEmpty()
+                        .contains("incomplete"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun aSplitForwardWithdrawalWindowKeepsItsBoundsAsTheClockMoves() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            var clock = now
+            val app = setUp(db) { clock }
+            val mexc = FakeMexc()
+            MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
+            val path = "/api/v3/capital/withdraw/history"
+            val connector =
+                MexcConnector(requestLimit = 5) { _, request ->
+                    if (request.path != path) {
+                        mexc.get(request)
+                    } else {
+                        mexc.requests += request
+                        val query = request.query.toMap()
+                        val from = query.getValue("startTime").toLong()
+                        val to = query.getValue("endTime").toLong()
+                        val rows =
+                            (0 until 1_200)
+                                .asSequence()
+                                .map { i -> i to (now - day / 4 + i * 1_000L) }
+                                .filter { (_, time) -> time in from..to }
+                                .take(Mexc.RECORD_PAGE)
+                                .joinToString(",") { (i, time) ->
+                                    """{"id":"future-$i","coin":"BTC","network":"BTC","amount":"1","status":7,"applyTime":$time,"transHash":"tx$i","transactionFee":"0"}"""
+                                }
+                        "[$rows]"
+                    }
+                }
+            mexc.requests.clear()
+            connector.refresh(app, SourceRefreshOptions())
+            val initial = mexc.requests.first { it.path == path }.query
+            repeat(25) {
+                if (app.exchanges.rowKeys(account, MexcDecoder.WITHDRAWALS).size < 1_201) {
+                    clock += 1_000
+                    assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+                }
+            }
+            assertEquals(1_201, app.exchanges.rowKeys(account, MexcDecoder.WITHDRAWALS).size)
+            assertEquals(1, mexc.requests.count { it.path == path && it.query == initial })
+        }
+    }
+
+    @Test
+    fun splitTradeWindowsResumeAcrossBudgetsWithLegacyCompletionCursor() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val mexc = FakeMexc()
+            val expectedTrades = mexc.trades.toList()
+            mexc.trades.clear()
+            // Complete the window streams first, leaving a due legacy symbol timestamp.
+            MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
+            mexc.trades += expectedTrades
+            app.exchanges.saveCursor(account, MexcConnector.TRADE_CURSOR + "BTCUSDT", "${now - 29 * day}")
+            mexc.requests.clear()
+            // Five stream overlap requests, UID, balance, dust and tickers leave two trade requests.
+            val connector = MexcConnector(requestLimit = 11) { _, request -> mexc.get(request) }
+            val first = connector.refresh(app, SourceRefreshOptions())
+            assertEquals(listOf(JobState.COMPLETED), first.jobs)
+            val pending = app.exchanges.cursors(account).getValue(MexcConnector.TRADE_PENDING + "BTCUSDT")
+            assertTrue(pending.contains('|'))
+            val firstTradeRequests = mexc.requests.filter { it.path == "/api/v3/myTrades" }.toList()
+            assertEquals(2, firstTradeRequests.size)
+            repeat(20) {
+                if (app.exchanges
+                        .cursors(account)[MexcConnector.TRADE_PENDING + "BTCUSDT"]
+                        .orEmpty()
+                        .isNotEmpty()
+                ) {
+                    assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+                }
+            }
+            assertNull(app.exchanges.cursors(account)[MexcConnector.TRADE_PENDING + "BTCUSDT"])
+            assertEquals("$now", app.exchanges.cursors(account)[MexcConnector.TRADE_CURSOR + "BTCUSDT"])
+            val rootQuery = firstTradeRequests.first().query
+            assertEquals(1, mexc.requests.count { it.path == "/api/v3/myTrades" && it.query == rootQuery })
+            assertEquals(
+                150,
+                app.snapshot(ActivityFilter(account = account, limit = 500)).activities.count {
+                    it.activity.id.value
+                        .contains(":trade:BTCUSDT:")
+                },
+            )
+        }
+    }
+
+    @Test
+    fun anUnsplittableWindowOfTradesFailsInsteadOfSkippingTrades() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val mexc = FakeMexc()
+            repeat(120) { i -> mexc.trades += mexc.trade("burst$i", "0.001", "50", "0.05", "USDT", true, now - 5 * day) }
             val outcome = MexcConnector { _, request -> mexc.get(request) }.refresh(app, SourceRefreshOptions())
             assertEquals(listOf(JobState.FAILED), outcome.jobs)
             assertTrue(
@@ -290,7 +454,7 @@ class MexcConnectorTest {
                     .status(account)
                     .error
                     .orEmpty()
-                    .contains("one minute"),
+                    .contains("full trades page"),
             )
             assertTrue(
                 app.exchanges

@@ -16,6 +16,7 @@ import io.valroot.core.model.ExactDecimal
 import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.SourceRecordId
 import io.valroot.core.sortedByKeys
+import io.valroot.core.storage.sha256
 import kotlin.math.abs
 
 /** Reconstructs wallet logs before Bybit's wallet opening calculation, matching API rows by balance and change. */
@@ -106,6 +107,52 @@ internal class BybitImportedLogs(
             )
         }
 
+    private val unpaired = mutableSetOf<String>()
+    private val tradeGroups = tradeGroups()
+
+    private fun legacyGroup(record: ImportedEvents.Stored): String =
+        when {
+            record.wallet == "SPOT" -> "trade:${record.atMillis}"
+            record.kind == RecordKind.CONVERT -> record.atMillis.toString()
+            else -> "file:${record.atMillis}:${record.details["contract"].orEmpty()}"
+        }
+
+    /** Wallet reports without fill IDs can pair legs only when each principal coin occurs once. */
+    private fun tradeGroups(): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        val groups =
+            logRecords
+                .filter { it.second.kind in setOf(RecordKind.TRADE, RecordKind.CONVERT) }
+                .groupBy { (_, r) ->
+                    listOf(
+                        r.report,
+                        r.wallet,
+                        r.atMillis.toString(),
+                        r.details["contract"].orEmpty(),
+                        r.details["direction"].orEmpty(),
+                        r.details["quantity"].orEmpty(),
+                        r.details["filledPrice"].orEmpty(),
+                    )
+                }.values
+        val byLegacy = groups.groupBy { legacyGroup(it.first().second) }
+        byLegacy.forEach { (legacy, candidates) ->
+            candidates.forEach { group ->
+                val principal = group.flatMap { (_, r) -> r.legs.filter { it.role != MovementRole.FEE } }
+                if (principal.size > 2 || principal.map { it.coin }.distinct().size != principal.size) {
+                    // Keep every observed movement while withholding a multi-leg fill that the report cannot establish.
+                    group.forEach { (row, _) ->
+                        unpaired += row.key
+                        result[row.key] = "$UNPAIRED_FILL_PREFIX${row.key}"
+                    }
+                } else {
+                    val key = if (candidates.size == 1) legacy else "file:" + sha256(group.map { it.first.key }.sorted().joinToString("\n"))
+                    group.forEach { (row, _) -> result[row.key] = key }
+                }
+            }
+        }
+        return result
+    }
+
     fun unified(api: List<Pair<BybitLogEntry, SourceRecordId>>): List<Pair<BybitLogEntry, SourceRecordId>> =
         merge(
             BybitDecoder.UNIFIED,
@@ -124,8 +171,8 @@ internal class BybitImportedLogs(
                 ExactDecimal.parse(details.getValue("funding")),
                 ExactDecimal.parse(details.getValue("fee")),
                 ExactDecimal.parse(details.getValue("balanceAfter")),
-                "file:${record.atMillis}:${details.getValue("contract")}",
-                "",
+                tradeGroups[row.key] ?: "file:${row.key}",
+                tradeGroups[row.key].orEmpty().takeIf { record.kind == RecordKind.CONVERT }.orEmpty(),
                 record.atMillis,
             )
         }
@@ -186,7 +233,7 @@ internal class BybitImportedLogs(
         ledger: ExchangeLedgerBuilder,
         funding: List<Pair<BybitFundingEntry, SourceRecordId>>,
     ): Set<String> {
-        val spot = logRecords.filter { it.second.wallet == "SPOT" }
+        val spot = logRecords.filter { it.second.wallet == "SPOT" && it.first.key !in blocked }
         val pairedFunding = mutableSetOf<String>()
         val internalSpot = mutableSetOf<String>()
         spot.filter { it.second.kind == RecordKind.INTERNAL_TRANSFER }.sortedBy { it.second.atMillis }.forEach { (row, r) ->
@@ -215,7 +262,7 @@ internal class BybitImportedLogs(
                 if (r.kind in
                     setOf(RecordKind.TRADE, RecordKind.CONVERT)
                 ) {
-                    "trade:${r.atMillis}"
+                    tradeGroups[row.key] ?: "row:${row.key}"
                 } else {
                     "row:${row.key}"
                 }
@@ -237,7 +284,7 @@ internal class BybitImportedLogs(
                     when (active.first().second.kind) {
                         RecordKind.DEPOSIT -> ActivityKind.DEPOSIT
                         RecordKind.WITHDRAWAL -> ActivityKind.TRANSFER
-                        else -> null
+                        else -> ActivityKind.TRADE.takeIf { key.startsWith(UNPAIRED_FILL_PREFIX) }
                     }
                 }
             }
@@ -294,6 +341,9 @@ internal class BybitImportedLogs(
     }
 
     fun outcomes(ledger: ExchangeLedgerBuilder) {
+        if (unpaired.any { it !in matchedApi }) {
+            ledger.failures += "Some Bybit spot fills lack pairing evidence. Their movements are saved separately."
+        }
         logRecords.forEach { (row, record) ->
             blocked[row.key]?.let {
                 ledger.imports[row.key] = it
@@ -320,4 +370,8 @@ internal class BybitImportedLogs(
     private fun negate(value: ExactDecimal) = ExactDecimal(-value.coefficient, value.scale)
 
     private val zero = ExactDecimal.parse("0")
+
+    companion object {
+        const val UNPAIRED_FILL_PREFIX = "file:unpaired:"
+    }
 }

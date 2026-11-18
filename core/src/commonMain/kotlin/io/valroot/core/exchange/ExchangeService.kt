@@ -397,6 +397,11 @@ class ExchangeService internal constructor(
         value: String,
     ) = exchangeSync.saveCursor(account, key, value)
 
+    internal fun clearCursor(
+        account: AccountId,
+        key: String,
+    ) = exchangeSync.clearCursor(account, key)
+
     /** Forgets an exchange account's saved records, so the next refresh reads its history again. */
     fun forgetHistory(account: AccountId) = db.transaction { exchangeSync.forget(account) }
 

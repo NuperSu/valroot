@@ -63,6 +63,7 @@ A receipt lists the batch's files, reports and counts. Undo removes the batch's 
 
 - **Primary records:** Unified and Funding balance logs, including legacy Spot wallet logs, carry each wallet's balance after the change. They settle against matching API records and supply movements when API history is absent.
 - **Supporting records:** transfer history supplies network and transaction details for matching deposits and withdrawals; spot-trade and card exports do not create movements by themselves. Card spending and refunds come from primary wallet logs.
+- Unified spot trade legs are grouped using the contract, time, direction, quantity and fill price. API fill IDs identify matched evidence. When several fills cannot be distinguished, the observed movements stay separate and the account reports the pairing gap.
 - Derivatives exports are deferred. Unsupported operations remain unresolved and are left out until classified.
 
 ## MEXC

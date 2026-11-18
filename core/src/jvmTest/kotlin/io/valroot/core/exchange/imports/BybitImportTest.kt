@@ -1,5 +1,6 @@
 package io.valroot.core.exchange.imports
 
+import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.exchange.ExchangeRow
 import io.valroot.core.exchange.ImportOutcome
 import io.valroot.core.exchange.ImportedEvents
@@ -9,6 +10,7 @@ import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.ledger.MovementRole
 import io.valroot.core.model.AccountId
 import io.valroot.core.model.AssetId
+import io.valroot.core.storage.BundledSqliteDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -98,6 +100,109 @@ class BybitImportTest {
         assertEquals(3, trade.movements.size)
         assertEquals(1, trade.movements.count { it.role == MovementRole.FEE })
         assertEquals(2, result.imports.size)
+    }
+
+    @Test fun sameMillisecondUnifiedFillsKeepDistinctEconomics() {
+        val imported =
+            records(
+                unified,
+                "123,BTC,BTCUSDT,TRADE,BUY,1,0,10,0,0,1,1,1,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,1,0,10,0,0,-10,-10,90,--,2026-01-01 12:00:00",
+                "123,BTC,BTCUSDT,TRADE,BUY,2,0,11,0,0,2,2,3,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,2,0,11,0,0,-22,-22,68,--,2026-01-01 12:00:00",
+            )
+        val result = decode(rows(imported))
+        assertEquals(2, result.activities.count { it.kind == ActivityKind.TRADE })
+        assertEquals(
+            4,
+            result.imports.values
+                .filterIsInstance<ImportOutcome.New>()
+                .size,
+        )
+    }
+
+    @Test fun savedUnifiedRowsKeepTheirKeysAndRecoverFillEvidenceFromTheReceipt() {
+        val lines =
+            listOf(
+                "123,BTC,BTCUSDT,TRADE,BUY,1,0,10,0,0,1,1,1,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,1,0,10,0,0,-10,-10,90,--,2026-01-01 12:00:00",
+                "123,BTC,BTCUSDT,TRADE,SELL,1,0,11,0,0,-1,-1,0,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,SELL,1,0,11,0,0,11,11,101,--,2026-01-01 12:00:00",
+            )
+        val table = ImportTable("unified.csv", "test", null, null, ExportCsv.read("$unified\n" + lines.joinToString("\n"), ImportBudget()))
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { 1_800_000_000_000L }
+            val choices = ImportChoices(accounts = mapOf("bybit:123" to AccountChoice.New("Bybit", "123")))
+            val receipt = app.exchangeImports.commit(app.exchangeImports.preview(listOf(table), choices))
+            val account = receipt.accounts.single()
+            db.execute(
+                "UPDATE exchange_rows SET payload=json_remove(payload, '$.details.direction', " +
+                    "'$.details.quantity', '$.details.filledPrice') WHERE account=? AND stream='file'",
+                listOf(account.value),
+            )
+            val saved = app.exchanges.savedRows(account)
+            assertEquals(2, decode(saved).activities.count { it.kind == ActivityKind.TRADE })
+            val preview = app.exchangeImports.preview(listOf(table))
+            assertEquals(mapOf(ImportStatus.ALREADY_IMPORTED to 4), preview.counts)
+            app.exchangeImports.commit(preview)
+            assertEquals(saved.map { it.key }, app.exchanges.savedRows(account).map { it.key })
+        }
+    }
+
+    @Test fun indistinguishableUnifiedFillsKeepMovementsWithoutInventingPairings() {
+        val imported =
+            records(
+                unified,
+                "123,BTC,BTCUSDT,TRADE,BUY,1,0,10,0,0,1,1,1,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,1,0,10,0,0,-10,-10,90,--,2026-01-01 12:00:00",
+                "123,BTC,BTCUSDT,TRADE,BUY,1,0,10,0,0,1,1,2,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,1,0,10,0,0,-10,-10,80,--,2026-01-01 12:00:00",
+            )
+        val result = decode(rows(imported))
+        val trades = result.activities.filter { it.kind == ActivityKind.TRADE }
+        assertEquals(4, trades.size)
+        assertTrue(trades.all { it.movements.size == 1 })
+        assertEquals(
+            4,
+            result.imports.values
+                .filterIsInstance<ImportOutcome.New>()
+                .size,
+        )
+        assertTrue(result.failures.any { it.contains("lack pairing evidence") })
+    }
+
+    @Test fun sameMillisecondApiFillsKeepProviderIdentityWhenImportsOverlap() {
+        val imported =
+            records(
+                unified,
+                "123,BTC,BTCUSDT,TRADE,BUY,1,0,10,0,0,1,1,1,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,1,0,10,0,0,-10,-10,90,--,2026-01-01 12:00:00",
+                "123,BTC,BTCUSDT,TRADE,BUY,1,0,10,0,0,1,1,2,--,2026-01-01 12:00:00",
+                "123,USDT,BTCUSDT,TRADE,BUY,1,0,10,0,0,-10,-10,80,--,2026-01-01 12:00:00",
+            )
+        val api =
+            imported.mapIndexed { index, record ->
+                val coin = record.legs.first().coin
+                val change = record.details.getValue("change")
+                val balance = record.details.getValue("balanceAfter")
+                ExchangeRow(
+                    BybitDecoder.LOG,
+                    "api-$index",
+                    record.atMillis,
+                    """{"id":"log-${index / 2}","type":"TRADE","category":"spot","symbol":"BTCUSDT","currency":"$coin","change":"$change","cashFlow":"$change","fee":"0","cashBalance":"$balance","tradeId":"fill-${index / 2}","transactionTime":"${record.atMillis}"}""",
+                    "api-source-$index",
+                )
+            }
+        val result = decode(api + rows(imported))
+        val trades = result.activities.filter { it.kind == ActivityKind.TRADE }
+        assertEquals(2, trades.size)
+        assertTrue(trades.all { it.sources.size == 4 })
+        assertEquals(
+            4,
+            result.imports.values
+                .filterIsInstance<ImportOutcome.Same>()
+                .size,
+        )
     }
 
     @Test fun legacySpotGroupsTradeAndFeeAndPairsFundingTransfer() {
