@@ -35,7 +35,7 @@ internal object PriceHistoryWorker {
         executor.execute {
             val message =
                 try {
-                    BundledSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use { db ->
+                    withLiveDatabase(context, requestGeneration) { db ->
                         val count =
                             PortfolioApplication(db, System::currentTimeMillis).prices.fetchHistory(
                                 { url ->
@@ -71,7 +71,7 @@ internal object PriceHistoryWorker {
         executor.execute {
             val message =
                 try {
-                    BundledSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use { db ->
+                    withLiveDatabase(context, requestGeneration) { db ->
                         val result =
                             PortfolioApplication(db, System::currentTimeMillis).prices.fetchHistorical(
                                 { url ->
@@ -100,6 +100,18 @@ internal object PriceHistoryWorker {
     }
 
     private fun checkGeneration(expected: Long) {
-        if (generation.get() != expected) throw CoingeckoProviderException(CoingeckoProviderFailure.CANCELLED)
+        if (AutomaticPriceGate.paused || generation.get() != expected) {
+            throw CoingeckoProviderException(CoingeckoProviderFailure.CANCELLED)
+        }
     }
+
+    private fun <T> withLiveDatabase(
+        context: Context,
+        requestGeneration: Long,
+        block: (BundledSqliteDatabase) -> T,
+    ): T =
+        synchronized(AutomaticPriceGate.lock) {
+            checkGeneration(requestGeneration)
+            BundledSqliteDatabase(context.getDatabasePath("portfolio.sqlite").path).use(block)
+        }
 }

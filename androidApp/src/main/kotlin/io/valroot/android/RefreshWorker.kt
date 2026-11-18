@@ -23,44 +23,23 @@ class RefreshWorker(
     parameters: WorkerParameters,
 ) : Worker(context, parameters) {
     override fun doWork(): Result {
-        val automaticEnabled =
-            BundledSqliteDatabase(applicationContext.getDatabasePath("portfolio.sqlite").path).use { db ->
-                PortfolioApplication(db, System::currentTimeMillis).settings.automaticRefresh() != false
-            }
-        if (!automaticEnabled) return Result.success()
         if (syncStatus.value.phase == SyncPhase.SYNCING) return Result.retry()
-        // Android 12+ refuses a foreground service started from the background. The sync then runs as ordinary work:
-        // if the system stops it, the scan is cancelled and the next run tries again.
-        try {
-            setForegroundAsync(SyncNotification.foreground(applicationContext)).get()
-        } catch (_: ExecutionException) {
-        } catch (_: IllegalStateException) {
-        }
-        syncStatus.value = SyncStatus(SyncPhase.SYNCING, "Fetching public history…")
-        // The task publishes its own result, so a worker interrupted while waiting never leaves the status syncing.
-        val task =
-            syncExecutor.submit<SyncStatus> {
-                var status = SyncStatus(SyncPhase.ERROR, "Sync stopped before it finished. Saved data is unchanged; retry.")
-                try {
-                    status =
-                        performRefresh(applicationContext, ensureActive = {
-                            if (isStopped) throw BitcoinProviderException(BitcoinProviderFailure.CANCELLED)
-                        })
-                } finally {
-                    syncStatus.value = status
-                    dataRevision.update { it + 1 }
-                }
-                status
-            }
-        val status =
+        val task = submitPeriodicRefresh(applicationContext, stopped = { isStopped }) {
+            // When Android refuses foreground execution, the refresh continues as ordinary cancellable work.
             try {
-                task.get()
-            } catch (_: InterruptedException) {
-                return Result.retry()
+                setForegroundAsync(SyncNotification.foreground(applicationContext)).get()
             } catch (_: ExecutionException) {
-                return Result.retry()
+            } catch (_: IllegalStateException) {
             }
-        return if (status.phase == SyncPhase.ERROR) Result.retry() else Result.success()
+        }
+        return try {
+            task.get()
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            Result.retry()
+        } catch (_: ExecutionException) {
+            Result.retry()
+        }
     }
 
     companion object {
@@ -72,6 +51,45 @@ class RefreshWorker(
         val dataRevision = MutableStateFlow(0L)
         val syncStatus = MutableStateFlow(SyncStatus())
 
+        /** The preference and history share one connection opened on the restore and sync queue. */
+        internal fun submitPeriodicRefresh(
+            context: Context,
+            stopped: () -> Boolean,
+            startForeground: () -> Unit,
+        ): java.util.concurrent.Future<Result> =
+            syncExecutor.submit<Result> {
+                if (stopped() || syncStatus.value.phase == SyncPhase.SYNCING) return@submit Result.retry()
+                var started = false
+                var status = SyncStatus(SyncPhase.ERROR, "Sync stopped before it finished. Retry.")
+                try {
+                    status =
+                        performRefresh(
+                            context,
+                            ensureActive = {
+                                if (stopped()) throw BitcoinProviderException(BitcoinProviderFailure.CANCELLED)
+                            },
+                            shouldStart = { app ->
+                                when {
+                                    stopped() -> throw BitcoinProviderException(BitcoinProviderFailure.CANCELLED)
+                                    app.settings.automaticRefresh() == false -> false
+                                    else -> {
+                                        startForeground()
+                                        started = true
+                                        syncStatus.value = SyncStatus(SyncPhase.SYNCING, "Fetching public history…")
+                                        true
+                                    }
+                                }
+                            },
+                        )
+                } finally {
+                    if (started || status.phase == SyncPhase.ERROR) {
+                        syncStatus.value = status
+                        dataRevision.update { it + 1 }
+                    }
+                }
+                if (status.phase == SyncPhase.ERROR) Result.retry() else Result.success()
+            }
+
         fun performRefresh(
             context: Context,
             wrap: (io.valroot.core.bitcoin.EsploraTransport) -> io.valroot.core.bitcoin.EsploraTransport = { it },
@@ -81,6 +99,7 @@ class RefreshWorker(
             ensureActive: () -> Unit = {},
             onProgress: (String) -> Unit = {},
             withoutBitcoin: Boolean = false,
+            shouldStart: (PortfolioApplication) -> Boolean = { true },
         ): SyncStatus {
             // The stage and exception class name the failing step without revealing addresses or provider payloads.
             var stage = "setup"
@@ -89,6 +108,7 @@ class RefreshWorker(
                 file.parentFile?.mkdirs()
                 BundledSqliteDatabase(file.path).use { db ->
                     val app = PortfolioApplication(db, System::currentTimeMillis)
+                    if (!shouldStart(app)) return SyncStatus()
                     // Each source needs its own consent. Wallet discovery and order verification are Bitcoin-only.
                     val plan = HostRefresh(app, withoutBitcoin) { ensureActive() }
                     if (!plan.bitcoinOn && (!plan.anySource || walletId != null || verifyOrder)) {

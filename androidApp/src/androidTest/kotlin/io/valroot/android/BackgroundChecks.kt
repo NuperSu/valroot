@@ -1,12 +1,53 @@
 package io.valroot.android
 
 import android.app.Instrumentation
+import android.content.ContextWrapper
+import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.market.KrakenPricePacer
 import io.valroot.core.market.KrakenPriceTransport
+import io.valroot.core.storage.BundledSqliteDatabase
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Foreground-service, WorkManager scheduling, price-refresh and Kraken rate-limit checks. */
 internal fun Instrumentation.backgroundChecks(): List<ReliabilityCheck> =
     listOf<ReliabilityCheck>(
+        "periodicRefreshReadsPreferencesAfterDatabaseReplacement" to {
+            withTemporaryDatabase(targetContext.cacheDir) { file ->
+                val opens = AtomicInteger()
+                val context =
+                    object : ContextWrapper(targetContext) {
+                        override fun getDatabasePath(name: String): File {
+                            check(name == "portfolio.sqlite")
+                            opens.incrementAndGet()
+                            return file
+                        }
+                    }
+                val replace = CountDownLatch(1)
+                val replacing =
+                    RefreshWorker.syncExecutor.submit {
+                        check(replace.await(10, TimeUnit.SECONDS))
+                        BundledSqliteDatabase(file.path).use { db ->
+                            PortfolioApplication(db, System::currentTimeMillis).settings.setRefreshPreferences(false, false)
+                        }
+                    }
+                try {
+                    val refresh = RefreshWorker.submitPeriodicRefresh(context, stopped = { false }) {
+                        error("A disabled refresh must not start")
+                    }
+                    check(opens.get() == 0)
+                    replace.countDown()
+                    replacing.get(10, TimeUnit.SECONDS)
+                    check(refresh.get(10, TimeUnit.SECONDS) == androidx.work.ListenableWorker.Result.success())
+                    check(opens.get() == 1)
+                } finally {
+                    replace.countDown()
+                    replacing.get(10, TimeUnit.SECONDS)
+                }
+            }
+        },
         "queuedWalletDiscoveryService" to {
             val previousStatus = RefreshWorker.syncStatus.value
             check(
