@@ -10,6 +10,7 @@ import io.valroot.core.bitcoin.EsploraTransport
 import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.ledger.MovementRole
 import io.valroot.core.model.AccountId
+import io.valroot.core.model.ExactInteger
 import io.valroot.core.model.OwnerId
 import io.valroot.core.model.TrackingTargetId
 import io.valroot.core.ownership.Account
@@ -123,6 +124,9 @@ class EvmConnectorTest {
         /** When set, network discovery (several networks per request) gets this answer: an error, or partial errors. */
         var tokensAnswer: String? = null
 
+        /** When set, the single-chain balance read fails. */
+        var failBalances = false
+
         /** When set, network discovery fails for every group of networks without this address's chain. */
         var failOtherGroups = false
 
@@ -136,6 +140,7 @@ class EvmConnectorTest {
                     .jsonArray
                     .map { it.jsonPrimitive.content }
             if (networks.size > 1) tokensAnswer?.let { return it }
+            if (networks.size == 1 && failBalances) return """{"error":{"message":"busy"}}"""
             if (networks.size > 1 && failOtherGroups && slug !in networks) return """{"error":{"message":"busy"}}"""
             if (slug !in networks) return """{"data":{"tokens":[]}}"""
             val native = "0x" + BigInteger(nativeBalance).toString(16)
@@ -191,8 +196,11 @@ class EvmConnectorTest {
                         val nonce = sentByNonce.indexOfFirst { it.first == hash }
                         """{"jsonrpc":"2.0","id":$index,"result":{"hash":"$hash","nonce":"${hex(nonce.toLong())}"}}"""
                     } else {
-                        val (from, gas, l1) = receipts.getValue(hash)
-                        """{"jsonrpc":"2.0","id":$index,"result":{"transactionHash":"$hash","from":"$from","blockNumber":"0x10",""" +
+                        // A transaction someone else sent: its receipt gives its block and position, and no fee here.
+                        val n = (0..2000).firstOrNull { h(it) == hash }
+                        val (from, gas, l1) = receipts[hash] ?: Triple(other, 0L, 0L)
+                        val block = if (hash in receipts || n == null) "0x10" else hex(100L + n)
+                        """{"jsonrpc":"2.0","id":$index,"result":{"transactionHash":"$hash","from":"$from","blockNumber":"$block",""" +
                             """"transactionIndex":"0x1","status":"${if (hash in failed) "0x0" else "0x1"}","gasUsed":"${hex(
                                 gas,
                             )}","effectiveGasPrice":"0x1","l1Fee":"${hex(l1)}"}}"""
@@ -506,5 +514,74 @@ class EvmConnectorTest {
         val evm = EvmConnector({ _, _ -> error("not called") })
         val registry = SourceRegistry(listOf(BitcoinConnector(EsploraTransport { error("not called") }, DEFAULT_ENDPOINT), evm))
         assertSame(evm, registry.forNetwork(EVM_FAMILY))
+    }
+
+    @Test fun aFailedBalanceCheckKeepsTheHeadSoItIsRepeated() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            provider.failBalances = true
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+                "history is saved but the chain is not settled",
+            )
+            provider.failBalances = false
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            val state = app.evm.chainStates(me).single()
+            assertNull(state.error)
+            assertTrue(state.head != null)
+        }
+    }
+
+    @Test fun incomingTransactionsAreOrderedByTheirBlockPosition() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            EvmConnector(FakeAlchemy().post).refresh(app, SourceRefreshOptions())
+            // h(5) was sent by someone else: its position comes from its receipt, not from its token log index.
+            val incoming =
+                app.transactions
+                    .entries(ActivityFilter())
+                    .single {
+                        it.activity.id.value
+                            .contains(h(5))
+                    }.activity
+            assertTrue(incoming.orderingKey.endsWith(":0000000001:${h(5)}"), incoming.orderingKey)
+            assertEquals(
+                mapOf(h(5) to (105L to 1)),
+                app.evm
+                    .recovered()
+                    .positions(me, chain)
+                    .filterKeys { it == h(5) },
+            )
+        }
+    }
+
+    @Test fun aForcedRecoveryForgetsRecoveredTransactionsNoLongerInTheirBlock() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            // A saved result whose transaction is now in another block (its receipt says block 177, not 50).
+            app.evm.recovered().saveNonce(
+                me,
+                chain,
+                9,
+                EvmTransaction(h(77), 50, 0, 1_768_003_250_000, me, other, ExactInteger.ZERO, ExactInteger.ZERO, true),
+            )
+            connector.refresh(app, SourceRefreshOptions(recoverHistory = true))
+            assertEquals(
+                setOf(2L),
+                app.evm
+                    .recovered()
+                    .nonces(me, chain)
+                    .keys,
+            )
+        }
     }
 }

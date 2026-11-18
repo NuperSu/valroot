@@ -155,7 +155,7 @@ class EvmService internal constructor(
         address: String,
         chainId: Long,
         groups: List<io.valroot.core.evm.EvmTransactionGroup>,
-        head: String,
+        head: String?,
         withdrawals: List<io.valroot.core.evm.EvmWithdrawal> = emptyList(),
     ): Int {
         require(consent()) { "EVM consent required" }
@@ -239,12 +239,32 @@ class EvmService internal constructor(
                     it.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED ||
                         it.status == io.valroot.core.ledger.ActivityStatus.PENDING
                 }.forEach { activities.saveInTransaction(it.copy(status = io.valroot.core.ledger.ActivityStatus.SUPERSEDED)) }
-            evmChains.recordSuccess(address, chainId, head, retrieved)
+            if (head != null) evmChains.recordSuccess(address, chainId, head, retrieved)
         }
         invalidate()
         linkAssets()
         return saved
     }
+
+    /** Records a finished refresh of [address] on [chainId] at [head]; called once history and balances are both settled. */
+    fun recordChainSuccess(
+        address: String,
+        chainId: Long,
+        head: String,
+    ) = evmChains.recordSuccess(address, chainId, head, now())
+
+    /** Whether any current activity of [address] on [chainId] was decoded by an earlier [EvmDecoder] version. */
+    fun decodedByEarlierVersion(
+        address: String,
+        chainId: Long,
+    ): Boolean =
+        activities.current().any {
+            !it.manual &&
+                it.id.value.startsWith("eip155:$chainId:") &&
+                it.id.value.endsWith(":$address") &&
+                it.decoderVersion != null &&
+                it.decoderVersion != EvmDecoder.VERSION
+        }
 
     /** Whether [account] holds a rebasing token on [chainId], so its balance is read even when no transfer is new. */
     fun holdsRebasing(

@@ -274,6 +274,22 @@ object Alchemy {
             )
         }
 
+    /**
+     * Receipts of a [receiptsBody] batch by the hash each request asked for; null where the node has no receipt, as
+     * for a transaction no longer in the chain. A failed request throws.
+     */
+    fun parseReceiptsByHash(
+        payload: String,
+        hashes: List<String>,
+    ): Map<String, EvmReceipt?> =
+        (Json.parseToJsonElement(payload) as JsonArray).associate { element ->
+            val response = element.jsonObject
+            require(response["error"] == null || response["error"] is JsonNull) { "Receipt request failed" }
+            val id = requireNotNull(response.text("id")?.toIntOrNull()) { "Receipt response without its request" }
+            val hash = requireNotNull(hashes.getOrNull(id)) { "Receipt response for an unknown request" }
+            hash to (response["result"] as? JsonObject)?.let { parseReceipts("[$element]").single() }
+        }
+
     fun nonceBody(address: String): String =
         """{"jsonrpc":"2.0","id":1,"method":"eth_getTransactionCount","params":["${evmAddress(address)}","latest"]}"""
 

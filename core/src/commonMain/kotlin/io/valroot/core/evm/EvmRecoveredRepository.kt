@@ -19,6 +19,7 @@ data class OneInchListing(
  * - **trace:** native coin moved by contracts in one transaction, read from its 1inch trace (possibly none).
  * - **nonce:** a sent transaction found by its nonce, or none when the search found no transaction with it.
  * - **listing:** the token contracts 1inch's history moves, for spam detection.
+ * - **position:** the block position of a transaction the address did not send, read from its receipt.
  */
 class EvmRecoveredRepository(
     private val db: SqliteDatabase,
@@ -127,6 +128,35 @@ class EvmRecoveredRepository(
             "${it.hash}|${it.blockNumber}|${it.position}|${it.timestampMillis}|${it.to.orEmpty()}|${it.value}|${it.fee}|" +
                 if (it.success) "1" else "0"
         } ?: "",
+    )
+
+    /** Block positions of transactions the address did not send, by hash, with the block they were read in. */
+    fun positions(
+        address: String,
+        chainId: Long,
+    ): Map<String, Pair<Long, Int>> =
+        rows(address, chainId, "position").associate { (hash, payload) ->
+            val (block, position) = payload.split('|')
+            hash to (block.toLong() to position.toInt())
+        }
+
+    fun savePosition(
+        address: String,
+        chainId: Long,
+        hash: String,
+        blockNumber: Long,
+        position: Int,
+    ) = put(address, chainId, "position", hash, "$blockNumber|$position")
+
+    /** Forgets a saved trace or nonce result whose transaction is no longer in the chain where it was found. */
+    fun forget(
+        address: String,
+        chainId: Long,
+        kind: String,
+        item: String,
+    ) = db.execute(
+        "DELETE FROM evm_recovered WHERE address=? AND chain_id=? AND kind=? AND item=?",
+        listOf(address, chainId.toString(), kind, item),
     )
 
     fun listing(

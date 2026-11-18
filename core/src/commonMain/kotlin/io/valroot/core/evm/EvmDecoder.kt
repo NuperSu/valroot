@@ -24,6 +24,8 @@ data class EvmTransactionGroup(
     val transaction: EvmTransaction?,
     val internal: List<EvmInternalTransfer>,
     val tokens: List<EvmTokenTransfer>,
+    /** The transaction's position in its block, from its receipt when the address did not send it. */
+    val position: Int? = transaction?.position,
 ) {
     val blockNumber: Long? get() = transaction?.blockNumber ?: tokens.firstOrNull()?.blockNumber ?: internal.firstOrNull()?.blockNumber
     val timestampMillis: Long get() =
@@ -40,6 +42,7 @@ data class EvmTransactionGroup(
                         (it.source?.let { source -> "|$source" } ?: "") + "\n",
                 )
             }
+            if (transaction == null && position != null) append("pos|$position\n")
             internal.sortedBy { it.index }.forEach {
                 append(
                     "in|${it.index}|${it.from}|${it.to}|${it.value}|${it.success}" + (it.source?.let { source -> "|$source" } ?: "") + "\n",
@@ -63,19 +66,35 @@ data class EvmAssetInfo(
  * which case no value moved. Activities record what happened; no accounting treatment is assumed.
  */
 object EvmDecoder {
-    const val VERSION = "evm-1"
+    const val VERSION = "evm-2"
 
+    /**
+     * Groups transfers by transaction. [positions] gives the block position of transactions the address did not send
+     * (read from their receipts); log indexes and internal-transfer indexes are never used as positions, because they
+     * count something else and would order transactions of one block wrongly.
+     */
     fun group(
         chainId: Long,
         transactions: List<EvmTransaction>,
         internal: List<EvmInternalTransfer>,
         tokens: List<EvmTokenTransfer>,
+        positions: Map<String, Int> = emptyMap(),
     ): List<EvmTransactionGroup> {
         val hashes = (transactions.map { it.hash } + internal.map { it.transactionHash } + tokens.map { it.transactionHash }).distinct()
         val byTx = transactions.associateBy { it.hash }
         val byInternal = internal.groupBy { it.transactionHash }
         val byToken = tokens.groupBy { it.transactionHash }
-        return hashes.map { EvmTransactionGroup(chainId, it, byTx[it], byInternal[it].orEmpty(), byToken[it].orEmpty()) }
+        return hashes.map { hash ->
+            val transaction = byTx[hash]
+            EvmTransactionGroup(
+                chainId,
+                hash,
+                transaction,
+                byInternal[hash].orEmpty(),
+                byToken[hash].orEmpty(),
+                transaction?.position ?: positions[hash],
+            )
+        }
     }
 
     fun assets(group: EvmTransactionGroup): List<EvmAssetInfo> {
@@ -171,9 +190,17 @@ object EvmDecoder {
         }
         // One activity per transaction and tracked address: a transfer between two tracked addresses is two activities.
         val id = "eip155:${group.chainId}:${group.hash}:$address"
+        val changed = deltas.filterValues { it.sign != 0 }
+        // Assets moving in opposite directions are a swap: its legs are trade legs, so they share one consideration.
+        val swap = changed.values.any { it.sign > 0 } && changed.values.any { it.sign < 0 }
         val movements =
-            deltas.filterValues { it.sign != 0 }.map { (asset, amount) ->
-                Movement(EventId("$id:${asset.value}"), account, AtomicAmount(asset, amount), MovementRole.TRANSFER)
+            changed.map { (asset, amount) ->
+                Movement(
+                    EventId("$id:${asset.value}"),
+                    account,
+                    AtomicAmount(asset, amount),
+                    if (swap) MovementRole.TRADE_LEG else MovementRole.TRANSFER,
+                )
             } +
                 listOfNotNull(
                     tx?.takeIf { it.from == address && it.fee.sign > 0 }?.let {
@@ -185,12 +212,13 @@ object EvmDecoder {
         val kind =
             when {
                 values.isEmpty() -> ActivityKind.PAYMENT
-                values.any { it.amount.atomicUnits.sign > 0 } && values.any { it.amount.atomicUnits.sign < 0 } -> ActivityKind.TRADE
+                swap -> ActivityKind.TRADE
                 values.all { it.amount.atomicUnits.sign > 0 } -> ActivityKind.DEPOSIT
                 else -> ActivityKind.PAYMENT
             }
         val block = group.blockNumber
-        val position = tx?.position ?: group.tokens.minOfOrNull { it.logIndex } ?: group.internal.minOfOrNull { it.index } ?: 0
+        // An unknown position sorts after every known one in its block rather than guessing a place.
+        val position = group.position?.toString()?.padStart(10, '0') ?: "unknown"
         return Activity(
             ActivityId(id),
             group.timestampMillis,
@@ -199,10 +227,7 @@ object EvmDecoder {
             ) {
                 "evm-pending:${group.hash}"
             } else {
-                "evm-chain:${group.chainId}:${block.toString().padStart(
-                    20,
-                    '0',
-                )}:${position.toString().padStart(10, '0')}:${group.hash}"
+                "evm-chain:${group.chainId}:${block.toString().padStart(20, '0')}:$position:${group.hash}"
             },
             kind,
             if (block == null) ActivityStatus.PENDING else ActivityStatus.CONFIRMED,
