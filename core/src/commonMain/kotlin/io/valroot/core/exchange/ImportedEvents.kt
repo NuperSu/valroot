@@ -233,7 +233,8 @@ object ImportedEvents {
         if (records.isEmpty()) return
         val existing =
             ledger.activities.map { activity ->
-                val ids = setOfNotNull(ledger.transfers[activity.id]?.txId?.let { "txid:${it.lowercase()}" })
+                val ids =
+                    setOfNotNull(ledger.transfers[activity.id]?.txId?.let { "txid:${io.valroot.core.model.TransactionIds.normalize(it)}" })
                 EventShape(
                     activity.id.value,
                     ledger.importedKinds[activity.id] ?: matchKind(activity, totals(activity, net = false)),
@@ -249,7 +250,14 @@ object ImportedEvents {
                         ledger.imports[row.key] = ImportOutcome.CoinPending
                         return@mapNotNull null
                     }
-                val ids = setOfNotNull(record.details["txid"]?.takeIf { it.isNotBlank() }?.let { "txid:${it.lowercase()}" })
+                val ids =
+                    setOfNotNull(
+                        record.details["txid"]?.takeIf { it.isNotBlank() }?.let {
+                            "txid:${io.valroot.core.model.TransactionIds.normalize(
+                                it,
+                            )}"
+                        },
+                    )
                 EventShape(row.key, matchKind(record), record.atMillis, principal, ids)
             }
         val outcomes = EventMatcher.match(shapes, existing, ::tolerance, decisions)

@@ -66,23 +66,27 @@ internal class AppContext(
             overlays.replayForLedger(activities.current(), amountScale()) { transactionOf(it, exchange) }.also { cachedLedger = it }
         }
 
-    /** The on-chain transaction behind an activity: its own for Bitcoin and EVM, the exchange's record for exchanges. */
+    /**
+     * The on-chain transaction behind an activity: its own for Bitcoin, EVM and Solana, the exchange's record for
+     * exchanges. IDs are normalized by [io.valroot.core.model.TransactionIds], so hex compares in any case and Solana's
+     * Base58 signatures keep theirs.
+     */
     fun transactionOf(
         activity: io.valroot.core.ledger.Activity,
         exchange: Map<io.valroot.core.model.ActivityId, io.valroot.core.exchange.ExchangeTransfer>,
     ): String? {
         val id = activity.id.value
-        return when {
-            activity.id in exchange -> exchange.getValue(activity.id).txId.lowercase()
-            id.startsWith("bitcoin:") -> id.removePrefix("bitcoin:").lowercase()
-            id.startsWith("eip155:") ->
-                id
-                    .split(':')
-                    .getOrNull(2)
-                    ?.takeIf { it.startsWith("0x") }
-                    ?.lowercase()
-            else -> null
-        }
+        val raw =
+            when {
+                activity.id in exchange -> exchange.getValue(activity.id).txId
+                id.startsWith("bitcoin:") -> id.removePrefix("bitcoin:")
+                id.startsWith("eip155:") -> id.split(':').getOrNull(2)?.takeIf { it.startsWith("0x") }
+                id.startsWith(io.valroot.core.solana.SolanaIds.TRANSACTION_PREFIX) ->
+                    io.valroot.core.solana.SolanaIds
+                        .signatureOf(id)
+                else -> null
+            }
+        return raw?.takeIf { it.isNotBlank() }?.let(io.valroot.core.model.TransactionIds::normalize)
     }
 
     /**

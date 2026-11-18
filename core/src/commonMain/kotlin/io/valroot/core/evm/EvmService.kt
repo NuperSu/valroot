@@ -28,7 +28,12 @@ class EvmService internal constructor(
     ) {
         require(app.market.consent()) { "Market data consent required" }
         val cached = marketFeeds.catalog()
-        if (cached == null || now() - cached.first > 7 * 86_400_000L || !cached.second.hasSymbols || !cached.second.hasOtherPlatforms) {
+        if (cached == null ||
+            now() - cached.first > 7 * 86_400_000L ||
+            !cached.second.hasSymbols ||
+            !cached.second.hasOtherPlatforms ||
+            !cached.second.casePreserved
+        ) {
             val key = app.market.coingeckoApiKey()
             val platforms = CoingeckoCatalog.parsePlatforms(transport(baseUrl + CoingeckoCatalog.PLATFORMS_PATH, key))
             require(platforms.isNotEmpty()) { "CoinGecko returned no chains" }

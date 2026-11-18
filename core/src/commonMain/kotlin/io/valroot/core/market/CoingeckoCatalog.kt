@@ -21,13 +21,18 @@ data class EvmPlatform(
  */
 class CoingeckoCatalog(
     val platforms: List<EvmPlatform>,
-    /** Platform ID → lower-case contract → coin ID. */
+    /** Platform ID → contract key ([contractKey]) → coin ID. */
     private val contracts: Map<String, Map<String, String>>,
     /** Native coin ID → symbol and name. */
     private val natives: Map<String, Pair<String, String>> = emptyMap(),
     /** Upper-case symbol → every coin with that symbol, as ID and name. */
     private val symbols: Map<String, List<Pair<String, String>>> = emptyMap(),
+    /** The cache format; caches before [FORMAT] lower-cased every contract, which breaks case-sensitive addresses. */
+    val format: Int = FORMAT,
 ) {
+    /** True when contract keys keep the case of case-sensitive addresses (Solana, Tron, TON). */
+    val casePreserved: Boolean get() = format >= FORMAT
+
     /** True when the catalog carries coin symbols; catalogs cached before symbols were kept do not. */
     val hasSymbols: Boolean get() = symbols.isNotEmpty()
 
@@ -46,13 +51,13 @@ class CoingeckoCatalog(
     fun tokenCoin(
         chainId: Long,
         contract: String,
-    ): String? = byChain[chainId]?.let { contracts[it.platformId]?.get(contract.lowercase()) }
+    ): String? = byChain[chainId]?.let { contracts[it.platformId]?.get(contractKey(contract)) }
 
     /** The coin of a token on a CoinGecko platform by its ID, including the non-EVM ones in [OTHER_PLATFORMS]. */
     fun platformCoin(
         platformId: String,
         contract: String,
-    ): String? = contracts[platformId]?.get(contract.lowercase())
+    ): String? = contracts[platformId]?.get(contractKey(contract))
 
     /** True when the catalog carries non-EVM token contracts; catalogs cached before they were kept do not. */
     val hasOtherPlatforms: Boolean get() = OTHER_PLATFORMS.any { it in contracts }
@@ -60,6 +65,7 @@ class CoingeckoCatalog(
     /** Compact text for the device cache: one `P platform chain native name` or `C platform contract coin` line each. */
     fun encode(): String =
         buildString {
+            append("V\t$FORMAT\n")
             platforms.forEach { append("P\t${it.platformId}\t${it.chainId}\t${it.nativeCoinId.orEmpty()}\t${it.name}\n") }
             contracts.forEach { (platform, map) -> map.forEach { (contract, coin) -> append("C\t$platform\t$contract\t$coin\n") } }
             natives.forEach { (coin, label) -> append("N\t$coin\t${label.first}\t${label.second}\n") }
@@ -68,6 +74,17 @@ class CoingeckoCatalog(
 
     companion object {
         const val PLATFORMS_PATH = "/asset_platforms"
+
+        /** The current cache format: contract keys from [contractKey]. */
+        const val FORMAT = 2
+        private val HEX_ADDRESS = Regex("0x[0-9a-fA-F]+")
+
+        /**
+         * How a contract is keyed: hex addresses (EVM, Sui, Aptos) in lower case, since their case only carries a
+         * checksum; every other address (Solana, Tron, TON) exactly as written, since its case is part of it.
+         */
+        fun contractKey(contract: String): String = if (HEX_ADDRESS.matches(contract)) contract.lowercase() else contract
+
         const val COINS_PATH = "/coins/list?include_platform=true"
         private val ID = Regex("[a-z0-9][a-z0-9-]{0,99}")
         private val CONTRACT = Regex("0x[0-9a-fA-F]{40}")
@@ -117,7 +134,7 @@ class CoingeckoCatalog(
                                 )
                         if (known) {
                             val map = seen.getOrPut(platform) { mutableMapOf() }
-                            val key = contract.lowercase()
+                            val key = contractKey(contract)
                             map[key] = if (key in map && map[key] != id) null else id
                         }
                     }
@@ -172,16 +189,18 @@ class CoingeckoCatalog(
             val contracts = mutableMapOf<String, MutableMap<String, String>>()
             val natives = mutableMapOf<String, Pair<String, String>>()
             val symbols = mutableMapOf<String, MutableList<Pair<String, String>>>()
+            var format = 1
             text.lineSequence().filter { it.isNotEmpty() }.forEach { line ->
                 val parts = line.split('\t')
                 when (parts[0]) {
+                    "V" -> format = parts[1].toIntOrNull() ?: 1
                     "P" -> platforms += EvmPlatform(parts[1], parts[2].toLong(), parts[4], parts[3].ifEmpty { null })
                     "C" -> contracts.getOrPut(parts[1]) { mutableMapOf() }[parts[2]] = parts[3]
                     "N" -> natives[parts[1]] = parts[2] to parts[3]
                     "S" -> symbols.getOrPut(parts[1]) { mutableListOf() } += parts[2] to parts[3]
                 }
             }
-            return CoingeckoCatalog(platforms, contracts, natives, symbols)
+            return CoingeckoCatalog(platforms, contracts, natives, symbols, format)
         }
 
         private fun JsonObject.text(key: String): String? =
