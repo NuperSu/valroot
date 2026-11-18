@@ -335,14 +335,15 @@ class AnalyticsService internal constructor(
             if (!priced) {
                 null to ReturnStatus.MISSING_PRICES
             } else {
-                // Investor view: money put in is negative, money taken out and the final value are positive.
-                val dated =
-                    listOf(DatedFlow(0.0, -startValue.toString().toDouble())) +
-                        counted.map { flow ->
-                            DatedFlow((flow.at - startMillis) / year, (if (flow.incoming) -1 else 1) * flow.value.toString().toDouble())
-                        } +
-                        DatedFlow(span, endValue.toString().toDouble())
-                InternalRate.solve(dated.filter { it.amount != 0.0 })
+                // Investor view: money put in is negative, money taken out and the final value are positive. Flows at
+                // the same instant are summed exactly first, so money in and out at once cancels.
+                val net = linkedMapOf<Long, ExactDecimal>()
+                net[startMillis] = zero - startValue
+                counted.forEach { flow -> net[flow.at] = (net[flow.at] ?: zero) + (if (flow.incoming) zero - flow.value!! else flow.value!!) }
+                net[endMillis] = (net[endMillis] ?: zero) + endValue
+                InternalRate.solve(
+                    net.map { (at, amount) -> DatedFlow((at - startMillis) / year, amount.toString().toDouble()) }.filter { it.amount != 0.0 },
+                )
             }
         return MoneyWeightedReturn(
             startMillis,

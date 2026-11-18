@@ -88,10 +88,19 @@ object InternalRate {
         rate: Double,
     ): Double = flows.sumOf { it.amount * (1 + rate).pow(-it.years) }
 
-    fun solve(flows: List<DatedFlow>): Pair<Double?, ReturnStatus> {
+    /**
+     * Flows at the same time are combined first: money in and out at one instant cancels at every rate, so it must
+     * neither count as an investment nor let the search accept an arbitrary rate.
+     */
+    fun solve(dated: List<DatedFlow>): Pair<Double?, ReturnStatus> {
+        val flows =
+            dated
+                .groupBy { it.years }
+                .map { (years, group) -> DatedFlow(years, group.sumOf { it.amount }) }
+                .filter { it.amount != 0.0 }
         if (flows.none { it.amount < 0 } || flows.none { it.amount > 0 }) return null to ReturnStatus.NO_INVESTMENT
         // With one change of sign in time order the rate is unique (Descartes' rule); otherwise look for several roots.
-        val ordered = flows.sortedBy { it.years }.filter { it.amount != 0.0 }
+        val ordered = flows.sortedBy { it.years }
         val changes = ordered.zipWithNext().count { (a, b) -> (a.amount < 0) != (b.amount < 0) }
         if (changes > 1) {
             val grid = (0..400).map { LOW + (it / 400.0).pow(3) * (100.0 - LOW) }

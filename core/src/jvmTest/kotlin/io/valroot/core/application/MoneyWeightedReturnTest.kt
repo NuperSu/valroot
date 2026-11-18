@@ -46,6 +46,16 @@ class MoneyWeightedReturnTest {
         assertEquals(ReturnStatus.NO_INVESTMENT, InternalRate.solve(listOf(DatedFlow(0.0, 5.0), DatedFlow(1.0, 6.0))).second)
     }
 
+    @Test fun moneyInAndOutAtTheSameInstantCancels() {
+        // Every rate satisfies -1000 + 1000 at one time: there was no investment, not an arbitrary rate.
+        val (rate, status) = InternalRate.solve(listOf(DatedFlow(0.5, -1000.0), DatedFlow(0.5, 1000.0)))
+        assertNull(rate)
+        assertEquals(ReturnStatus.NO_INVESTMENT, status)
+        // A cancelling pair beside real flows changes nothing.
+        val base = listOf(DatedFlow(0.0, -1000.0), DatedFlow(1.0, 1100.0))
+        assertEquals(0.1, InternalRate.solve(base + DatedFlow(0.5, -500.0) + DatedFlow(0.5, 500.0)).first!!, 1e-9)
+    }
+
     private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
         val app = PortfolioApplication(db) { now }
         app.snapshot()
