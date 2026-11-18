@@ -252,7 +252,8 @@ class AnalyticsService internal constructor(
         val end = holdings(endPoint)
 
         // Transfer movements that leave or enter the scope are flows; transfers between scoped accounts cancel out,
-        // within one activity or across the two sides of a transfer link inside the period.
+        // within one activity or across the two sides of a transfer link inside the period. Trades are not flows,
+        // including on-chain swaps, whose legs are recorded as transfers of a trade activity.
         data class Flow(
             val asset: AssetId,
             val at: Long,
@@ -261,42 +262,71 @@ class AnalyticsService internal constructor(
         )
         val period = activitiesBetween(selected, startMillis, endMillis)
         val internal = internalTransferSides(period, selected)
+
+        fun tradeLeg(
+            activity: io.valroot.core.ledger.Activity,
+            movement: io.valroot.core.ledger.Movement,
+        ) = movement.role == io.valroot.core.ledger.MovementRole.TRADE_LEG ||
+            (activity.kind == io.valroot.core.ledger.ActivityKind.TRADE && movement.role == io.valroot.core.ledger.MovementRole.TRANSFER)
+
+        /** Each asset's net amount among [movements], valued at the activity's time. */
+        fun netFlows(
+            activity: io.valroot.core.ledger.Activity,
+            movements: List<io.valroot.core.ledger.Movement>,
+        ) = movements.groupBy { it.amount.assetId }.mapNotNull { (asset, group) ->
+            val net = group.fold(io.valroot.core.model.ExactInteger.ZERO) { sum, movement -> sum + movement.amount.atomicUnits }
+            if (net.sign == 0) return@mapNotNull null
+            val magnitude = AtomicAmount(asset, if (net.sign < 0) -net else net)
+            Flow(asset, activity.occurredAtEpochMillis, valueAt(magnitude, quote, activity.occurredAtEpochMillis, knownAt), net.sign > 0)
+        }
         val flows =
             period.flatMap { activity ->
-                activity.movements
-                    .filter {
+                netFlows(
+                    activity,
+                    activity.movements.filter {
                         it.accountId in selected &&
                             it.role == io.valroot.core.ledger.MovementRole.TRANSFER &&
+                            !tradeLeg(activity, it) &&
                             (activity.id to it.id) !in internal
-                    }.groupBy { it.amount.assetId }
-                    .mapNotNull { (asset, movements) ->
-                        val net =
-                            movements.fold(io.valroot.core.model.ExactInteger.ZERO) { sum, movement ->
-                                sum +
-                                    movement.amount.atomicUnits
-                            }
-                        if (net.sign == 0) return@mapNotNull null
-                        val magnitude = AtomicAmount(asset, if (net.sign < 0) -net else net)
-                        Flow(
-                            asset,
-                            activity.occurredAtEpochMillis,
-                            valueAt(magnitude, quote, activity.occurredAtEpochMillis, knownAt),
-                            net.sign > 0,
-                        )
-                    }
+                    },
+                )
+            }
+        val trades =
+            period.mapNotNull { activity ->
+                activity.movements
+                    .filter { it.accountId in selected && tradeLeg(activity, it) }
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { activity to it }
             }
         val leftOut =
             (
                 start.filterValues { it == null }.keys + end.filterValues { it == null }.keys +
                     flows.filter { it.value == null }.map { it.asset }
-            ).toSet()
-        val counted = flows.filter { it.asset !in leftOut }
+            ).toMutableSet()
+        // A trade between a measured coin and a left-out one moves value across the boundary of what is measured: the
+        // measured side counts as leaving (bought the left-out coin) or entering (sold it). A measured side without a
+        // price then is left out too, which can reach further trades, so this repeats until nothing changes.
+        var boundary: List<Flow>
+        while (true) {
+            boundary =
+                trades.flatMap { (activity, legs) ->
+                    if (legs.none { it.amount.assetId in leftOut } || legs.all { it.amount.assetId in leftOut }) {
+                        emptyList()
+                    } else {
+                        netFlows(activity, legs.filter { it.amount.assetId !in leftOut })
+                    }
+                }
+            val unpriced = boundary.filter { it.value == null }.map { it.asset }
+            if (unpriced.isEmpty()) break
+            leftOut += unpriced
+        }
+        val counted = flows.filter { it.asset !in leftOut } + boundary
         val startValue = start.filterKeys { it !in leftOut }.values.fold(zero) { sum, value -> sum + value!! }
         val endValue = end.filterKeys { it !in leftOut }.values.fold(zero) { sum, value -> sum + value!! }
         val contributions = counted.filter { it.incoming }.fold(zero) { sum, flow -> sum + flow.value!! }
         val withdrawals = counted.filter { !it.incoming }.fold(zero) { sum, flow -> sum + flow.value!! }
         // Measurable when at least one asset has every price it needs, or when there is nothing at all (no investment).
-        val assets = start.keys + end.keys + flows.map { it.asset }
+        val assets = start.keys + end.keys + flows.map { it.asset } + trades.flatMap { (_, legs) -> legs.map { it.amount.assetId } }
         val priced = assets.isEmpty() || assets.any { it !in leftOut }
         val gain = if (priced) endValue - startValue - contributions + withdrawals else null
         val year = 365.25 * 86_400_000.0

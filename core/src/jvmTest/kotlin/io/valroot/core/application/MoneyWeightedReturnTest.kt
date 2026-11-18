@@ -170,4 +170,68 @@ class MoneyWeightedReturnTest {
             assertEquals(0, result.contributions!!.compareTo(ExactDecimal.parse("500")))
         }
     }
+
+    /** Buying a coin the return leaves out moves the money spent out of what is measured; it is not a loss. */
+    @Test fun buyingALeftOutCoinIsNotALoss() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val eur = AssetId("EUR")
+            app.transactions.saveTransaction(draft("deposit", TransactionType.DEPOSIT, usd, "1000", 290))
+            // EUR has no USD price, so it is left out; the 110 USD paid for it leaves the measured coins.
+            app.transactions.saveTransaction(draft("buy", TransactionType.BUY, eur, "100", 300, "1.1"))
+            val result = app.analytics.moneyWeightedReturn(null, 280 * day, now)
+            assertEquals(1, result.leftOutAssets)
+            assertEquals(0, result.gain!!.compareTo(ExactDecimal.parse("0")))
+            assertEquals(0, result.withdrawals!!.compareTo(ExactDecimal.parse("110")))
+        }
+    }
+
+    /** An on-chain swap records its legs as transfers of a trade activity: they are a trade, not money in and out. */
+    @Test fun aSwapsTransferLegsAreNotFlows() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            app.transactions.saveTransaction(draft("deposit", TransactionType.DEPOSIT, usd, "1000", 10))
+            app.transactions.saveManualActivity(
+                io.valroot.core.ledger.Activity(
+                    ActivityId("swap"),
+                    100 * day,
+                    "swap",
+                    io.valroot.core.ledger.ActivityKind.TRADE,
+                    io.valroot.core.ledger.ActivityStatus.CONFIRMED,
+                    listOf(
+                        io.valroot.core.ledger.Movement(
+                            io.valroot.core.model
+                                .EventId("swap:usd"),
+                            a,
+                            io.valroot.core.model
+                                .AtomicAmount(
+                                    usd,
+                                    io.valroot.core.model.ExactInteger
+                                        .parse("-100000"),
+                                ),
+                            io.valroot.core.ledger.MovementRole.TRANSFER,
+                        ),
+                        io.valroot.core.ledger.Movement(
+                            io.valroot.core.model
+                                .EventId("swap:btc"),
+                            a,
+                            io.valroot.core.model
+                                .AtomicAmount(
+                                    btc,
+                                    io.valroot.core.model.ExactInteger
+                                        .parse("5000000"),
+                                ),
+                            io.valroot.core.ledger.MovementRole.TRANSFER,
+                        ),
+                    ),
+                    emptySet(),
+                    null,
+                    true,
+                ),
+            )
+            val result = app.analytics.moneyWeightedReturn(null, 5 * day, now)
+            assertEquals(0, result.contributions!!.compareTo(ExactDecimal.parse("1000")))
+            assertEquals(0, result.withdrawals!!.compareTo(ExactDecimal.parse("0")))
+        }
+    }
 }
