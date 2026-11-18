@@ -109,7 +109,7 @@ internal class DesktopBackups(
         onResult: (String) -> Unit,
     ) = workflow.restore(
         password,
-        { task -> state.syncQueue.tryStart(task = task) },
+        { task, released -> state.syncQueue.tryStart(onReleased = released, task = task) },
         { read -> Files.newInputStream(path).buffered().use { input -> read { b, o, l -> input.read(b, o, l) } } },
         onResult,
     )

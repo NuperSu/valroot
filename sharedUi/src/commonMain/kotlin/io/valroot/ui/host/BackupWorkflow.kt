@@ -90,19 +90,21 @@ class BackupWorkflow(
     }
 
     /**
-     * Restores the backup [open] reads. [exclusive] runs the restore on a thread of its own, apart from the data thread
-     * and never beside a sync, or returns false when it cannot start now. Main thread.
+     * Restores the backup [open] reads. [exclusive] runs the task on a thread of its own, apart from the data thread
+     * and never beside a sync, then calls its second function once that slot is free again, or returns false when it
+     * cannot start now. The result is reported only then, so work started from it is never refused as overlapping.
+     * Main thread.
      */
     fun restore(
         password: String,
-        exclusive: (task: () -> Unit) -> Boolean,
+        exclusive: (task: () -> Unit, released: () -> Unit) -> Boolean,
         open: ((ByteSource) -> Unit) -> Unit,
         onResult: (String) -> Unit,
     ) {
         progress.value = "Restoring backup…"
+        var message = "Could not restore backup"
         val accepted =
-            exclusive {
-                val message = restoreNow(password, open)
+            exclusive({ message = restoreNow(password, open) }) {
                 threads.main {
                     progress.value = null
                     onResult(message)

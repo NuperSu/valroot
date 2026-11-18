@@ -86,8 +86,9 @@ class BackupWorkflowTest {
     private fun restore(
         archive: ByteArray,
         password: String,
-        exclusive: (() -> Unit) -> Boolean = {
-            it()
+        exclusive: (() -> Unit, () -> Unit) -> Boolean = { task, released ->
+            task()
+            released()
             true
         },
     ): String {
@@ -143,7 +144,7 @@ class BackupWorkflowTest {
 
     @Test fun aBusySyncDefersTheRestore() {
         val archive = backupOfDemoData("backup password")
-        assertEquals("Wait for the active sync to finish, then restore", restore(archive, "backup password") { false })
+        assertEquals("Wait for the active sync to finish, then restore", restore(archive, "backup password") { _, _ -> false })
         assertNull(progress.value)
     }
 }

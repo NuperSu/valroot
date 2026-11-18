@@ -122,8 +122,14 @@ internal class AndroidBackups(
         onResult: (String) -> Unit,
     ) = workflow.restore(
         password,
-        { task ->
-            RefreshWorker.syncExecutor.execute(task)
+        { task, released ->
+            RefreshWorker.syncExecutor.execute {
+                try {
+                    task()
+                } finally {
+                    released()
+                }
+            }
             true
         },
         { read -> state.files.read(uri) { input -> read { b, o, l -> input.read(b, o, l) } } },
