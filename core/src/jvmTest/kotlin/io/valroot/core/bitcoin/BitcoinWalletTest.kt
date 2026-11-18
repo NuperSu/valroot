@@ -367,6 +367,40 @@ class BitcoinWalletTest {
         }
     }
 
+    @Test fun overlappingWalletScopesDoNotReuseOrDeleteEachOther() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { 0L }
+            val owner = OwnerId("o")
+            val account = AccountId("a")
+            app.accounts.saveOwner(Owner(owner, "Owner"))
+            app.accounts.saveAccount(Account(account, owner, "Account", AccountKind.WALLET))
+            app.sources.setConsent(true)
+            val expressions =
+                listOf(
+                    "addr(${bitcoinWallet(xpub).address(0, 0)})",
+                    "wpkh($xpub/0/0)",
+                    "wpkh($xpub/0/*)",
+                    xpub,
+                )
+            expressions.forEachIndexed { index, expression ->
+                val id = TrackingTargetId("scope-$index")
+                assertEquals(
+                    id,
+                    app.bitcoinWallets.save(
+                        TrackingTarget(id, account, TargetIdentity(BITCOIN_MAINNET, "wallet", expression), TargetRole.WALLET, "Wallet"),
+                    ),
+                )
+            }
+            assertEquals(
+                4,
+                app
+                    .snapshot()
+                    .ownership.targets
+                    .count { it.role == TargetRole.WALLET },
+            )
+        }
+    }
+
     @Test fun failedImportIsRetriedWithTheSameWalletInsteadOfBlockingTheExpression() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = PortfolioApplication(db) { 0L }
@@ -415,7 +449,7 @@ class BitcoinWalletTest {
             fun wallet(
                 id: String,
                 account: String,
-                expression: String = xpub,
+                expression: String = "wpkh($xpub/0/*)",
             ) = TrackingTarget(
                 TrackingTargetId(id),
                 AccountId(account),
@@ -427,7 +461,7 @@ class BitcoinWalletTest {
             val unused = EsploraTransport { """{"chain_stats":{"tx_count":0},"mempool_stats":{"tx_count":0}}""" }
             app.bitcoinWallets.discover(tracked, unused, 2, 3)
             // An earlier failed import saved the same key under another text form, as an empty wallet in a second account.
-            app.accounts.saveTarget(wallet("w2", "dup", "wpkh($xpub/0/*)"))
+            app.accounts.saveTarget(wallet("w2", "dup", "wpkh([deadbeef/84h/0h/0h]$xpub/0/*)"))
 
             val resumed =
                 app.bitcoinWallets.save(
@@ -439,7 +473,7 @@ class BitcoinWalletTest {
             val ownership = app.snapshot().ownership
             assertEquals(listOf(tracked), ownership.targets.filter { it.role == TargetRole.WALLET }.map { it.id })
             assertTrue(ownership.accounts.none { it.id == AccountId("dup") || it.id == AccountId("new") })
-            assertEquals(4, ownership.targets.count { it.walletId == tracked })
+            assertEquals(2, ownership.targets.count { it.walletId == tracked })
         }
     }
 }

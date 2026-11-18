@@ -46,6 +46,74 @@ class MoneyWeightedReturnTest {
         assertEquals(ReturnStatus.NO_INVESTMENT, InternalRate.solve(listOf(DatedFlow(0.0, 5.0), DatedFlow(1.0, 6.0))).second)
     }
 
+    @Test fun closelySpacedAndTangentRootsAreNeverCertifiedUnique() {
+        // With x = 1 / (1+r), these polynomials have nearby roots and a repeated root.
+        for (roots in listOf(listOf(1.1, 1.10001, 2.0), listOf(1.1, 1.1))) {
+            var coefficients = listOf(1.0)
+            roots.forEach { root ->
+                val next = MutableList(coefficients.size + 1) { 0.0 }
+                coefficients.forEachIndexed { index, value ->
+                    next[index] -= value / root
+                    next[index + 1] += value
+                }
+                coefficients = next
+            }
+            val (rate, status) = InternalRate.solve(coefficients.mapIndexed { year, value -> DatedFlow(year.toDouble(), value) })
+            assertNull(rate)
+            assertTrue(status == ReturnStatus.NO_UNIQUE_RATE || status == ReturnStatus.UNVERIFIED_RATE)
+        }
+        // A withdrawal followed by a contribution may have one root, but the solver cannot certify it.
+        assertEquals(
+            ReturnStatus.UNVERIFIED_RATE,
+            InternalRate.solve(listOf(DatedFlow(0.0, -100.0), DatedFlow(1.0, 10.0), DatedFlow(2.0, -5.0), DatedFlow(3.0, 120.0))).second,
+        )
+    }
+
+    @Test fun futureTransactionsWaitForTheirDateAcrossCachedReads() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            var clock = 10 * day
+            val app = PortfolioApplication(db) { clock }
+            app.snapshot()
+            app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
+            app.accounts.saveAccount(Account(a, OwnerId("owner"), "Exchange", AccountKind.ACCOUNT))
+            app.transactions.saveTransaction(draft("future", TransactionType.REWARD, btc, "0.1", 20, "10000"))
+            assertTrue(
+                app
+                    .snapshot()
+                    .balances.quantities.values
+                    .all { it.sign == 0 },
+            )
+            assertTrue(
+                app.accounting
+                    .report()
+                    .report.lots
+                    .isEmpty(),
+            )
+            clock = 20 * day
+            assertEquals(
+                "10000000",
+                app
+                    .snapshot()
+                    .balances.quantities.values
+                    .single { it.sign != 0 }
+                    .toString(),
+            )
+            assertTrue(
+                app.accounting
+                    .report()
+                    .report.lots
+                    .isNotEmpty(),
+            )
+            clock = 10 * day
+            assertTrue(
+                app
+                    .snapshot()
+                    .balances.quantities.values
+                    .all { it.sign == 0 },
+            )
+        }
+    }
+
     @Test fun moneyInAndOutAtTheSameInstantCancels() {
         // Every rate satisfies -1000 + 1000 at one time: there was no investment, not an arbitrary rate.
         val (rate, status) = InternalRate.solve(listOf(DatedFlow(0.5, -1000.0), DatedFlow(0.5, 1000.0)))

@@ -142,6 +142,32 @@ class CurrencyReconciliationTest {
         }
     }
 
+    @Test
+    fun reviewSummaryPreservesWholeUnitsWithZeroDecimals() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { 1000L }
+            val owner = OwnerId("owner")
+            app.accounts.saveOwner(Owner(owner, "Owner"))
+            app.accounts.saveAccount(Account(AccountId("outgoing"), owner, "Exchange", AccountKind.ACCOUNT))
+            val asset = AssetId("whole")
+            MarketRepository(db).registerAsset(
+                io.valroot.core.market
+                    .AssetDefinition(asset, AssetIdentity(AssetKind.CUSTOM, null, "whole")),
+                AssetMetadata("WHOLE", "Whole units", 0, 0),
+            )
+            val original = activity("outgoing", "-10")
+            app.transactions.saveManualActivity(
+                original.copy(
+                    movements =
+                        original.movements.map {
+                            it.copy(amount = AtomicAmount(asset, ExactInteger.parse("-10")))
+                        },
+                ),
+            )
+            assertEquals("1970-01-01 · Exchange −10 WHOLE", app.accounting.activitySummary(original.id))
+        }
+    }
+
     private fun activity(
         id: String,
         amount: String,

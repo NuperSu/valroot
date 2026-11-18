@@ -61,7 +61,20 @@ internal class AppContext(
     private var cachedLedger: EffectiveLedger? = null
 
     /** False after a write until the holdings projection is rebuilt from the current ledger. */
-    var holdingsCurrent = false
+    private var holdingsCurrent = false
+    private var holdingsAt = Long.MIN_VALUE
+    private var nextHoldingsAt: Long? = null
+
+    /** Rebuild when writes or the clock change which confirmed activities have happened. */
+    fun ensureCurrentHoldings(at: Long) {
+        if (!holdingsCurrent || at < holdingsAt || nextHoldingsAt?.let { at >= it } == true) {
+            val activities = ledger().activities.map { it.activity }
+            holdings.refresh(activities.filter { it.occurredAtEpochMillis <= at })
+            nextHoldingsAt = activities.filter { it.occurredAtEpochMillis > at }.minOfOrNull { it.occurredAtEpochMillis }
+            holdingsAt = at
+            holdingsCurrent = true
+        }
+    }
 
     fun ledger(): EffectiveLedger =
         cachedLedger ?: run {
@@ -176,11 +189,8 @@ abstract class AppService internal constructor(
     protected val exchangeSync get() = ctx.exchangeSync
     protected val bitcoinStage get() = ctx.bitcoinStage
     protected val bitcoinGraph get() = ctx.bitcoinGraph
-    protected var holdingsCurrent: Boolean
-        get() = ctx.holdingsCurrent
-        set(value) {
-            ctx.holdingsCurrent = value
-        }
+
+    protected fun ensureCurrentHoldings(at: Long) = ctx.ensureCurrentHoldings(at)
 
     protected fun ledger() = ctx.ledger()
 

@@ -20,6 +20,9 @@ enum class ReturnStatus {
     /** The cash flows allow more than one rate. */
     NO_UNIQUE_RATE,
 
+    /** Cash-flow sign changes prevent this solver from certifying a unique rate. */
+    UNVERIFIED_RATE,
+
     /** The rate could not be found within the search bounds. */
     NO_CONVERGENCE,
 }
@@ -106,6 +109,8 @@ object InternalRate {
             val grid = (0..400).map { LOW + (it / 400.0).pow(3) * (100.0 - LOW) }
             val roots = grid.zipWithNext().count { (a, b) -> npv(flows, a).let { x -> npv(flows, b).let { y -> x == 0.0 || x * y < 0 } } }
             if (roots > 1) return null to ReturnStatus.NO_UNIQUE_RATE
+            // A finite grid can miss nearby or tangent roots; never certify uniqueness from it.
+            return null to ReturnStatus.UNVERIFIED_RATE
         }
         var low = LOW
         var high = 1.0

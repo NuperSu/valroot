@@ -16,6 +16,10 @@ class BitcoinWallet internal constructor(
 ) {
     val branchCount: Int get() = paths.size
 
+    /** The same complete derivation scope, ignoring descriptor origin labels and checksums. */
+    internal fun sameSource(other: BitcoinWallet): Boolean =
+        type == other.type && key == other.key && paths == other.paths && ranged == other.ranged
+
     fun address(
         branch: Int,
         index: Int,

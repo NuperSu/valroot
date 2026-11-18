@@ -60,7 +60,7 @@ internal fun returnState(
             ReturnStatus.NO_INVESTMENT -> listOfNotNull("Nothing was invested during this period.", leftOut).joinToString(" ")
             ReturnStatus.MISSING_PRICES -> "No rate: no coin has a saved price at every point this period needs."
             ReturnStatus.NO_UNIQUE_RATE -> listOfNotNull("No single rate fits these deposits and withdrawals.", leftOut).joinToString(" ")
-            ReturnStatus.NO_CONVERGENCE ->
+            ReturnStatus.UNVERIFIED_RATE, ReturnStatus.NO_CONVERGENCE ->
                 listOfNotNull(
                     "The rate could not be determined for these cash flows.",
                     leftOut,

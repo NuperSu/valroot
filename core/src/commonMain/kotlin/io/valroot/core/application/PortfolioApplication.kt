@@ -61,10 +61,7 @@ class PortfolioApplication(
         val catalog = ctx.ownership.load()
         val selected = assets.scopedAccounts(catalog, filter.portfolio)
         val ledger = ctx.ledger()
-        if (!ctx.holdingsCurrent) {
-            ctx.holdings.refresh(ledger.activities.map { it.activity })
-            ctx.holdingsCurrent = true
-        }
+        ctx.ensureCurrentHoldings(at)
         val coverage = if (ctx.setting("source_last_success") != null) BalanceCoverage.PARTIAL else BalanceCoverage.UNKNOWN
         val fullBalance = ctx.holdings.current(coverage, at)
         val balance = fullBalance.copy(quantities = fullBalance.quantities.filterKeys { it.account in selected })

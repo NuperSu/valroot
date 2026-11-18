@@ -37,12 +37,10 @@ class AssetService internal constructor(
 
     /** Assets with a recorded balance in any account, from up-to-date holdings. */
     internal fun held(): Set<AssetId> {
-        if (!holdingsCurrent) {
-            holdings.refresh(ledger().activities.map { it.activity })
-            holdingsCurrent = true
-        }
+        val at = now()
+        ensureCurrentHoldings(at)
         return holdings
-            .current(BalanceCoverage.UNKNOWN, now())
+            .current(BalanceCoverage.UNKNOWN, at)
             .quantities
             .filterValues { it.sign != 0 }
             .keys

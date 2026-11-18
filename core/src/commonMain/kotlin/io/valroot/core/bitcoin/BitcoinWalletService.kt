@@ -24,12 +24,11 @@ import kotlinx.serialization.json.long
 class BitcoinWalletService internal constructor(
     ctx: AppContext,
 ) : AppService(ctx) {
-    /** Wallet expressions that derive the same first address watch the same coins, whatever text they were saved with. */
+    /** Equivalent wallet expressions must cover the same derivation scope. */
     private fun sameWalletSource(
         first: String,
         second: String,
-    ): Boolean =
-        first == second || runCatching { bitcoinWallet(first).address(0, 0) == bitcoinWallet(second).address(0, 0) }.getOrDefault(false)
+    ): Boolean = first == second || runCatching { bitcoinWallet(first).sameSource(bitcoinWallet(second)) }.getOrDefault(false)
 
     /**
      * Saves a consented public wallet and optional ownership records as one local change, and returns the wallet ID that

@@ -115,7 +115,10 @@ class AccountingService internal constructor(
                     }
                 }
             }
-        val confirmedLedger = ledger().activities.filter { it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED }
+        val confirmedLedger =
+            ledger().activities.filter {
+                it.activity.status == io.valroot.core.ledger.ActivityStatus.CONFIRMED && it.activity.occurredAtEpochMillis <= priceAt
+            }
         // Replay each owner's full inventory before selecting accounts, preserving transferred lot age and basis.
         val reports =
             catalog.accounts.filter { it.id in selected }.map { it.ownerId }.distinct().map { owner ->
@@ -348,7 +351,10 @@ class AccountingService internal constructor(
                 val metadata = market.metadataAt(movement.amount.assetId, activity.occurredAtEpochMillis)
                 val units = movement.amount.atomicUnits
                 val amount =
-                    metadata?.let { ExactDecimal(units, it.decimals).toString().trimEnd('0').trimEnd('.') } ?: units.toString()
+                    metadata?.let {
+                        val text = ExactDecimal(units, it.decimals).toString()
+                        if ('.' in text) text.trimEnd('0').trimEnd('.') else text
+                    } ?: units.toString()
                 val signed = if (units.sign < 0) "−" + amount.removePrefix("-") else "+$amount"
                 "${labels[movement.accountId] ?: movement.accountId.value} $signed ${metadata?.symbol ?: movement.amount.assetId.value}"
             }
