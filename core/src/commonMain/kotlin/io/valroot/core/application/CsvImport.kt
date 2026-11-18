@@ -152,7 +152,7 @@ object CsvImport {
     /** Rows of cells. The delimiter is the one of `,` `;` and tab that occurs most in the first line outside quotes. */
     fun read(text: String): List<List<String>> {
         require(text.length <= CSV_MAX_CHARS) { "The file is larger than 5 MB" }
-        val body = text.removePrefix("")
+        val body = text.removePrefix("\uFEFF")
         val firstLine = body.substringBefore('\n')
         var quoted = false
         val counts = mutableMapOf(',' to 0, ';' to 0, '\t' to 0)
@@ -286,8 +286,9 @@ object CsvImport {
         val utc = utcMillis(stamp) + fraction
         if (offset == "Z") return utc
         val digits = offset.drop(1).replace(":", "")
-        val minutes = digits.take(2).toInt() * 60 + digits.drop(2).toInt()
-        require(minutes <= 14 * 60) { "\"$offset\" is not a valid time zone offset" }
+        val minutePart = digits.drop(2).toInt()
+        val minutes = digits.take(2).toInt() * 60 + minutePart
+        require(minutePart < 60 && minutes <= 14 * 60) { "\"$offset\" is not a valid time zone offset" }
         return utc - (if (offset[0] == '+') minutes else -minutes) * 60_000L
     }
 

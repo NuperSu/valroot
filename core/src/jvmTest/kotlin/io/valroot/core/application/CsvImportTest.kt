@@ -26,6 +26,8 @@ class CsvImportTest {
         )
         assertEquals(listOf(listOf("date", "amount"), listOf("2026-01-01", "1.5")), CsvImport.read("date;amount\n2026-01-01;1.5"))
         assertEquals(listOf(listOf("a", "b")), CsvImport.read("a\tb"))
+        val bomHeader = CsvImport.read("\uFEFF\"Date\",Type,Asset,Quantity").single()
+        assertEquals(emptyList(), CsvImport.detect(bomHeader).missing)
         assertEquals(listOf(listOf("multi\nline", "x")), CsvImport.read("\"multi\nline\",x"))
         assertFails { CsvImport.read("\"open,x") }
     }
@@ -53,6 +55,9 @@ class CsvImportTest {
         assertEquals(1_768_478_400_000L, noon)
         assertEquals(noon, CsvImport.date("2026-01-15T12:00:00Z", utc))
         assertEquals(noon, CsvImport.date("2026-01-15 14:00+02:00", utc))
+        listOf("+01:99", "-0160", "+14:01").forEach { offset ->
+            assertFails { CsvImport.date("2026-01-15T12:00:00$offset", utc) }
+        }
         assertEquals(noon + 250, CsvImport.date("2026-01-15T12:00:00.25Z", utc))
         assertEquals(noon - 3_600_000, CsvImport.date("2026-01-15 12:00", { utc(it) - 3_600_000 }))
         assertEquals(noon, CsvImport.date("1768478400", utc))
@@ -75,6 +80,19 @@ class CsvImportTest {
     }
 
     private val options = CsvImportOptions(account, AssetId("USD"), CsvFeeDefault.CURRENCY, { CsvImport.utcMillis(it) })
+
+    @Test fun aReferenceRepeatedOnAnInvalidRowStillBlocksTheOtherRow() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val csv =
+                "Date,Type,Asset,Quantity,Reference\n" +
+                    "2026-01-15,buy,BTC,1,duplicate\n" +
+                    "invalid,buy,BTC,1,duplicate\n" +
+                    "2026-01-15,deposit,USD,10,unique"
+            val preview = app(db).csv.preview("trades.csv", csv, options)
+            assertEquals(listOf(CsvRowStatus.INVALID, CsvRowStatus.INVALID, CsvRowStatus.NEW), preview.rows.map { it.status })
+            assertTrue(preview.rows.take(2).all { it.message == "Another row has the same reference" })
+        }
+    }
 
     private val file =
         "Date,Type,Asset,Quantity,Price,Fee,Notes\r\n" +

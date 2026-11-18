@@ -40,8 +40,17 @@ class CsvService internal constructor(
             return matches.singleOrNull().also { if (it == null) unresolved += key }
         }
         val occurrences = mutableMapOf<String, Int>()
+        val sourceRows = table.drop(1)
+        val referenceColumn = columns.columns[CsvField.REFERENCE]
+        val duplicateReferences =
+            sourceRows
+                .mapNotNull { cells -> referenceColumn?.let(cells::getOrNull)?.trim()?.takeIf(String::isNotEmpty) }
+                .groupingBy { it }
+                .eachCount()
+                .filterValues { it > 1 }
+                .keys
         val rows =
-            table.drop(1).mapIndexed { index, cells ->
+            sourceRows.mapIndexed { index, cells ->
                 val line = index + 2
 
                 fun cell(field: CsvField) =
@@ -50,6 +59,8 @@ class CsvService internal constructor(
                         ?.trim()
                         .orEmpty()
                 try {
+                    val reference = cell(CsvField.REFERENCE)
+                    require(reference !in duplicateReferences) { "Another row has the same reference" }
                     val (type, incoming) = requireNotNull(CsvImport.type(cell(CsvField.TYPE))) { "Unknown type \"${cell(CsvField.TYPE)}\"" }
                     val assetText = cell(CsvField.ASSET)
                     val assetId = requireNotNull(asset(assetText)) { "Choose which asset \"$assetText\" is" }
@@ -79,7 +90,6 @@ class CsvService internal constructor(
                             feeQuantity = fee,
                             notes = cell(CsvField.NOTES).take(4000),
                         )
-                    val reference = cell(CsvField.REFERENCE)
                     val identity =
                         if (reference.isNotEmpty()) {
                             "ref|$reference"
@@ -107,28 +117,13 @@ class CsvService internal constructor(
                     CsvRowResult(line, CsvRowStatus.INVALID, null, failure.message ?: "This row is not valid")
                 }
             }
-        val duplicateIds =
-            rows
-                .mapNotNull { it.draft?.id }
-                .groupingBy { it }
-                .eachCount()
-                .filterValues { it > 1 }
-                .keys
-        val checked =
-            rows.map {
-                if (it.draft?.id in duplicateIds && it.status != CsvRowStatus.INVALID) {
-                    it.copy(status = CsvRowStatus.INVALID, draft = null, message = "Another row has the same reference")
-                } else {
-                    it
-                }
-            }
         val hash = CsvImportRepository.hash(text)
         return CsvPreview(
             fileName,
             hash,
             header,
             columns,
-            checked,
+            rows,
             unresolved,
             csvImports.receipts().filter { it.fileHash == hash && it.reversedAtMillis == null },
         )
