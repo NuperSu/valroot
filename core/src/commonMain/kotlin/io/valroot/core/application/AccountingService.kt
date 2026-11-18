@@ -181,16 +181,17 @@ class AccountingService internal constructor(
                                         when {
                                             link != null -> {
                                                 val out = activity.movements.first { it.id == link.outgoingEvent }
-                                                val into =
-                                                    byId.getValue(link.incomingActivity).activity.movements.first {
-                                                        it.id ==
-                                                            link.incomingEvent
-                                                    }
+                                                val receipt = byId.getValue(link.incomingActivity).activity
+                                                val into = receipt.movements.first { it.id == link.incomingEvent }
+                                                // The lots move at the earlier side, so a receipt recorded before its
+                                                // withdrawal (an exchange's completion time is after the block) holds
+                                                // them before anything spends them in the receiving account.
+                                                val receiptFirst = receipt.occurredAtEpochMillis < activity.occurredAtEpochMillis
                                                 listOf(
                                                     io.valroot.core.accounting.AccountingAction.Transfer(
                                                         activity.id,
-                                                        activity.occurredAtEpochMillis,
-                                                        action.order,
+                                                        minOf(activity.occurredAtEpochMillis, receipt.occurredAtEpochMillis),
+                                                        if (receiptFirst) receipt.orderingKey + ":transfer" else action.order,
                                                         out.accountId,
                                                         into.accountId,
                                                         into.amount.assetId,

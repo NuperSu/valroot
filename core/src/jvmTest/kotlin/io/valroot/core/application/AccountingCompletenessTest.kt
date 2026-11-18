@@ -182,4 +182,55 @@ class AccountingCompletenessTest {
             )
         }
     }
+
+    /**
+     * A receipt recorded before its linked withdrawal (an exchange records completion after the block) and sold in
+     * between still sells the transferred lot: the lots move at the earlier side.
+     */
+    @Test fun aReceiptBeforeItsLinkedWithdrawalCanBeSoldWithItsBasis() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { 10_000L }
+            val owner = OwnerId("owner")
+            val exchange = AccountId("exchange")
+            val wallet = AccountId("wallet")
+            val btc = AssetId("bitcoin:btc")
+            val usd = AssetId("USD")
+            app.accounts.saveOwner(Owner(owner, "Owner"))
+            app.accounts.saveAccount(Account(exchange, owner, "Exchange", AccountKind.ACCOUNT))
+            app.accounts.saveAccount(Account(wallet, owner, "Wallet", AccountKind.WALLET))
+
+            fun move(
+                id: String,
+                at: Long,
+                account: AccountId,
+                units: String,
+                treatment: Treatment,
+            ) {
+                app.transactions.saveManualActivity(
+                    Activity(
+                        ActivityId(id),
+                        at,
+                        id,
+                        ActivityKind.OTHER,
+                        ActivityStatus.CONFIRMED,
+                        listOf(Movement(EventId(id), account, AtomicAmount(btc, ExactInteger.parse(units)), MovementRole.TRANSFER)),
+                        emptySet(),
+                        null,
+                        true,
+                    ),
+                )
+                app.accounting.saveTreatments(ActivityId(id), listOf(treatment))
+            }
+            move("buy", 1_000, exchange, "100", Treatment.Acquire(EventId("buy"), QuoteValue(usd, Rational.of("10"))))
+            move("withdraw", 5_000, exchange, "-100", Treatment.Dispose(EventId("withdraw"), null))
+            move("receive", 4_000, wallet, "100", Treatment.Acquire(EventId("receive"), null))
+            move("sell", 4_500, wallet, "-100", Treatment.Dispose(EventId("sell"), QuoteValue(usd, Rational.of("25"))))
+            app.transactions.setDecision(ActivityId("withdraw"), ActivityId("receive"), io.valroot.core.reconcile.LinkState.ACCEPTED)
+            val view = app.accounting.report()
+            val sale = view.report.disposals.single { it.activityId == ActivityId("sell") }
+            assertEquals(Rational.of("10"), sale.basis)
+            assertEquals(Rational.of("15"), sale.gain)
+            assertTrue(view.report.lots.isEmpty(), "no lot is left behind in either account")
+        }
+    }
 }
