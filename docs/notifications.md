@@ -21,7 +21,7 @@ Editing an alert restarts it from the current price. Alerts for another currency
 
 All are off by default.
 
-- **Daily portfolio update:** once per local day from 9:00, the portfolio value and its 24-hour money-weighted return. While amounts are hidden, only the return is shown.
+- **Daily portfolio update:** once per local day from 9:00, the portfolio value (the priced total the app shows now) and its 24-hour money-weighted return, noting coins the return leaves out for lack of a price. While amounts are hidden, only the return is shown.
 - **Significant price changes:** 24-hour moves of 10% or more for coins you hold or favorite; at most once per coin, direction and local day.
 - **All-time highs and lows:** a coin you hold or favorite whose CoinGecko all-time high or low was set within the last day; at most once per coin per day the record was set. 52-week highs and lows are not offered: CoinGecko's list has no 52-week figures, and history requests per coin would exceed its limits.
 

@@ -158,4 +158,29 @@ class NotificationsTest {
             assertTrue(CoingeckoMarkets.parseMarkets(markets("1", athAt = 5)).single().allTimeHighAtMillis == 5L)
         }
     }
+
+    /** The daily worth is the priced total now; a coin priced now but not a day ago still counts. */
+    @Test fun theDailyUpdateReportsThePricedTotalNow() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = PortfolioApplication(db) { start }
+            app.demo.seed()
+            app.notifications.setPreferences(NotificationPreferences(dailyUpdate = true))
+            val total =
+                app
+                    .snapshot()
+                    .valuations
+                    .mapNotNull { it.value }
+                    .fold(
+                        io.valroot.core.model.ExactDecimal
+                            .parse("0"),
+                    ) { sum, value -> sum + value }
+            assertTrue(
+                total >
+                    io.valroot.core.model.ExactDecimal
+                        .parse("0"),
+            )
+            val update = app.notifications.evaluate("2027-01-15", 9).single { it.kind == NotificationKind.DAILY_UPDATE }
+            assertTrue(update.body.startsWith("Your portfolio is worth "), update.body)
+        }
+    }
 }

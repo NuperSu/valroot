@@ -227,8 +227,23 @@ class NotificationService internal constructor(
     private fun dailyUpdate(localDay: String): NotificationMessage? {
         val end = now()
         val result = app.analytics.moneyWeightedReturn(null, end - 86_400_000L, end)
-        val value = result.endValue ?: return null
-        val change = result.periodReturn?.let { "${NotificationText.percent(it * 100)} in 24 hours" }
+        // The worth is the priced total the app shows, not the return's end value: the return leaves out a coin that
+        // lacks a price at any point of the day, even one priced now.
+        val held = app.snapshot().valuations.filter { it.amount.atomicUnits.sign != 0 }
+        val priced = held.mapNotNull { it.value }
+        // Nothing held is worth zero; holdings of which none has a price have no worth to report.
+        if (held.isNotEmpty() && priced.isEmpty()) return null
+        val value =
+            priced.fold(
+                io.valroot.core.model.ExactDecimal
+                    .parse("0"),
+            ) { sum, v -> sum + v }
+        val leftOut =
+            result.leftOutAssets
+                .takeIf { it > 0 }
+                ?.let { " (${if (it == 1) "1 coin" else "$it coins"} without a price left out)" }
+                .orEmpty()
+        val change = result.periodReturn?.let { "${NotificationText.percent(it * 100)} in 24 hours$leftOut" }
         val body =
             if (app.settings.general().hideAmounts) {
                 change?.let { "Your portfolio is $it." } ?: "Your portfolio's 24-hour change is not available."
