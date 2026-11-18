@@ -172,7 +172,9 @@ class BitcoinService internal constructor(
             sha256(
                 "${providerSource.value}|" + addresses.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value.value}" },
             )
-        val acceptedAnchors = bitcoinGraph.anchors(addresses)
+        // A new address set (an address added or removed) has no accepted scan of its own yet; the chain accepted for
+        // the earlier set still bounds it, so a lagging or reorganised provider cannot reverse history it confirmed.
+        val acceptedAnchors = bitcoinGraph.anchors(addresses).ifEmpty { bitcoinGraph.anchors() }
         val previousCheckpoint = acceptedAnchors.maxByOrNull { it.height }
         // A non-canonical checkpoint means the accepted history may have changed, so the skip below must not run.
         var checkpointCanonical = true

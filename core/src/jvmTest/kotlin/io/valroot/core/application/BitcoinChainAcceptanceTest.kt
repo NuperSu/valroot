@@ -465,6 +465,31 @@ class BitcoinChainAcceptanceTest {
     }
 
     @Test
+    fun addingAnAddressKeepsTheLagGuardOfTheEarlierScan() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = ChainProvider()
+            initialScan(app, db, provider)
+            val before = acceptedData(db)
+            app.accounts.saveTarget(
+                TrackingTarget(
+                    TrackingTargetId("second"),
+                    AccountId("account"),
+                    TargetIdentity(BITCOIN_MAINNET, "address", "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"),
+                    TargetRole.LEAF,
+                    "Second address",
+                ),
+            )
+            provider.tipHeight = 109
+
+            val failure = assertFailsWith<BitcoinProviderException> { app.bitcoin.refresh(provider.transport) }
+            assertEquals(BitcoinProviderFailure.LAGGING_CHAIN, failure.reason)
+            assertEquals(before, acceptedData(db))
+            assertTrue(provider.calls.none { it.startsWith("/address/") })
+        }
+    }
+
+    @Test
     fun longDowntimeAcceptsCanonicalSavedCheckpointBeyondRewindBound() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
