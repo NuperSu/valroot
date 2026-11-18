@@ -85,4 +85,18 @@ class EventMatcherTest {
             listOf(outcomes["f-w"], outcomes["f-d"], outcomes["f-d2"]),
         )
     }
+
+    @Test fun twoDepositsInOneTransactionStayTwoEvents() {
+        fun deposit(
+            id: String,
+            eth: String,
+        ) = EventShape(id, MatchKind.IN, 1_000, mapOf("ETH" to d(eth)), setOf("txid:0xabc"))
+        // The account already has the 1 ETH deposit; the file also holds a 2 ETH deposit paid by the same transaction.
+        val outcomes = EventMatcher.match(listOf(deposit("f-1", "1"), deposit("f-2", "2")), listOf(deposit("api-1", "1")), tolerance)
+        assertEquals(MatchOutcome.Same("api-1"), outcomes["f-1"])
+        assertEquals(MatchOutcome.New, outcomes["f-2"])
+        // With both already recorded, each record finds its own, whichever is listed first.
+        val both = EventMatcher.match(listOf(deposit("f-2", "2")), listOf(deposit("api-1", "1"), deposit("api-2", "2")), tolerance)
+        assertEquals(MatchOutcome.Same("api-2"), both["f-2"])
+    }
 }

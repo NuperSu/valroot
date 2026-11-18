@@ -48,7 +48,8 @@ sealed interface MatchOutcome {
 /**
  * Matches imported records to existing events as economic events, never as rows.
  *
- * - A shared identifier decides at once.
+ * - A shared identifier decides at once between events of the same kind and principal amounts; with other amounts it
+ *   is a different event in the same transaction (for example two deposits paid by one transaction).
  * - Otherwise records and events of the same kind with the same principal amounts, within the kind's [tolerance] of
  *   each other, form a group. When the group has at least as many existing events as records, records pair with events
  *   in time order. With more records than events the file holds something the account does not, and either could be
@@ -64,11 +65,16 @@ object EventMatcher {
     ): Map<String, MatchOutcome> {
         val outcomes = mutableMapOf<String, MatchOutcome>()
         val used = mutableSetOf<String>()
-        val byId = mutableMapOf<String, EventShape>()
-        existing.forEach { event -> event.ids.forEach { if (it !in byId) byId[it] = event } }
+        val byId = mutableMapOf<String, MutableList<EventShape>>()
+        existing.forEach { event -> event.ids.forEach { byId.getOrPut(it) { mutableListOf() } += event } }
         val remaining =
             records.filter { record ->
-                val event = record.ids.firstNotNullOfOrNull { byId[it] }?.takeIf { it.kind == record.kind && it.id !in used }
+                // One on-chain transaction can carry several distinct deposits, so a shared identifier decides only
+                // between events of the same kind and the same amounts.
+                val event =
+                    record.ids
+                        .flatMap { byId[it].orEmpty() }
+                        .firstOrNull { it.kind == record.kind && it.principal == record.principal && it.id !in used }
                 if (event != null) {
                     outcomes[record.id] = MatchOutcome.Same(event.id)
                     used += event.id
