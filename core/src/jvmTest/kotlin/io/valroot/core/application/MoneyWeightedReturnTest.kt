@@ -244,4 +244,36 @@ class MoneyWeightedReturnTest {
             assertEquals(0, result.withdrawals!!.compareTo(ExactDecimal.parse("0")))
         }
     }
+
+    /** A hidden token is out of the start and end values, so receiving and holding it is neither money in nor a loss. */
+    @Test fun aHiddenTokenIsNotAFlow() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val spam = AssetId("eip155:1/erc20:0x" + "b".repeat(40))
+            app.assets.register(
+                io.valroot.core.market.AssetDefinition(
+                    spam,
+                    io.valroot.core.market.AssetIdentity(
+                        io.valroot.core.market.AssetKind.TOKEN,
+                        io.valroot.core.model
+                            .NetworkId("eip155:1"),
+                        "0x" + "b".repeat(40),
+                    ),
+                ),
+                io.valroot.core.market
+                    .AssetMetadata("SPAM", "Unknown token", 0, 0),
+            )
+            // Priced at every point, but without a coin link it starts hidden.
+            listOf(290 * day, now - 3_600_000L).forEach { at ->
+                app.prices.recordManual(PriceObservation("spam$at", Price(spam, usd, ExactDecimal.parse("1")), null, at, at, true))
+            }
+            app.transactions.saveTransaction(draft("deposit", TransactionType.DEPOSIT, usd, "1000", 290))
+            app.transactions.saveTransaction(draft("spam", TransactionType.DEPOSIT, spam, "100", 300))
+            assertTrue(spam in app.assets.hidden())
+            val result = app.analytics.moneyWeightedReturn(null, 280 * day, now)
+            assertEquals(0, result.contributions!!.compareTo(ExactDecimal.parse("1000")))
+            assertEquals(0, result.gain!!.compareTo(ExactDecimal.parse("0")))
+            assertEquals(0, result.leftOutAssets, "hidden is not the same as unpriced")
+        }
+    }
 }

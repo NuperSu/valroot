@@ -298,9 +298,15 @@ class AnalyticsService internal constructor(
                     .takeIf { it.isNotEmpty() }
                     ?.let { activity to it }
             }
+        // Hidden assets (unknown tokens, NFTs) are out of the start and end values, so they are left out of the flows
+        // too: receiving one is not a contribution and holding it is not a loss. They are not counted as unpriced.
+        val hidden =
+            app.assets.hiddenAmong(
+                (flows.map { it.asset } + trades.flatMap { (_, legs) -> legs.map { it.amount.assetId } }).toSet(),
+            )
         val leftOut =
             (
-                start.filterValues { it == null }.keys + end.filterValues { it == null }.keys +
+                hidden + start.filterValues { it == null }.keys + end.filterValues { it == null }.keys +
                     flows.filter { it.value == null }.map { it.asset }
             ).toMutableSet()
         // A trade between a measured coin and a left-out one moves value across the boundary of what is measured: the
@@ -326,7 +332,8 @@ class AnalyticsService internal constructor(
         val contributions = counted.filter { it.incoming }.fold(zero) { sum, flow -> sum + flow.value!! }
         val withdrawals = counted.filter { !it.incoming }.fold(zero) { sum, flow -> sum + flow.value!! }
         // Measurable when at least one asset has every price it needs, or when there is nothing at all (no investment).
-        val assets = start.keys + end.keys + flows.map { it.asset } + trades.flatMap { (_, legs) -> legs.map { it.amount.assetId } }
+        val assets =
+            start.keys + end.keys + flows.map { it.asset } + trades.flatMap { (_, legs) -> legs.map { it.amount.assetId } } - hidden
         val priced = assets.isEmpty() || assets.any { it !in leftOut }
         val gain = if (priced) endValue - startValue - contributions + withdrawals else null
         val year = 365.25 * 86_400_000.0
@@ -362,7 +369,7 @@ class AnalyticsService internal constructor(
             rate?.let { (1 + it).pow(span) - 1 },
             rate?.takeIf { span >= 365.0 / 365.25 },
             status,
-            leftOut.size,
+            (leftOut - hidden).size,
             counted.size,
         )
     }
