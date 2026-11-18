@@ -53,7 +53,8 @@ internal class DesktopHost(
             afterErase = { reconcileRefreshPreferences() },
             onErased = { state.dataRevision.update { it + 1 } },
         )
-    private val backups = DesktopBackups(state, { reconcileRefreshPreferences() }, { notifications.reconcileChecks() })
+    private val backups =
+        DesktopBackups(state, { reconcileRefreshPreferences() }, { notifications.reconcileChecks() }) { privacyLock.delayMillis = it }
     private var refreshTask: ScheduledFuture<*>? = null
 
     override val dispatcher: CoroutineDispatcher = state.executor.asCoroutineDispatcher()

@@ -71,14 +71,14 @@ internal fun LazyListScope.classicSettingsItems(
                     }.testTag("wifi-only-refresh"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Wi-Fi-only background refresh", Modifier.weight(1f))
+                Text("Unmetered networks only in background", Modifier.weight(1f))
                 Switch(checked = preferences.wifiOnly, onCheckedChange = null)
             }
             Text(
                 if (host.wifiOnlyRefreshSupported) {
                     "Background jobs use an unmetered network. Manual refresh uses the current connection."
                 } else {
-                    "The Wi-Fi restriction applies to Android background jobs. Desktop " +
+                    "The unmetered-network restriction applies to Android background jobs. Desktop " +
                         "refresh uses the current connection."
                 },
                 color = Muted,

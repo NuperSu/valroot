@@ -24,6 +24,7 @@ internal class DesktopBackups(
     private val state: DesktopState,
     private val reconcileRefreshPreferences: () -> Unit,
     private val reconcileNotificationChecks: () -> Unit,
+    private val applyLockDelay: (Long) -> Unit,
 ) {
     private val files = BackupFiles()
     private val app: MutableState<PortfolioApplication> get() = state.app
@@ -154,7 +155,9 @@ internal class DesktopBackups(
 
             override fun publishFresh() {
                 val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
+                val lockDelay = replacement.settings.lockDelayMillis() ?: io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
                 SwingUtilities.invokeAndWait {
+                    applyLockDelay(lockDelay)
                     app.value = replacement
                     state.dataRevision.update { it + 1 }
                 }

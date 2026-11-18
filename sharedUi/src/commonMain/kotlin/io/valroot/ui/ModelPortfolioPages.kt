@@ -434,7 +434,7 @@ internal fun ColumnScope.ModelPortfolioPages(
                     if (wifiOnlyRefreshSupported) {
                         "Background jobs use an unmetered network. Manual refresh uses the current connection."
                     } else {
-                        "The Wi-Fi restriction applies to Android background jobs. Desktop refresh uses the current connection."
+                        "The unmetered-network restriction applies to Android background jobs. Desktop uses the current connection."
                     },
                 ),
                 onAutomatic,

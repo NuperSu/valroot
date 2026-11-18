@@ -140,7 +140,7 @@ fun ColumnScope.ModelSettings(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Wi-Fi only in background", fontWeight = FontWeight.Bold)
+                Text("Unmetered networks only in background", fontWeight = FontWeight.Bold)
                 Text("Manual refresh can use your connection", fontSize = 12.sp, color = muted)
             }
             Switch(checked = state.wifiOnly, onCheckedChange = null)

@@ -1,7 +1,9 @@
 package io.valroot.android
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.collectAsState
@@ -17,6 +19,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            setRecentsScreenshotEnabled(false)
+        } else {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
         val opened = runCatching { AndroidHost(this) }.getOrNull()
         val startTheme = opened?.savedTheme
         val systemDark =

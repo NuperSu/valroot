@@ -202,8 +202,9 @@ internal fun ColumnScope.ProductSettings(
                 description = "Prices hourly and wallets every 30 minutes",
             ) { actions.onAutomatic(it) }
             SettingsSwitchRow(
-                "Wi-Fi only in background",
+                "Unmetered networks only in background",
                 preferences.wifiOnly,
+                description = "Applies to automatic refresh on Android",
                 enabled = wifiOnlyRefreshSupported,
                 tag = "wifi-only-refresh",
             ) { actions.onWifi(it) }

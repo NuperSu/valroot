@@ -22,14 +22,23 @@ class DesktopRestoreTest {
             host.updateRefreshPreferences(io.valroot.ui.RefreshPreferences(automaticRefresh = true))
             assertTrue(host.refreshPreferences().automaticRefresh)
             host.updateRefreshPreferences(io.valroot.ui.RefreshPreferences(automaticRefresh = false, wifiOnly = true))
+            host.app.value.settings
+                .setLockDelay(60_000L)
             assertEquals(false, host.backgroundRefreshEnabled())
             assertEquals(false, host.wifiOnlyRefreshSupported)
             val archive =
                 host.app.value.backup
                     .export("password".toCharArray())
             host.updateRefreshPreferences(io.valroot.ui.RefreshPreferences(automaticRefresh = true))
+            host.setLockDelay(900_000L)
             assertEquals("Backup restored", restore(host, archive, "password"))
             assertEquals(io.valroot.ui.RefreshPreferences(false, true), host.refreshPreferences())
+            assertEquals(900_000L, host.lockDelayMillis)
+            assertEquals(
+                900_000L,
+                host.app.value.settings
+                    .lockDelayMillis(),
+            )
         } finally {
             host.close()
         }

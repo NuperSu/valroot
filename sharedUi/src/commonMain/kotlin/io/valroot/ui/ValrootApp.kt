@@ -152,7 +152,7 @@ internal fun Product(
     var hasCoingeckoKey by remember(app) { mutableStateOf(false) }
     var hasAlchemyKey by remember(app) { mutableStateOf(false) }
     var hasOneInchKey by remember(app) { mutableStateOf(false) }
-    var lockDelay by remember(host) { mutableStateOf(host.lockDelayMillis) }
+    var lockDelay by remember(app, host) { mutableStateOf(host.lockDelayMillis) }
     LaunchedEffect(app, dashboardRevision, revision) {
         assetPreference = withContext(host.dispatcher) { app.settings.assetList() }
         marketFavorites = withContext(host.dispatcher) { app.market.favorites() }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.update
 internal class AndroidBackups(
     private val state: AndroidState,
     private val sync: AndroidSync,
+    private val applyLockDelay: (Long) -> Unit,
 ) {
     fun saveFile(
         name: String,
@@ -178,8 +179,10 @@ internal class AndroidBackups(
             /** Hands a new application to the screens on the main thread and waits until they hold it. */
             override fun publishFresh() {
                 val replacement = PortfolioApplication(state.db, System::currentTimeMillis)
+                val lockDelay = replacement.settings.lockDelayMillis() ?: io.valroot.core.application.DEFAULT_LOCK_DELAY_MILLIS
                 val updated = java.util.concurrent.CountDownLatch(1)
                 state.main.post {
+                    applyLockDelay(lockDelay)
                     state.app.value = replacement
                     state.dataRevision.update { it + 1 }
                     updated.countDown()

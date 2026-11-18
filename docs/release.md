@@ -39,7 +39,7 @@ Alerts and notifications use CoinGecko's top-250 list and are checked at interva
 ## Recovery
 
 - **Back up:** Settings › Devices & Data › Back up creates an encrypted file. It contains accounts, wallets, transactions, corrections, rules, links, alerts, notification history, CSV import receipts and settings; it does not contain market caches, API keys or the lock password.
-- **Restore:** Settings › Devices & Data › Restore checks the password and the whole file in a staging database before anything is replaced. A wrong password or a damaged file leaves current data untouched. Restore also accepts backups from earlier schema versions.
+- **Restore:** Settings › Devices & Data › Restore checks the password and the whole file in a staging database before replacing local data. Restore requires a backup with the current schema version. A wrong password, an incompatible schema or a damaged file leaves current data intact.
 - **Forgotten lock password:** the lock screen offers to erase this device's data and remove the lock after typed confirmation. Data can then come back only from a backup.
 - **Wrong or partial Bitcoin history:** Accounts › Recover full history fetches the history again from the provider; an interrupted sync resumes without accepting partial data.
 - **Moving to the release key on Android:** back up, uninstall the debug-signed app, install the release APK, restore.

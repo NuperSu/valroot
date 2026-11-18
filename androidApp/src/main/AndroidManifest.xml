@@ -17,7 +17,7 @@
         <service android:name=".BitcoinRefreshService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false" />
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
         <!-- singleTask: a backup opened from another app reaches the running instance, not a second database connection. -->
-        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:screenOrientation="portrait" tools:ignore="LockedOrientationActivity,DiscouragedApi">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

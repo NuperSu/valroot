@@ -28,8 +28,8 @@ internal class AndroidHost(
     private val state = AndroidState(activity)
     private val prices = AndroidPrices(state)
     private val sync = AndroidSync(state, prices)
-    private val backups = AndroidBackups(state, sync)
     private val privacyLock = AndroidLock(state, sync)
+    private val backups = AndroidBackups(state, sync) { privacyLock.delayMillis = it }
 
     override val dispatcher: CoroutineDispatcher = state.executor.asCoroutineDispatcher()
     override val dataRevision = state.dataRevision

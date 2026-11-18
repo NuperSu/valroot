@@ -28,8 +28,9 @@ class BackupService internal constructor(
         input: ByteSource,
         password: CharArray,
     ) {
-        PortfolioApplication(staging, now)
+        val replacement = PortfolioApplication(staging, now)
         PortableBackup.discover(db).restoreToStaging(staging, BackupEncryption.decrypt(input, password))
+        app.settings.lockDelayMillis()?.let(replacement.settings::setLockDelay)
     }
 
     /** In-memory form of [restoreToStaging], for small data and tests. */
