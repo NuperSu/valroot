@@ -95,4 +95,27 @@ class AlchemyTest {
         assertFails { Alchemy.rpcUrl(999) }
         assertFails { Alchemy.receiptsBody(List(51) { "0x" + "c".repeat(64) }) }
     }
+
+    @Test fun receiptAndNonceBatchesRequireCompleteMatchingResponses() {
+        val first = "0x" + "a".repeat(64)
+        val second = "0x" + "b".repeat(64)
+        val nullFirst = """{"id":0,"result":null}"""
+        val nullSecond = """{"id":1,"result":null}"""
+        assertEquals(mapOf(first to null, second to null), Alchemy.parseReceiptsByHash("[$nullSecond,$nullFirst]", listOf(first, second)))
+        assertFails { Alchemy.parseReceiptsByHash("[$nullFirst]", listOf(first, second)) }
+        assertFails { Alchemy.parseReceiptsByHash("[$nullFirst,$nullFirst]", listOf(first, second)) }
+        assertFails { Alchemy.parseReceiptsByHash("[$nullSecond]", listOf(first)) }
+        assertFails { Alchemy.parseReceiptsByHash("""[{"id":0}]""", listOf(first)) }
+        assertFails { Alchemy.parseReceiptsByHash("""[{"id":0,"result":false}]""", listOf(first)) }
+        val receipt =
+            """{"transactionHash":"$second","from":"$wallet","blockNumber":"0x1",
+            |"transactionIndex":"0x0","status":"0x1","gasUsed":"0x0","effectiveGasPrice":"0x0"}
+            """.trimMargin()
+        assertFails { Alchemy.parseReceiptsByHash("""[{"id":0,"result":$receipt}]""", listOf(first)) }
+        val nonce = """{"id":0,"result":{"hash":"$second","nonce":"0x1"}}"""
+        assertFails { Alchemy.parseNonces("[$nonce]", listOf(first)) }
+        assertFails { Alchemy.parseNonces("[]", listOf(first)) }
+        assertFails { Alchemy.parseNonces("[$nullFirst]", listOf(first)) }
+        assertEquals(mapOf(second to 1L), Alchemy.parseNonces("[$nonce]", listOf(second)))
+    }
 }

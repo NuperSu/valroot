@@ -44,6 +44,8 @@ data class EvmReceipt(
     val position: Int,
     val success: Boolean,
     val fee: ExactInteger,
+    /** The hash of the block holding the transaction: it changes when a reorganisation mines it again. */
+    val blockHash: String? = null,
 )
 
 /**
@@ -271,6 +273,7 @@ object Alchemy {
                 evmQuantity(receipt.text("transactionIndex")!!).toString().toInt(),
                 receipt.text("status") == "0x1",
                 gas * price + l1,
+                receipt.text("blockHash")?.let(::hash),
             )
         }
 
@@ -282,13 +285,37 @@ object Alchemy {
         payload: String,
         hashes: List<String>,
     ): Map<String, EvmReceipt?> =
-        (Json.parseToJsonElement(payload) as JsonArray).associate { element ->
-            val response = element.jsonObject
-            require(response["error"] == null || response["error"] is JsonNull) { "Receipt request failed" }
-            val id = requireNotNull(response.text("id")?.toIntOrNull()) { "Receipt response without its request" }
-            val hash = requireNotNull(hashes.getOrNull(id)) { "Receipt response for an unknown request" }
-            hash to (response["result"] as? JsonObject)?.let { parseReceipts("[$element]").single() }
+        batchResponses(payload, hashes).mapValues { (requested, response) ->
+            val result = response.getValue("result")
+            if (result is JsonNull) {
+                null
+            } else {
+                require(result is JsonObject) { "Invalid receipt result" }
+                parseReceipts("[$response]").single().also {
+                    require(it.hash == requested) { "Receipt does not match its request" }
+                }
+            }
         }
+
+    /** Correlates every response with exactly one request, including explicit null results. */
+    private fun batchResponses(
+        payload: String,
+        hashes: List<String>,
+    ): Map<String, JsonObject> {
+        val requested = hashes.map(::hash)
+        require(requested.distinct().size == requested.size) { "Duplicate transaction request" }
+        val responses = Json.parseToJsonElement(payload) as? JsonArray ?: error("Expected a batch response")
+        require(responses.size == requested.size) { "Incomplete batch response" }
+        val seen = mutableSetOf<Int>()
+        return responses.associate { element ->
+            val response = element.jsonObject
+            require(response["error"] == null || response["error"] is JsonNull) { "Batch request failed" }
+            val id = requireNotNull(response.text("id")?.toIntOrNull()) { "Response without its request" }
+            require(id in requested.indices && seen.add(id)) { "Unknown or duplicate response request" }
+            require("result" in response) { "Response without result" }
+            requested[id] to response
+        }
+    }
 
     fun nonceBody(address: String): String =
         """{"jsonrpc":"2.0","id":1,"method":"eth_getTransactionCount","params":["${evmAddress(address)}","latest"]}"""
@@ -334,12 +361,15 @@ object Alchemy {
         }.toString()
     }
 
-    /** Nonces by transaction hash. */
-    fun parseNonces(payload: String): Map<String, Long> =
-        (Json.parseToJsonElement(payload) as JsonArray).associate { element ->
-            val response = element.jsonObject
+    /** Nonces by requested transaction hash; every transaction must be available and match its request. */
+    fun parseNonces(
+        payload: String,
+        hashes: List<String>,
+    ): Map<String, Long> =
+        batchResponses(payload, hashes).mapValues { (requested, response) ->
             val transaction = requireNotNull(response["result"] as? JsonObject) { "Transaction not available" }
-            hash(transaction.text("hash")) to evmQuantity(transaction.text("nonce")!!).toString().toLong()
+            require(hash(transaction.text("hash")) == requested) { "Transaction does not match its request" }
+            evmQuantity(transaction.text("nonce")!!).toString().toLong()
         }
 
     fun blockBody(blockNumber: Long): String {

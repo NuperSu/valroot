@@ -180,6 +180,16 @@ class Store(
         return SourceRecordId(found)
     }
 
+    /** The payload version a record already holds this exact payload under ([checksum]), or null when it does not. */
+    fun payloadVersion(
+        recordId: String,
+        checksum: String,
+    ): String? =
+        db
+            .query("SELECT payload_version FROM raw_revisions WHERE record_id=? AND checksum=?", listOf(recordId, checksum))
+            .singleOrNull()
+            ?.single()
+
     fun records(): List<List<String?>> = db.query("SELECT id, namespace, external_id, network FROM raw_records ORDER BY id")
 
     fun revisions(): List<List<String?>> =

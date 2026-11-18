@@ -6,7 +6,7 @@ import io.valroot.core.storage.SqliteDatabase
 data class EvmChainState(
     val address: String,
     val chainId: Long,
-    /** The newest transaction, internal transfer and token transfer last seen; equal heads mean nothing changed. */
+    /** Newest transfer receipt fingerprints (block hash and position), plus the address's sent count. */
     val head: String?,
     val lastSuccessMillis: Long?,
     /** Null when balances matched the provider at the last check; otherwise a short description of the differences. */

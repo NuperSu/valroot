@@ -180,17 +180,18 @@ class EvmService internal constructor(
             val ids = mutableSetOf<ActivityId>()
             groups.forEach { group ->
                 val payload = group.canonical()
+                val recordId = "eip155:$chainId:${group.hash}"
                 val source =
                     store.ingestInTransaction(
                         io.valroot.core.storage.RawObservation(
-                            "eip155:$chainId:${group.hash}",
+                            recordId,
                             "eip155:$chainId",
                             group.hash,
                             "eip155:$chainId",
                             "alchemy",
                             Instant.fromEpochMilliseconds(retrieved).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
+                            payloadVersion(recordId, payload),
                             sha256(payload),
                             "address=$address",
                         ),
@@ -217,7 +218,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(retrieved).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
+                            payloadVersion("eip155:$chainId:withdrawal-${withdrawal.index}", payload),
                             sha256(payload),
                             "address=$address",
                         ),
@@ -245,6 +246,12 @@ class EvmService internal constructor(
         linkAssets()
         return saved
     }
+
+    /** Preserves a compatible stored payload version when the exact bytes are already present. */
+    private fun payloadVersion(
+        recordId: String,
+        payload: String,
+    ): String = store.payloadVersion(recordId, sha256(payload))?.takeIf { it in RAW_VERSIONS } ?: EvmDecoder.PAYLOAD_VERSION
 
     /** Forgets the accepted head of [address] on [chainId], so the next refresh reads the chain in full. */
     fun clearChainHead(
@@ -339,7 +346,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(at).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
+                            payloadVersion(id, payload),
                             sha256(payload),
                             "address=$address",
                         ),
@@ -460,7 +467,7 @@ class EvmService internal constructor(
                             "alchemy",
                             Instant.fromEpochMilliseconds(now()).toString(),
                             payload,
-                            io.valroot.core.evm.EvmDecoder.PAYLOAD_VERSION,
+                            payloadVersion(activity.id.value, payload),
                             sha256(payload),
                             "address=$address",
                         ),
@@ -528,4 +535,9 @@ class EvmService internal constructor(
 
     /** Payments, transactions and token listings recovered beyond Alchemy's lists; see [EvmConnector]. */
     fun recovered(): EvmRecoveredRepository = evmRecovered
+
+    private companion object {
+        /** Versions raw EVM records have been saved under; all hold the same format. */
+        val RAW_VERSIONS = setOf(EvmDecoder.PAYLOAD_VERSION, "evm-2")
+    }
 }

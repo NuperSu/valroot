@@ -3,246 +3,21 @@ package io.valroot.core.evm
 import io.valroot.core.application.ActivityFilter
 import io.valroot.core.application.BitcoinConnector
 import io.valroot.core.application.DEFAULT_ENDPOINT
-import io.valroot.core.application.PortfolioApplication
 import io.valroot.core.application.SourceRefreshOptions
 import io.valroot.core.application.SourceRegistry
 import io.valroot.core.bitcoin.EsploraTransport
 import io.valroot.core.ledger.ActivityKind
 import io.valroot.core.ledger.MovementRole
-import io.valroot.core.model.AccountId
 import io.valroot.core.model.ExactInteger
-import io.valroot.core.model.OwnerId
-import io.valroot.core.model.TrackingTargetId
-import io.valroot.core.ownership.Account
-import io.valroot.core.ownership.AccountKind
-import io.valroot.core.ownership.Owner
-import io.valroot.core.ownership.TargetIdentity
-import io.valroot.core.ownership.TargetRole
-import io.valroot.core.ownership.TrackingTarget
 import io.valroot.core.storage.BundledSqliteDatabase
 import io.valroot.core.sync.JobState
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.math.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class EvmConnectorTest {
-    private val me = "0x1111111111111111111111111111111111111111"
-    private val other = "0x2222222222222222222222222222222222222222"
-    private val router = "0x3333333333333333333333333333333333333333"
-    private val usdc = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
-    private val fakeUsdc = "0x" + "5".repeat(40)
-    private val punk = "0x" + "6".repeat(40)
-    private val chain = 8453L
-    private val huge = "0x" + "f".repeat(64)
-
-    private var slug = "base-mainnet"
-
-    private fun h(n: Int) = "0x" + n.toString(16).padStart(64, '0')
-
-    private fun hex(value: Long) = "0x" + value.toString(16)
-
-    private fun transfer(
-        n: Int,
-        category: String,
-        from: String,
-        to: String,
-        raw: String? = null,
-        contract: String? = null,
-        decimals: Int = 18,
-        tokenId: String? = null,
-    ): String {
-        val unique =
-            when (category) {
-                "external" -> "${h(n)}:external"
-                "internal" -> "${h(n)}:internal:0"
-                else -> "${h(n)}:log:1"
-            }
-        val fungible = raw?.let { ""","fungible":{"rawValue":"$it","value":1.0,"decimals":$decimals,"asset":"USDC"}""" } ?: ""
-        val nft = tokenId?.let { ""","nfts":{"tokens":[{"tokenId":"$it","amount":"0x1"}]}""" } ?: ""
-        val contractField = contract?.let { ""","contractAddress":"$it"""" } ?: ""
-        return """{"network":"$slug","category":"$category","blockNum":"${hex(100L + n)}",""" +
-            """"blockTimestamp":"2026-01-0${n % 9 + 1}T00:00:00.000Z","hash":"${h(n)}","from":"$from","to":"$to",""" +
-            """"uniqueId":"$unique"$contractField$fungible$nft}"""
-    }
-
-    private inner class FakeAlchemy {
-        // Newest first, as Alchemy returns them with order "desc".
-        val transfers =
-            listOf(
-                transfer(9, "erc721", other, me, contract = punk, tokenId = huge),
-                transfer(8, "erc20", me, other, raw = hex(1_000_000), contract = fakeUsdc, decimals = 6),
-                transfer(7, "erc20", me, router, raw = hex(2_500_000), contract = usdc, decimals = 6),
-                transfer(6, "internal", router, me, raw = hex(250)),
-                transfer(5, "erc20", other, me, raw = hex(5_000_000), contract = usdc, decimals = 6),
-                transfer(4, "external", me, other, raw = "0xde0b6b3a7640000"),
-                transfer(1, "external", other, me, raw = "0x29a2241af62c0000"),
-            )
-
-        // Receipts by hash: the sender, its gas, and an L1 data fee on top (Base is an OP-stack chain).
-        val receipts =
-            mutableMapOf(
-                h(4) to Triple(me, 500L, 100L),
-                h(7) to Triple(me, 50L, 0L),
-                // Address poisoning: the scammer sent the transaction that moved the look-alike token "from" this address.
-                h(8) to Triple(other, 999L, 0L),
-                // A failed call Alchemy does not list, found by its nonce.
-                h(20) to Triple(me, 300L, 0L),
-            )
-
-        // The address's sent transactions by nonce: hash and block. Nonce 3, if sent, has no transaction in its block.
-        val sentByNonce = mutableListOf(h(4) to 104L, h(7) to 107L, h(20) to 110L)
-        val failed = setOf(h(20))
-        var sentCount = 3L
-        var nativeBalance = "1999999999999999300"
-        val requests = mutableListOf<String>()
-
-        private fun transfersResponse(body: String): String {
-            val request = Json.parseToJsonElement(body).jsonObject
-            val networks = request["networks"]!!.jsonArray.map { it.jsonPrimitive.content }
-            val categories = request["category"]!!.jsonArray.map { it.jsonPrimitive.content }
-            val max = request["maxCount"]!!.jsonPrimitive.content.toInt()
-            val start = request["pageKey"]?.jsonPrimitive?.content?.toInt() ?: 0
-            val matching =
-                if (slug in networks) {
-                    transfers.filter { item -> categories.any { item.contains("\"category\":\"$it\"") } }
-                } else {
-                    emptyList()
-                }
-            // Pages of two, so paging is exercised.
-            val size = minOf(max, 2)
-            val next = if (start + size < matching.size) "\"${start + size}\"" else "null"
-            return """{"transfers":[${matching.drop(start).take(size).joinToString(",")}],"pageKey":$next}"""
-        }
-
-        /** When set, network discovery (several networks per request) gets this answer: an error, or partial errors. */
-        var tokensAnswer: String? = null
-
-        /** The chain head eth_blockNumber reports. */
-        var latestBlock = 200L
-
-        /** When set, the single-chain balance read fails. */
-        var failBalances = false
-
-        /** When set, network discovery fails for every group of networks without this address's chain. */
-        var failOtherGroups = false
-
-        private fun tokensResponse(body: String): String {
-            val networks =
-                Json
-                    .parseToJsonElement(body)
-                    .jsonObject["addresses"]!!
-                    .jsonArray[0]
-                    .jsonObject["networks"]!!
-                    .jsonArray
-                    .map { it.jsonPrimitive.content }
-            if (networks.size > 1) tokensAnswer?.let { return it }
-            if (networks.size == 1 && failBalances) return """{"error":{"message":"busy"}}"""
-            if (networks.size > 1 && failOtherGroups && slug !in networks) return """{"error":{"message":"busy"}}"""
-            if (slug !in networks) return """{"data":{"tokens":[]}}"""
-            val native = "0x" + BigInteger(nativeBalance).toString(16)
-            return """{"data":{"tokens":[{"address":"$me","network":"$slug","tokenAddress":null,"tokenBalance":"$native"},""" +
-                """{"address":"$me","network":"$slug","tokenAddress":"$usdc","tokenBalance":"${hex(2_500_000)}"},""" +
-                """{"address":"$me","network":"$slug","tokenAddress":"$fakeUsdc","tokenBalance":"0x0"}]}}"""
-        }
-
-        private fun rpcResponse(body: String): String {
-            val single = Json.parseToJsonElement(body) as? kotlinx.serialization.json.JsonObject
-            if (single != null) {
-                val method = single["method"]!!.jsonPrimitive.content
-                val params = single["params"]!!.jsonArray
-                val result =
-                    when (method) {
-                        "eth_blockNumber" -> "\"${hex(latestBlock)}\""
-                        "eth_getTransactionCount" -> {
-                            val at = params[1].jsonPrimitive.content
-                            val count =
-                                if (at == "latest") {
-                                    sentCount
-                                } else {
-                                    val block = at.removePrefix("0x").toLong(16)
-                                    (0 until sentCount).count { blockOf(it) <= block }.toLong()
-                                }
-                            "\"${hex(count)}\""
-                        }
-                        "eth_getBlockByNumber" -> {
-                            val block =
-                                params[0]
-                                    .jsonPrimitive.content
-                                    .removePrefix("0x")
-                                    .toLong(16)
-                            val mine =
-                                sentByNonce.withIndex().filter { it.value.second == block }.joinToString("") { (nonce, tx) ->
-                                    """,{"hash":"${tx.first}","from":"$me","to":"$router","nonce":"${hex(nonce.toLong())}",""" +
-                                        """"transactionIndex":"0x2","value":"0x0"}"""
-                                }
-                            """{"number":"${hex(block)}","timestamp":"${hex(1_768_003_200L + block)}","transactions":[""" +
-                                """{"hash":"${h(
-                                    999,
-                                )}","from":"$other","to":"$me","nonce":"0x5","transactionIndex":"0x0","value":"0x0"}$mine]}"""
-                        }
-                        else -> error("Unexpected method $method")
-                    }
-                return """{"jsonrpc":"2.0","id":1,"result":$result}"""
-            }
-            val calls = Json.parseToJsonElement(body).jsonArray.map { it.jsonObject }
-            return calls
-                .mapIndexed { index, call ->
-                    val hash = call["params"]!!.jsonArray[0].jsonPrimitive.content
-                    if (call["method"]!!.jsonPrimitive.content == "eth_getTransactionByHash") {
-                        val nonce = sentByNonce.indexOfFirst { it.first == hash }
-                        """{"jsonrpc":"2.0","id":$index,"result":{"hash":"$hash","nonce":"${hex(nonce.toLong())}"}}"""
-                    } else {
-                        // A transaction someone else sent: its receipt gives its block and position, and no fee here.
-                        val n = (0..2000).firstOrNull { h(it) == hash }
-                        val (from, gas, l1) = receipts[hash] ?: Triple(other, 0L, 0L)
-                        val block = if (hash in receipts || n == null) "0x10" else hex(100L + n)
-                        """{"jsonrpc":"2.0","id":$index,"result":{"transactionHash":"$hash","from":"$from","blockNumber":"$block",""" +
-                            """"transactionIndex":"0x1","status":"${if (hash in failed) "0x0" else "0x1"}","gasUsed":"${hex(
-                                gas,
-                            )}","effectiveGasPrice":"0x1","l1Fee":"${hex(l1)}"}}"""
-                    }
-                }.joinToString(",", "[", "]")
-        }
-
-        /** The block holding the transaction with [nonce]; a nonce without a transaction (nonce 3) is in block 112. */
-        private fun blockOf(nonce: Long): Long = sentByNonce.getOrNull(nonce.toInt())?.second ?: 112L
-
-        val post = { url: String, body: String ->
-            requests += url.substringAfterLast('/')
-            when {
-                url.endsWith("/transfers/by-address") -> transfersResponse(body)
-                url.endsWith("/tokens/by-address") -> tokensResponse(body)
-                url.startsWith("https://$slug.g.alchemy.com/v2/") -> rpcResponse(body)
-                else -> error("Unexpected request $url")
-            }
-        }
-    }
-
-    private fun setUp(db: BundledSqliteDatabase): PortfolioApplication {
-        val app = PortfolioApplication(db) { 1_800_000_000_000L }
-        app.snapshot()
-        app.accounts.saveOwner(Owner(OwnerId("owner"), "Owner"))
-        app.accounts.saveAccountAndTarget(
-            Account(AccountId("evm"), OwnerId("owner"), "EVM", AccountKind.WALLET),
-            TrackingTarget(TrackingTargetId("evm"), AccountId("evm"), TargetIdentity(EVM_FAMILY, "address", me), TargetRole.LEAF, "EVM"),
-        )
-        app.evm.setConsent(true)
-        app.market.setConsent(true)
-
-        fun fixture(name: String) = requireNotNull(javaClass.getResource("/coingecko/$name")).readText()
-        app.evm.refreshCatalog(
-            { url, _ -> if (url.contains("asset_platforms")) fixture("asset_platforms.json") else fixture("coins_list.json") },
-        )
-        return app
-    }
-
+class EvmConnectorTest : EvmConnectorTestFixture() {
     @Test fun historyFeesGapsAndSkipping() {
         BundledSqliteDatabase(":memory:").use { db ->
             val app = setUp(db)
@@ -314,7 +89,7 @@ class EvmConnectorTest {
             // Unchanged: newest transfer, newest contract transfer and the sent count only.
             provider.requests.clear()
             connector.refresh(app, SourceRefreshOptions())
-            assertEquals(3, provider.requests.size)
+            assertEquals(4, provider.requests.size)
 
             // A nonce no transaction in its block uses (a delegation authorization, say) is recorded as not found once, and
             // the unexplained difference becomes an adjustment after the last activity, so the balance matches.
@@ -343,24 +118,6 @@ class EvmConnectorTest {
             )
         }
     }
-
-    /** 1inch's history: events with their transaction hash, block, sender and token actions. */
-    private fun oneInchHistory(vararg events: String) = """{"items":[${events.joinToString(",")}]}"""
-
-    private fun oneInchEvent(
-        n: Int,
-        sender: String,
-        vararg actions: String,
-    ) = """{"timeMs":${1_767_225_600_000L + n * 86_400_000L},"details":{"txHash":"${h(n)}","blockNumber":${100 + n},""" +
-        """"fromAddress":"$sender","tokenActions":[${actions.joinToString(",")}]}}"""
-
-    private fun action(
-        standard: String,
-        from: String,
-        to: String,
-        amount: String,
-        contract: String = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-    ) = """{"standard":"$standard","address":"$contract","fromAddress":"$from","toAddress":"$to","amount":"$amount"}"""
 
     @Test fun contractPaymentsAreRecoveredFromOneInchTracesWhereAlchemyDoesNotListThem() {
         BundledSqliteDatabase(":memory:").use { db ->
@@ -436,6 +193,73 @@ class EvmConnectorTest {
             oneInchRequests.clear()
             connector.refresh(app, SourceRefreshOptions())
             assertTrue(oneInchRequests.isEmpty())
+
+            // A payout cached before a failed full history read is applied on the next refresh.
+            app.evm.recovered().saveListing(me, 56, OneInchListing(0, emptySet()))
+            var retryRequests = 0
+            val retryConnector =
+                EvmConnector(provider.post) { path ->
+                    retryRequests++
+                    if (path.startsWith("/history/")) {
+                        oneInchHistory(oneInchEvent(31, other, action("Native", payer, me, "1000")))
+                    } else {
+                        traces.getValue(h(30)).replace(h(30), h(31))
+                    }
+                }
+            provider.failFullHistory = true
+            assertEquals(listOf(JobState.FAILED), retryConnector.refresh(app, SourceRefreshOptions()).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+            assertTrue(h(31) in app.evm.recovered().traces(me, 56))
+            provider.failFullHistory = false
+            retryRequests = 0
+            assertEquals(listOf(JobState.COMPLETED), retryConnector.refresh(app, SourceRefreshOptions()).jobs)
+            assertEquals(0, retryRequests)
+            assertTrue(
+                app.transactions.entries(ActivityFilter()).any {
+                    it.activity.id.value
+                        .contains(h(31))
+                },
+            )
+
+            app.evm.recovered().saveListing(me, 56, OneInchListing(0, emptySet()))
+            val traceRequests = mutableListOf<String>()
+            var failTrace = true
+            val interrupted =
+                EvmConnector(provider.post) { path ->
+                    if (path.startsWith("/history/")) {
+                        oneInchHistory(
+                            oneInchEvent(32, other, action("Native", payer, me, "1000")),
+                            oneInchEvent(33, other, action("Native", payer, me, "1000")),
+                        )
+                    } else {
+                        val hash = path.substringAfter("/tx-hash/")
+                        traceRequests += hash
+                        check(!failTrace || hash != h(33)) { "Trace unavailable" }
+                        traces.getValue(h(30)).replace(h(30), hash)
+                    }
+                }
+            assertEquals(listOf(JobState.FAILED), interrupted.refresh(app, SourceRefreshOptions()).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+            assertTrue(h(32) in app.evm.recovered().traces(me, 56))
+            failTrace = false
+            assertEquals(listOf(JobState.COMPLETED), interrupted.refresh(app, SourceRefreshOptions()).jobs)
+            assertEquals(listOf(h(32), h(33), h(33)), traceRequests)
+            assertTrue(
+                app.transactions.entries(ActivityFilter()).any {
+                    it.activity.id.value
+                        .contains(h(32))
+                },
+            )
 
             // Without a key the chain says what is missing.
             EvmConnector(provider.post).refresh(app, SourceRefreshOptions(recoverHistory = true))
@@ -603,11 +427,12 @@ class EvmConnectorTest {
             connector.refresh(app, SourceRefreshOptions())
             // History decoded before an upgrade: its raw records are byte for byte what this version writes.
             db.execute("UPDATE ledger_activities SET decoder='evm-1' WHERE id LIKE 'eip155:%'")
+            db.execute("UPDATE raw_revisions SET payload_version='evm-2' WHERE record_id LIKE 'eip155:%'")
             assertTrue(app.evm.decodedByEarlierVersion(me, chain))
             assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
             assertTrue(!app.evm.decodedByEarlierVersion(me, chain))
             assertEquals(
-                listOf("evm-1"),
+                listOf("evm-2"),
                 db.query("SELECT DISTINCT payload_version FROM raw_revisions WHERE record_id LIKE 'eip155:%'").map { it.single() },
             )
         }
@@ -624,7 +449,7 @@ class EvmConnectorTest {
             assertTrue(!app.evm.decodedByEarlierVersion(me, chain))
             provider.requests.clear()
             connector.refresh(app, SourceRefreshOptions())
-            assertEquals(3, provider.requests.size, "only the unchanged-head check")
+            assertEquals(4, provider.requests.size, "only the unchanged-head check")
         }
     }
 
@@ -652,7 +477,7 @@ class EvmConnectorTest {
             provider.failBalances = false
             provider.requests.clear()
             assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
-            assertTrue(provider.requests.size > 3, "the chain is read and checked again, not skipped")
+            assertTrue(provider.requests.size > 4, "the chain is read and checked again, not skipped")
             assertNull(
                 app.evm
                     .chainStates(me)
@@ -685,6 +510,180 @@ class EvmConnectorTest {
             )
             assertTrue(h(88) !in app.evm.recovered().traces(me, 56))
             slug = "base-mainnet"
+        }
+    }
+
+    @Test fun sameHeightReceiptChangesTriggerAFullRead() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            val before =
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head
+            provider.blockHash = h(901)
+            provider.receiptPosition = 3
+            provider.requests.clear()
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertTrue(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head != before,
+            )
+            assertTrue(provider.requests.size > 4)
+            assertTrue(
+                app.transactions
+                    .entries(ActivityFilter())
+                    .single {
+                        it.activity.id.value
+                            .contains(h(9))
+                    }.activity.orderingKey
+                    .endsWith(":0000000003:${h(9)}"),
+            )
+        }
+    }
+
+    @Test fun partialInternalHeadProbeCannotSettleTheChain() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            val before =
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head
+            provider.internalProbeError = true
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertEquals(
+                before,
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions(recoverHistory = true)).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+        }
+    }
+
+    @Test fun legacyRawVersionsIncludeNativeAdjustmentsOnRetry() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy().apply { nativeBalance = "123" }
+            val connector = EvmConnector(provider.post)
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertTrue(db.query("SELECT 1 FROM raw_revisions WHERE record_id LIKE 'evm-adjust:%'").isNotEmpty())
+            db.execute("UPDATE raw_revisions SET payload_version='evm-2'")
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions(recoverHistory = true)).jobs)
+            assertEquals(listOf("evm-2"), db.query("SELECT DISTINCT payload_version FROM raw_revisions").map { it.single() })
+        }
+    }
+
+    @Test fun unchangedHeadBalanceFailureForRebasingTokensClearsAcceptedHead() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            val connector = EvmConnector(provider.post)
+            connector.refresh(app, SourceRefreshOptions())
+            // A recorded difference schedules another balance check even while the transfer head stays unchanged.
+            app.evm.checkBalances(
+                app.evm
+                    .targets()
+                    .single()
+                    .first,
+                me,
+                chain,
+                ExactInteger.ZERO,
+                emptyList(),
+            )
+            provider.failBalances = true
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+            provider.failBalances = false
+            provider.requests.clear()
+            assertEquals(listOf(JobState.COMPLETED), connector.refresh(app, SourceRefreshOptions()).jobs)
+            assertTrue(provider.requests.size > 4)
+        }
+    }
+
+    @Test fun forcedRecoveryKeepsDeepPositiveResultsAndDropsRecentOrNegativeCaches() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy().apply { latestBlock = 1_000 }
+            val recovered = app.evm.recovered()
+            val deep =
+                EvmTransaction(
+                    h(20),
+                    16,
+                    1,
+                    1_768_003_250_000,
+                    me,
+                    router,
+                    ExactInteger.ZERO,
+                    ExactInteger.parse("300"),
+                    false,
+                    NONCE_SOURCE,
+                )
+            recovered.saveNonce(me, chain, 2, deep)
+            recovered.saveNonce(me, chain, 99, null)
+            recovered.saveTrace(me, chain, h(90), emptyList())
+            recovered.saveTrace(
+                me,
+                chain,
+                h(1_000),
+                listOf(
+                    EvmInternalTransfer(h(1_000), 1_100, 0, 1_768_003_250_000, other, me, ExactInteger.parse("77"), true),
+                ),
+            )
+            recovered.savePosition(me, chain, h(5), 105, 7)
+            assertEquals(
+                listOf(JobState.COMPLETED),
+                EvmConnector(provider.post).refresh(app, SourceRefreshOptions(recoverHistory = true)).jobs,
+            )
+            assertEquals(deep, recovered.nonces(me, chain)[2])
+            assertTrue(99L !in recovered.nonces(me, chain))
+            assertTrue(recovered.traces(me, chain).isEmpty())
+            assertEquals(105L to 1, recovered.positions(me, chain)[h(5)])
+        }
+    }
+
+    @Test fun partialRevalidationBatchLeavesCachesIntactAndHeadUnsettled() {
+        BundledSqliteDatabase(":memory:").use { db ->
+            val app = setUp(db)
+            val provider = FakeAlchemy()
+            EvmConnector(provider.post).refresh(app, SourceRefreshOptions())
+            val recovered = app.evm.recovered()
+            recovered.saveNonce(me, chain, 77, null)
+            recovered.saveTrace(me, chain, h(88), emptyList())
+            val connector =
+                EvmConnector({ url, body ->
+                    if (body.contains(h(88))) "[]" else provider.post(url, body)
+                })
+            assertEquals(listOf(JobState.FAILED), connector.refresh(app, SourceRefreshOptions(recoverHistory = true)).jobs)
+            assertNull(
+                app.evm
+                    .chainStates(me)
+                    .single()
+                    .head,
+            )
+            assertTrue(77L in recovered.nonces(me, chain))
+            assertTrue(h(88) in recovered.traces(me, chain))
         }
     }
 }

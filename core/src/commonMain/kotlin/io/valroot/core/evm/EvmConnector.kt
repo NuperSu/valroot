@@ -27,8 +27,8 @@ val EVM_MANIFEST =
  *
  * - **Discovery:** balances and newest transfers per group of five networks find the chains an address has used, on the
  *   first refresh and then weekly; chains the user chose are kept.
- * - **Skip check per chain:** the newest transfer (plus the newest contract-made transfer where listed) and the count of
- *   transactions the address has sent form the head. Nothing else is read while it is unchanged.
+ * - **Skip check per chain:** the newest external/token and contract transfers, their receipt block hashes and positions,
+ *   and the count of sent transactions form the head. Unchanged history skips the full read.
  * - **Full read:** every transfer page, then receipts for transactions the address sent, which give their fee
  *   (including any L1 data fee) and status.
  * - **Unlisted sent transactions:** Alchemy lists transfers, so a sent transaction that moved nothing (for example a
@@ -144,6 +144,7 @@ class EvmConnector(
     ) {
         val chain = state.chainId
         val network = Alchemy.network(chain)!!
+        if (force) app.evm.clearChainHead(address, chain)
         val newest = Alchemy.parseTransfers(post(Alchemy.transfersUrl(), Alchemy.transfersBody(address, listOf(chain), maxCount = 1)))
         failOnErrors(newest)
         val newestInternal =
@@ -154,18 +155,35 @@ class EvmConnector(
             } else {
                 null
             }
+        newestInternal?.let(::failOnErrors)
         val sent = Alchemy.parseNonce(post(Alchemy.rpcUrl(chain), Alchemy.nonceBody(address)))
-        val head =
-            listOf(
-                (newest.transactions.map { it.second.hash } + newest.tokens.map { "${it.second.transactionHash}:${it.second.logIndex}" })
-                    .firstOrNull(),
-                newestInternal
-                    ?.internal
-                    ?.firstOrNull()
-                    ?.second
-                    ?.transactionHash,
-                "n$sent",
-            ).joinToString("|") { it ?: "-" }
+        val externalHead =
+            (
+                newest.transactions.mapNotNull { (_, tx) -> tx.blockNumber?.let { it to tx.hash } } +
+                    newest.tokens.map { it.second.blockNumber to it.second.transactionHash }
+            ).maxByOrNull { it.first }?.second
+        val internalHead =
+            newestInternal
+                ?.internal
+                ?.maxByOrNull { it.second.blockNumber }
+                ?.second
+                ?.transactionHash
+        val headHashes = listOfNotNull(externalHead, internalHead).distinct()
+        val headReceipts =
+            if (headHashes.isEmpty()) {
+                emptyMap()
+            } else {
+                Alchemy.parseReceiptsByHash(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(headHashes)), headHashes)
+            }
+
+        fun fingerprint(hash: String?): String =
+            if (hash == null) {
+                "-"
+            } else {
+                val receipt = requireNotNull(headReceipts[hash]) { "Newest transfer receipt not available" }
+                "$hash:${requireNotNull(receipt.blockHash) { "Newest transfer receipt has no block hash" }}:${receipt.position}"
+            }
+        val head = listOf(fingerprint(externalHead), fingerprint(internalHead), "n$sent").joinToString("|")
         val recovered = app.evm.recovered()
         // A forced recovery first drops saved traces and nonce results whose transactions left the chain, before any of
         // them is read into this refresh.
@@ -177,6 +195,8 @@ class EvmConnector(
         var checkedOneInch = false
         // Activities decoded by an earlier decoder version are read again in full, so they follow the current rules.
         if (!force && head == state.head && !app.evm.decodedByEarlierVersion(address, chain)) {
+            // A trace or listing may be persisted before a later request fails; retries must apply that saved work.
+            if (recheck) app.evm.clearChainHead(address, chain)
             val paid = recheck && readOneInch(app, address, chain, network.internalTransfers)
             checkedOneInch = recheck
             // A found contract payment changes the history. So does a gap a full read can now close: sent transactions
@@ -188,7 +208,10 @@ class EvmConnector(
             if (!paid && !closable) {
                 // A rebasing token's balance changes without a transfer, so it is read on every refresh; a difference
                 // left by an earlier check is settled too.
-                if (state.balanceDifference != null || app.evm.holdsRebasing(account, chain)) checkBalances(app, account, address, chain)
+                if (state.balanceDifference != null || app.evm.holdsRebasing(account, chain)) {
+                    app.evm.clearChainHead(address, chain)
+                    checkBalances(app, account, address, chain)
+                }
                 app.evm.recordChainSuccess(address, chain, head)
                 return
             }
@@ -221,8 +244,12 @@ class EvmConnector(
         val receipts =
             candidates
                 .chunked(Alchemy.RECEIPT_BATCH)
-                .flatMap { batch -> Alchemy.parseReceipts(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(batch))) }
-                .filter { it.from == address }
+                .flatMap { batch ->
+                    Alchemy
+                        .parseReceiptsByHash(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(batch)), batch)
+                        .values
+                        .map { requireNotNull(it) { "Sent transaction receipt not available" } }
+                }.filter { it.from == address }
                 .associateBy { it.hash }
         val listed = transactions.associateBy { it.hash }
         val found = recoverSentTransactions(app, address, chain, sent, receipts.keys).filter { it.hash !in listed && it.hash !in receipts }
@@ -317,8 +344,8 @@ class EvmConnector(
     }
 
     /**
-     * Checks saved nonce results and contract traces against current receipts: one whose transaction has no receipt or
-     * is now in another block is forgotten, so this read finds it again.
+     * Keeps deep positive recovery results only when current receipts confirm their block and position. Recent,
+     * negative and empty results are read again, since a reorganisation can change them at the same block height.
      */
     private fun revalidateRecovered(
         app: PortfolioApplication,
@@ -326,27 +353,41 @@ class EvmConnector(
         chain: Long,
     ) {
         val recovered = app.evm.recovered()
-        val nonces = recovered.nonces(address, chain).mapNotNull { (nonce, tx) -> tx?.let { Triple(it.hash, it.blockNumber, "n$nonce") } }
-        val traces =
-            recovered.traces(address, chain).mapNotNull { (hash, transfers) ->
-                transfers.firstOrNull()?.let { Triple(hash, it.blockNumber, "t$hash") }
-            }
-        val saved = nonces + traces
+        val nonces = recovered.nonces(address, chain)
+        val traces = recovered.traces(address, chain)
+        val positions = recovered.positions(address, chain)
+        val settledThrough = Alchemy.parseQuantity(post(Alchemy.rpcUrl(chain), Alchemy.blockNumberBody())) - REORG_DEPTH
+        val saved =
+            nonces.values.filterNotNull().map { it.hash } + traces.keys + positions.keys
         val receipts =
             saved
-                .map { it.first }
                 .distinct()
                 .chunked(Alchemy.RECEIPT_BATCH)
-                .flatMap { batch -> Alchemy.parseReceiptsByHash(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(batch)), batch).entries }
-                .associate { it.key to it.value }
-        saved.forEach { (hash, block, item) ->
-            if (receipts[hash]?.blockNumber != block) {
-                if (item.startsWith("n")) {
-                    recovered.forget(address, chain, "nonce", item.drop(1))
-                } else {
-                    recovered.forget(address, chain, "trace", hash)
-                }
-            }
+                .flatMap { batch ->
+                    Alchemy.parseReceiptsByHash(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(batch)), batch).entries
+                }.associate { it.key to it.value }
+
+        fun settled(
+            hash: String,
+            block: Long?,
+            position: Int? = null,
+        ): Boolean {
+            val receipt = receipts[hash] ?: return false
+            return block != null &&
+                block <= settledThrough &&
+                receipt.blockNumber == block &&
+                (position == null || position == receipt.position)
+        }
+        // Apply cache invalidation only after every response was validated. Recent and negative results must be read
+        // again, including traces with no payments and nonce searches with no transaction.
+        nonces.forEach { (nonce, tx) ->
+            if (tx == null || !settled(tx.hash, tx.blockNumber, tx.position)) recovered.forget(address, chain, "nonce", "$nonce")
+        }
+        traces.forEach { (hash, transfers) ->
+            if (!settled(hash, transfers.firstOrNull()?.blockNumber)) recovered.forget(address, chain, "trace", hash)
+        }
+        positions.forEach { (hash, saved) ->
+            if (!settled(hash, saved.first, saved.second)) recovered.forget(address, chain, "position", hash)
         }
     }
 
@@ -434,7 +475,7 @@ class EvmConnector(
                 known
                     .toList()
                     .chunked(Alchemy.RECEIPT_BATCH)
-                    .flatMap { batch -> Alchemy.parseNonces(post(Alchemy.rpcUrl(chain), Alchemy.transactionsBody(batch))).values }
+                    .flatMap { batch -> Alchemy.parseNonces(post(Alchemy.rpcUrl(chain), Alchemy.transactionsBody(batch)), batch).values }
                     .toSet()
             val missing = (0 until sent).filter { it !in nonces && it !in searched }.take(MAX_NONCE_SEARCHES)
             if (missing.isNotEmpty()) {
@@ -453,7 +494,13 @@ class EvmConnector(
                     }
                     val transaction =
                         Alchemy.parseBlockTransaction(post(Alchemy.rpcUrl(chain), Alchemy.blockBody(high)), address, nonce)?.let { tx ->
-                            val receipt = Alchemy.parseReceipts(post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(listOf(tx.hash)))).single()
+                            val receipt =
+                                requireNotNull(
+                                    Alchemy.parseReceiptsByHash(
+                                        post(Alchemy.rpcUrl(chain), Alchemy.receiptsBody(listOf(tx.hash))),
+                                        listOf(tx.hash),
+                                    )[tx.hash],
+                                ) { "Recovered transaction receipt not available" }
                             tx.copy(fee = receipt.fee, success = receipt.success, position = receipt.position, source = NONCE_SOURCE)
                         }
                     recovered.saveNonce(address, chain, nonce, transaction)

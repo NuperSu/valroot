@@ -377,6 +377,19 @@ class EvmAssetsApplicationTest {
                     .toString(),
             )
             assertEquals(0, app.evm.reconcileRebasingBalances(account, "0x" + "1".repeat(40), 1, balance("1014834724316850471")))
+            // Replaying the same raw rebase after a decoder upgrade preserves its stored payload version.
+            db.execute("UPDATE raw_revisions SET payload_version='evm-2' WHERE record_id LIKE 'evm-rebase:%'")
+            db.execute("UPDATE ledger_activities SET status='SUPERSEDED' WHERE id LIKE 'evm-rebase:%'")
+            app.reload()
+            assertEquals(1, app.evm.reconcileRebasingBalances(account, "0x" + "1".repeat(40), 1, balance("1014834724316850471")))
+            assertEquals(
+                listOf(
+                    "evm-2",
+                ),
+                db.query("SELECT DISTINCT payload_version FROM raw_revisions WHERE record_id LIKE 'evm-rebase:%'").map {
+                    it.single()
+                },
+            )
             // Ordinary tokens are left to the balance check, which reports a difference instead.
             assertEquals(0, app.evm.reconcileRebasingBalances(account, "0x" + "1".repeat(40), 8453, emptyList()))
             assertEquals(
